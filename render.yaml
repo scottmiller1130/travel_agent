@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: travel-agent
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn server:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: ANTHROPIC_API_KEY
+        sync: false   # Render will prompt you to paste this in the dashboard
