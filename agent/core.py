@@ -49,12 +49,13 @@ TOOL_LABELS = {
     "save_trip": "Saving trip...",
     "get_trips": "Loading trip history...",
     "update_itinerary": "Building your trip board...",
-    "find_cheapest_dates": "Hunting for cheap dates...",
+    "find_cheapest_dates":  "Hunting for cheap dates...",
+    "find_cheapest_month":  "Scanning months for best deals...",
 }
 
 from memory.preferences import PreferenceStore
 from memory.trips import TripStore
-from tools.flights import search_flights, book_flight, find_cheapest_dates
+from tools.flights import search_flights, book_flight, find_cheapest_dates, find_cheapest_month
 from tools.hotels import search_hotels, book_hotel
 from tools.weather import get_weather
 from tools.maps import search_places, get_distance
@@ -86,7 +87,7 @@ How you work:
 7. Keep a running trip budget and flag if options exceed it.
 8. Whenever you have a concrete day-by-day plan (with specific dates, flights, or activities), call update_itinerary to populate the visual trip board. Call it again whenever the plan changes meaningfully. Include weather per day if you've checked it, and flag any issues (timing conflicts, missing transfers, tight connections, etc.).
 9. SEASON AWARENESS: When get_weather returns a 'season' field, always mention whether it is peak/shoulder/off season, what that means for crowds and prices, and include the season object in your update_itinerary call. This helps users make informed decisions.
-10. DEAL HUNTING: Proactively use find_cheapest_dates whenever the user has any date flexibility (even ±3 days). Always show how much they can save vs their target date. Mention off-season months as a way to cut costs significantly.
+10. DEAL HUNTING: Proactively use find_cheapest_dates whenever the user has any date flexibility (even ±3 days). Always show savings vs target date. Use find_cheapest_month when the user asks "when is cheapest?" or has fully flexible dates — it scans 12 months and shows the cheapest time to travel. Midweek (Tue/Wed) and off-season months are where the real deals are.
 
 Tone: Knowledgeable, efficient, and personalized. You know the user's preferences and apply them automatically.
 """
@@ -225,8 +226,9 @@ class TravelAgent:
             "get_preferences": lambda i: self._prefs.get_all(),
             "save_trip": self._handle_save_trip,
             "get_trips": self._handle_get_trips,
-            "update_itinerary": self._handle_update_itinerary,
-            "find_cheapest_dates": lambda i: find_cheapest_dates(**i),
+            "update_itinerary":    self._handle_update_itinerary,
+            "find_cheapest_dates": self._handle_find_cheapest_dates,
+            "find_cheapest_month": self._handle_find_cheapest_month,
         }
 
         handler = dispatch.get(name)
@@ -255,6 +257,18 @@ class TravelAgent:
         if self._progress_callback:
             self._progress_callback("itinerary_update", {"itinerary": inputs})
         return {"status": "success", "message": "Trip board updated."}
+
+    def _handle_find_cheapest_dates(self, inputs: dict) -> dict:
+        result = find_cheapest_dates(**inputs)
+        if self._progress_callback and result.get("status") == "success":
+            self._progress_callback("deal_result", {"deal": result})
+        return result
+
+    def _handle_find_cheapest_month(self, inputs: dict) -> dict:
+        result = find_cheapest_month(**inputs)
+        if self._progress_callback and result.get("status") == "success":
+            self._progress_callback("month_result", {"month_data": result})
+        return result
 
     def _handle_get_trips(self, inputs: dict) -> dict:
         status = inputs.get("status")

@@ -209,6 +209,55 @@
     .season-badge.season-peak     { background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; }
     .season-badge.season-shoulder { background: var(--gold-l); color: #92400e; border: 1px solid #fcd34d; }
     .season-badge.season-off      { background: var(--green-l); color: #065f46; border: 1px solid #6ee7b7; }
+
+    /* ════ DEAL CARDS ════ */
+    .deal-card,.month-card { background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--radius); overflow: hidden; margin: 10px 0; box-shadow: var(--shadow); animation: msgIn .3s ease; }
+    .deal-header { background: linear-gradient(135deg, #0ea5e9 0%, #0d9488 100%); color: #fff; padding: 12px 16px; display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+    .deal-header-left .deal-title,.month-header .deal-title { font-size: 14px; font-weight: 800; }
+    .deal-header-left .deal-subtitle,.month-header .deal-subtitle { font-size: 11px; opacity: .8; margin-top: 2px; }
+    .deal-best-pill { background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.35); border-radius: 8px; padding: 5px 11px; font-size: 11px; font-weight: 700; white-space: nowrap; flex-shrink: 0; text-align: center; }
+    .deal-best-pill .save-amt { font-size: 15px; font-weight: 900; display: block; }
+    .deal-stats { display: flex; gap: 0; border-bottom: 1px solid var(--border); }
+    .deal-stat { flex: 1; padding: 10px 14px; border-right: 1px solid var(--border); }
+    .deal-stat:last-child { border-right: none; }
+    .deal-stat-label { font-size: 10px; font-weight: 700; color: var(--text-4); text-transform: uppercase; letter-spacing: .06em; }
+    .deal-stat-value { font-size: 15px; font-weight: 800; color: var(--text); margin-top: 2px; }
+    .deal-stat-value.green { color: #059669; } .deal-stat-value.red { color: var(--rose); }
+    .deal-stat-sub { font-size: 10px; color: var(--text-3); margin-top: 1px; }
+    .price-cal-wrap { padding: 12px 14px 8px; }
+    .price-cal-title { font-size: 10px; font-weight: 700; color: var(--text-4); text-transform: uppercase; letter-spacing: .07em; margin-bottom: 9px; }
+    .price-cal-grid { display: flex; flex-wrap: wrap; gap: 5px; }
+    .price-cell { border-radius: 9px; padding: 7px 9px; cursor: pointer; transition: transform .12s, box-shadow .12s; min-width: 68px; flex: 1; text-align: center; border: 1.5px solid transparent; }
+    .price-cell:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
+    .price-cell.is-target { border-color: var(--sky-d) !important; box-shadow: 0 0 0 2px rgba(14,165,233,.22); }
+    .price-cell.is-best { border-color: #059669 !important; box-shadow: 0 0 0 2px rgba(5,150,105,.18); }
+    .pc-dow { font-size: 9px; font-weight: 700; text-transform: uppercase; opacity: .7; }
+    .pc-date { font-size: 10px; font-weight: 700; margin: 2px 0 1px; }
+    .pc-price { font-size: 12px; font-weight: 900; }
+    .pc-tag { font-size: 8px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; margin-top: 3px; opacity: .85; }
+    .deal-dow { display: flex; gap: 6px; flex-wrap: wrap; padding: 9px 14px; border-top: 1px solid var(--border); background: var(--surface2); }
+    .dow-chip { padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; background: var(--surface); border: 1.5px solid var(--border); color: var(--text-3); }
+    .dow-chip.cheapest { background: var(--green-l); border-color: #6ee7b7; color: #065f46; }
+    .deal-actions { padding: 10px 14px; display: flex; gap: 8px; border-top: 1px solid var(--border); }
+    .deal-action-btn { flex: 1; padding: 8px 12px; border-radius: 9px; border: 1.5px solid var(--border); background: transparent; color: var(--sky-d); font-size: 12px; font-weight: 700; cursor: pointer; transition: all .15s; }
+    .deal-action-btn:hover { background: var(--sky-l); border-color: var(--sky); }
+    .deal-action-btn.primary { background: linear-gradient(135deg, var(--sky), var(--teal)); border-color: transparent; color: #fff; box-shadow: 0 3px 8px rgba(14,165,233,.28); }
+    .deal-action-btn.primary:hover { filter: brightness(1.07); }
+    .month-header { background: linear-gradient(135deg, #7c3aed 0%, #0d9488 100%); color: #fff; padding: 12px 16px; }
+    .month-best-callout { background: rgba(255,255,255,.15); border: 1px solid rgba(255,255,255,.3); border-radius: 8px; padding: 8px 12px; margin-top: 10px; font-size: 12px; font-weight: 700; }
+    .month-best-callout .save-line { font-size: 11px; opacity: .85; font-weight: 500; margin-top: 3px; }
+    .month-chart-wrap { padding: 10px 14px 4px; }
+    .month-row { display: flex; align-items: center; gap: 8px; padding: 4px 6px; cursor: pointer; border-radius: 7px; transition: background .1s; }
+    .month-row:hover { background: var(--surface2); }
+    .month-row.is-best .month-lbl { font-weight: 800; color: var(--teal); }
+    .month-lbl { width: 78px; font-size: 11px; font-weight: 600; color: var(--text-2); flex-shrink: 0; }
+    .month-bar-outer { flex: 1; height: 16px; background: var(--bg); border-radius: 4px; overflow: hidden; }
+    .month-bar-inner { height: 100%; border-radius: 4px; transition: width .5s ease; min-width: 4px; }
+    .month-price-lbl { width: 50px; font-size: 12px; font-weight: 800; color: var(--text); text-align: right; flex-shrink: 0; }
+    .month-season-lbl { width: 86px; font-size: 10px; font-weight: 600; color: var(--text-3); flex-shrink: 0; }
+    .month-best-tag { font-size: 9px; font-weight: 800; background: var(--green-l); color: #065f46; border-radius: 5px; padding: 2px 6px; flex-shrink: 0; }
+    .month-footer { padding: 8px 14px 12px; border-top: 1px solid var(--border); background: var(--surface2); font-size: 11px; color: var(--text-3); line-height: 1.55; }
+    .month-footer strong { color: var(--teal); }
   </style>
 </head>
 <body>
@@ -266,9 +315,9 @@
       <button id="send-btn" onclick="sendMessage()" title="Send (Enter)">➤</button>
     </div>
     <div class="hints">
-      <span class="hint" onclick="fillHint(this)">Plan a 5-day trip to Lisbon in May</span>
-      <span class="hint" onclick="fillHint(this)">Find flights NYC → Tokyo next month</span>
-      <span class="hint" onclick="fillHint(this)">What's the weather in Bali in July?</span>
+      <span class="hint" onclick="fillHint(this)">When is the cheapest month to fly NYC → Lisbon?</span>
+      <span class="hint" onclick="fillHint(this)">Find the cheapest dates around July 15 NYC → Tokyo</span>
+      <span class="hint" onclick="fillHint(this)">Plan a 5-day trip to Bali — find me the best deal</span>
       <span class="hint" onclick="fillHint(this)">I prefer window seats on Delta — remember that</span>
     </div>
   </div>
@@ -335,6 +384,8 @@
           if      (data.type === 'tool_start')       onToolStart(data.tool, data.label);
           else if (data.type === 'tool_done')        onToolDone(data.tool);
           else if (data.type === 'itinerary_update') updateItinerary(data.itinerary);
+          else if (data.type === 'deal_result')      onDealResult(data.deal);
+          else if (data.type === 'month_result')     onMonthResult(data.month_data);
           else if (data.type === 'done')   { gotResponse = true; replaceThinkingWithResponse(data.content || '*(No response)*'); await loadTrips(); }
           else if (data.type === 'error')  { gotResponse = true; replaceThinkingWithResponse('**Error:** ' + data.message); }
         }
@@ -488,6 +539,183 @@
 
   function wIcon(c){c=(c||'').toLowerCase();if(c.includes('thunder'))return'⛈';if(c.includes('snow')||c.includes('blizzard'))return'❄️';if(c.includes('sleet')||c.includes('hail'))return'🌨';if(c.includes('rain')||c.includes('shower')||c.includes('drizzle'))return'🌧';if(c.includes('fog')||c.includes('mist'))return'🌫';if(c.includes('overcast'))return'☁️';if(c.includes('cloud')||c.includes('partly'))return'⛅';if(c.includes('sun')||c.includes('clear')||c.includes('mainly'))return'☀️';return'🌤';}
   function fmtDate(d){try{return new Date(d+'T12:00').toLocaleDateString('en-US',{month:'short',day:'numeric'});}catch{return d;}}
+
+  // ════ DEAL HUNTING UI ════
+  function priceColor(pct) {
+    // pct = 0 (cheapest) to 1 (most expensive)
+    if (pct < 0.25) return {bg:'#bbf7d0', fg:'#14532d'};
+    if (pct < 0.50) return {bg:'#fef08a', fg:'#713f12'};
+    if (pct < 0.75) return {bg:'#fed7aa', fg:'#7c2d12'};
+    return {bg:'#fecaca', fg:'#7f1d1d'};
+  }
+
+  function onDealResult(deal) {
+    const heatmap  = deal.price_heatmap || {};
+    const results  = deal.results || [];
+    const best     = results[0];
+    const target   = results.find(r => r.days_from_target === 0);
+    const prices   = Object.values(heatmap);
+    const minP     = Math.min(...prices), maxP = Math.max(...prices);
+    const route    = `${deal.origin_city || deal.origin} → ${deal.destination_city || deal.destination}`;
+
+    // ── Header ──
+    const savingsHtml = (best && target && best.savings_vs_target > 0)
+      ? `<div class="deal-best-pill"><span class="save-amt">-$${best.savings_vs_target.toLocaleString()}</span>vs target</div>`
+      : '';
+
+    // ── Stats row ──
+    const statsHtml = `<div class="deal-stats">
+      <div class="deal-stat">
+        <div class="deal-stat-label">Best Price</div>
+        <div class="deal-stat-value green">$${(best?.price_usd||0).toLocaleString()}</div>
+        <div class="deal-stat-sub">${best?.departure_date||''} (${best?.day_of_week||''})</div>
+      </div>
+      <div class="deal-stat">
+        <div class="deal-stat-label">Your Date</div>
+        <div class="deal-stat-value ${target ? 'red' : ''}">${target ? '$'+target.price_usd.toLocaleString() : '—'}</div>
+        <div class="deal-stat-sub">${deal.target_date}</div>
+      </div>
+      <div class="deal-stat">
+        <div class="deal-stat-label">Best Day to Fly</div>
+        <div class="deal-stat-value">${deal.best_day_of_week||'—'}</div>
+        <div class="deal-stat-sub">avg $${(deal.dow_avg_prices?.[deal.best_day_of_week]||0).toLocaleString()}</div>
+      </div>
+      <div class="deal-stat">
+        <div class="deal-stat-label">Window</div>
+        <div class="deal-stat-value">${prices.length}</div>
+        <div class="deal-stat-sub">dates checked</div>
+      </div>
+    </div>`;
+
+    // ── Price calendar ──
+    const sorted = Object.entries(heatmap).sort(([a],[b]) => a.localeCompare(b));
+    const calCells = sorted.map(([date, price]) => {
+      const pct  = maxP > minP ? (price - minP) / (maxP - minP) : 0;
+      const c    = priceColor(pct);
+      const isBest   = best   && date === best.departure_date;
+      const isTarget = target && date === target.departure_date;
+      const d    = new Date(date + 'T12:00');
+      const dow  = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()];
+      const mon  = d.toLocaleDateString('en-US',{month:'short'});
+      const day  = d.getDate();
+      const cls  = (isBest ? ' is-best' : '') + (isTarget ? ' is-target' : '');
+      const tag  = isBest ? '<div class="pc-tag">★ Best</div>' : isTarget ? '<div class="pc-tag">◎ Target</div>' : '';
+      return `<div class="price-cell${cls}" style="background:${c.bg};color:${c.fg}" onclick="searchFlightsForDate('${date}','${deal.origin}','${deal.destination}')" title="${date}: $${price.toLocaleString()} — click to search flights">
+        <div class="pc-dow">${dow}</div>
+        <div class="pc-date">${mon} ${day}</div>
+        <div class="pc-price">$${price.toLocaleString()}</div>${tag}
+      </div>`;
+    }).join('');
+
+    // ── DOW chips ──
+    const dowHtml = deal.dow_avg_prices ? Object.entries(deal.dow_avg_prices)
+      .sort(([,a],[,b]) => a-b)
+      .map(([dow,avg]) => `<span class="dow-chip ${dow === deal.best_day_of_week ? 'cheapest' : ''}">${dow.slice(0,3)} $${avg.toLocaleString()}</span>`)
+      .join('') : '';
+
+    const html = `<div class="deal-card">
+      <div class="deal-header">
+        <div class="deal-header-left">
+          <div class="deal-title">🎯 Cheapest Dates — ${escapeHtml(route)}</div>
+          <div class="deal-subtitle">${deal.flexibility} around ${deal.target_date} · ${deal.source}</div>
+        </div>
+        ${savingsHtml}
+      </div>
+      ${statsHtml}
+      <div class="price-cal-wrap">
+        <div class="price-cal-title">Price calendar — click any date to search flights</div>
+        <div class="price-cal-grid">${calCells}</div>
+      </div>
+      ${dowHtml ? `<div class="deal-dow"><span style="font-size:10px;font-weight:700;color:var(--text-4);text-transform:uppercase;letter-spacing:.07em;align-self:center">By weekday:</span>${dowHtml}</div>` : ''}
+      <div class="deal-actions">
+        <button class="deal-action-btn primary" onclick="searchFlightsForDate('${best?.departure_date||deal.target_date}','${deal.origin}','${deal.destination}')">✈ Search flights for ${best?.departure_date||'best date'}</button>
+        <button class="deal-action-btn" onclick="findCheapestMonth('${deal.origin}','${deal.destination}')">📊 Show cheapest month</button>
+      </div>
+    </div>`;
+
+    appendDealMessage(html);
+  }
+
+  function onMonthResult(data) {
+    const chrono  = data.results_by_date || [];
+    const ranked  = data.results_by_price || [];
+    const best    = ranked[0];
+    const maxP    = Math.max(...chrono.map(m => m.avg_price_usd));
+    const route   = `${data.origin_city || data.origin} → ${data.destination_city || data.destination}`;
+
+    function barColor(season) {
+      if (!season) return 'var(--sky)';
+      const s = (season.season||'').toLowerCase();
+      if (s === 'peak')     return '#fca5a5';
+      if (s === 'shoulder') return '#fde68a';
+      return '#86efac';
+    }
+    function seasonLabel(season) {
+      if (!season) return '';
+      const e = season.emoji || (season.season==='peak'?'🔴':season.season==='shoulder'?'🟡':'🟢');
+      return e + ' ' + (season.label || season.season || '');
+    }
+
+    const rows = chrono.map(m => {
+      const barPct = Math.round((m.avg_price_usd / maxP) * 100);
+      const isBest = m.recommended;
+      return `<div class="month-row ${isBest ? 'is-best' : ''}" onclick="searchInMonth('${m.month}','${data.origin}','${data.destination}')">
+        <div class="month-lbl">${m.month_label.replace(' ', '\u00a0')}</div>
+        <div class="month-bar-outer"><div class="month-bar-inner" style="width:${barPct}%;background:${barColor(m.season)}"></div></div>
+        <div class="month-price-lbl">$${m.avg_price_usd.toLocaleString()}</div>
+        <div class="month-season-lbl">${seasonLabel(m.season)}</div>
+        ${isBest ? '<span class="month-best-tag">★ Best</span>' : ''}
+      </div>`;
+    }).join('');
+
+    const savings = best?.savings_vs_peak > 0 ? ` — saves $${best.savings_vs_peak.toLocaleString()} vs peak` : '';
+    const html = `<div class="month-card">
+      <div class="month-header">
+        <div class="deal-title">📊 Best Time to Fly — ${escapeHtml(route)}</div>
+        <div class="deal-subtitle">Next ${data.months_analyzed} months · ${data.trip_duration_nights}-night trip</div>
+        ${best ? `<div class="month-best-callout">🏆 Best value: <strong>${best.month_label}</strong> — avg $${best.avg_price_usd.toLocaleString()}/person<div class="save-line">${best.pct_cheaper_than_peak}% cheaper than peak${savings}</div></div>` : ''}
+      </div>
+      <div class="month-chart-wrap">${rows}</div>
+      <div class="month-footer">
+        <strong>Tip:</strong> ${best ? `Flying in ${best.month_label} saves up to $${best.savings_vs_peak.toLocaleString()} per person vs the most expensive month.` : 'Click any month to search flights.'}
+        ${best?.season?.notes ? ' ' + best.season.notes : ''}
+        <br>Click any bar to search flights for that month.
+      </div>
+    </div>`;
+
+    appendDealMessage(html);
+  }
+
+  function appendDealMessage(html) {
+    const d = document.createElement('div');
+    d.className = 'message agent';
+    d.innerHTML = '<div class="avatar">🎯</div><div style="flex:1;min-width:0">' + html + '</div>';
+    messagesEl.appendChild(d);
+    scrollToBottom();
+  }
+
+  function searchFlightsForDate(date, origin, dest) {
+    const msg = `Search flights from ${origin} to ${dest} on ${date}`;
+    inputEl.value = msg;
+    autoResize(inputEl);
+    inputEl.focus();
+    showToast('Ready to search — press Enter to go!');
+  }
+
+  function findCheapestMonth(origin, dest) {
+    inputEl.value = `When is the cheapest month to fly from ${origin} to ${dest}?`;
+    autoResize(inputEl);
+    inputEl.focus();
+  }
+
+  function searchInMonth(yearMonth, origin, dest) {
+    const [y, m] = yearMonth.split('-');
+    const label  = new Date(parseInt(y), parseInt(m)-1, 1).toLocaleDateString('en-US',{month:'long',year:'numeric'});
+    inputEl.value = `Find the cheapest dates in ${label} flying from ${origin} to ${dest}`;
+    autoResize(inputEl);
+    inputEl.focus();
+    showToast('Ready — press Enter to search!');
+  }
 
   loadTrips();
   inputEl.focus();

@@ -244,6 +244,49 @@ def rng_val(seed, lo, hi):
     return random.Random(seed).randint(lo, hi)
 
 
+# ── Deal hunting: realistic price variation ──────────────────────────────────
+# Day-of-week multipliers (Mon=0 … Sun=6). Tue/Wed cheapest, Fri/Sat priciest.
+_DOW_MULT = {0: 0.96, 1: 0.88, 2: 0.87, 3: 0.91, 4: 1.06, 5: 1.09, 6: 1.04}
+
+# Seasonal fare multipliers by month — Northern Hemisphere
+_NH_MONTH_MULT = {
+    1: 0.80, 2: 0.78, 3: 0.88, 4: 0.95,
+    5: 1.02, 6: 1.20, 7: 1.32, 8: 1.28,
+    9: 1.00, 10: 0.90, 11: 0.92, 12: 1.22,
+}
+# Southern-Hemisphere destinations (dest_lat < -15): seasons inverted
+_SH_MONTH_MULT = {
+    1: 1.28, 2: 1.20, 3: 0.98, 4: 0.88,
+    5: 0.90, 6: 1.02, 7: 1.08, 8: 1.00,
+    9: 0.92, 10: 0.95, 11: 1.10, 12: 1.30,
+}
+
+
+def _date_mult(d, dest_lat: float = 0.0) -> float:
+    """Combined day-of-week × seasonal price multiplier for a date."""
+    table = _SH_MONTH_MULT if dest_lat < -15 else _NH_MONTH_MULT
+    return _DOW_MULT[d.weekday()] * table[d.month]
+
+
+def _deal_reason(d, dest_lat: float = 0.0) -> str:
+    """Human-readable explanation of why a date is cheap/expensive."""
+    parts = []
+    dow = d.weekday()
+    if dow in (1, 2):
+        parts.append("midweek — cheapest days to fly")
+    elif dow in (4, 5):
+        parts.append("weekend premium")
+    table = _SH_MONTH_MULT if dest_lat < -15 else _NH_MONTH_MULT
+    m = table[d.month]
+    if m <= 0.82:
+        parts.append("deep off-season")
+    elif m <= 0.95:
+        parts.append("shoulder season")
+    elif m >= 1.25:
+        parts.append("peak season")
+    return " + ".join(parts) if parts else "standard fare period"
+
+
 # ── Amadeus integration (optional) ───────────────────────────────────────────
 
 _amadeus_token   = None
@@ -441,12 +484,14 @@ def find_cheapest_dates(
     """
     Find cheapest departure dates within ±flexibility_days of the target date.
 
-    With Amadeus: uses /v1/shopping/flight-dates for a full month view.
-    Without Amadeus: searches each date in the window with calculated pricing.
+    Uses realistic day-of-week + seasonal pricing multipliers so results are
+    genuinely actionable: Tue/Wed are cheapest, winter months cheapest for
+    most routes, etc.
 
-    Returns sorted cheapest dates with savings vs target date price.
+    Returns price_heatmap (all dates → price) for calendar visualization,
+    ranked results with deal_reason, and day-of-week analysis.
     """
-    from datetime import date, timedelta
+    from datetime import date as date_type, timedelta
 
     o_res = _find_airport(origin)
     d_res = _find_airport(destination)
@@ -476,11 +521,13 @@ def find_cheapest_dates(
     except ValueError:
         return {"status": "error", "message": f"Invalid target_date: '{target_date}'"}
 
-    flex = min(flexibility_days, 30)
-    dates_to_check = [base + timedelta(days=d) for d in range(-flex, flex + 1)]
-    # Remove past dates
+    flex  = min(flexibility_days, 30)
     today = datetime.utcnow().date()
-    dates_to_check = [d for d in dates_to_check if d >= today]
+    dates_to_check = [
+        base + timedelta(days=d)
+        for d in range(-flex, flex + 1)
+        if (base + timedelta(days=d)) >= today
+    ]
 
     if not dates_to_check:
         return {"status": "error", "message": "All dates in the window are in the past."}
@@ -489,29 +536,40 @@ def find_cheapest_dates(
     d_city, d_country, d_lat, d_lon, _ = d_res[1]
     km = _haversine(o_lat, o_lon, d_lat, d_lon)
 
-    results = []
+    results      = []
+    price_heatmap: dict[str, int] = {}
+
     for chk_date in dates_to_check:
-        date_str  = chk_date.isoformat()
-        seed      = int(km) + hash(date_str) % 10000
-        price     = _price_estimate(km, cabin_class, passengers, seed)
-        ret_date  = None
+        date_str   = chk_date.isoformat()
+        seed       = int(km) + hash(date_str) % 10000
+        # Base price × date-aware multiplier (DOW + seasonal)
+        base_price = _price_estimate(km, cabin_class, 1, seed)
+        mult       = _date_mult(chk_date, d_lat)
+        price      = int(base_price * mult) * passengers
+
+        ret_str = None
         if trip_duration_nights:
-            ret = chk_date + timedelta(days=trip_duration_nights)
-            ret_date = ret.isoformat()
-            ret_seed = seed + trip_duration_nights
-            price   += _price_estimate(km, cabin_class, passengers, ret_seed)
+            ret_d    = chk_date + timedelta(days=trip_duration_nights)
+            ret_seed = int(km) + hash(ret_d.isoformat()) % 10000
+            ret_base = _price_estimate(km, cabin_class, 1, ret_seed)
+            price   += int(ret_base * _date_mult(ret_d, d_lat)) * passengers
+            ret_str  = ret_d.isoformat()
+
         delta = (chk_date - base).days
-        results.append({
+        entry = {
             "departure_date":   date_str,
-            "return_date":      ret_date,
+            "return_date":      ret_str,
             "price_usd":        price,
             "days_from_target": delta,
-            "day_label":        f"{'Target' if delta == 0 else (f'+{delta}d' if delta > 0 else f'{delta}d')}",
-        })
+            "day_label":        ("Target" if delta == 0 else (f"+{delta}d" if delta > 0 else f"{delta}d")),
+            "day_of_week":      chk_date.strftime("%A"),
+            "deal_reason":      _deal_reason(chk_date, d_lat),
+        }
+        results.append(entry)
+        price_heatmap[date_str] = price
 
     results.sort(key=lambda x: x["price_usd"])
     target_price = next((r["price_usd"] for r in results if r["days_from_target"] == 0), None)
-    cheapest     = results[0]["price_usd"]
 
     for r in results:
         if target_price:
@@ -521,24 +579,171 @@ def find_cheapest_dates(
             r["savings_vs_target"] = 0
             r["pct_vs_target"]     = 0.0
 
-    best = results[0]
-    summary = (
-        f"Cheapest option: {best['departure_date']} at ${best['price_usd']:,}/person"
-    )
+    # Day-of-week analysis
+    dow_buckets: dict[str, list[int]] = {}
+    for r in results:
+        dow_buckets.setdefault(r["day_of_week"], []).append(r["price_usd"])
+    dow_avg = {dow: int(sum(ps) / len(ps)) for dow, ps in dow_buckets.items()}
+    best_dow = min(dow_avg, key=dow_avg.get)
+
+    # Price stats
+    all_prices  = [r["price_usd"] for r in results]
+    price_stats = {
+        "min":    min(all_prices),
+        "max":    max(all_prices),
+        "avg":    int(sum(all_prices) / len(all_prices)),
+        "target": target_price,
+    }
+
+    best    = results[0]
+    summary = f"Cheapest: {best['departure_date']} ({best['day_of_week']}) — ${best['price_usd']:,}/person"
     if best["days_from_target"] != 0 and target_price:
-        summary += f" — saves ${best['savings_vs_target']:,} vs your target date"
+        pct = abs(best["pct_vs_target"])
+        summary += f" — saves ${best['savings_vs_target']:,} ({pct:.0f}% cheaper) vs your target date"
 
     return {
-        "status":        "success",
-        "origin":        origin_iata,
-        "destination":   dest_iata,
-        "target_date":   target_date,
-        "flexibility":   f"±{flex} days",
-        "cheapest_price": cheapest,
-        "target_price":  target_price,
-        "results":       results[:20],  # top 20
-        "summary":       summary,
-        "source":        "Calculated pricing (set AMADEUS_CLIENT_ID for live fares)",
+        "status":             "success",
+        "origin":             origin_iata,
+        "origin_city":        o_city,
+        "destination":        dest_iata,
+        "destination_city":   d_city,
+        "target_date":        target_date,
+        "flexibility":        f"±{flex} days",
+        "cheapest_price":     best["price_usd"],
+        "target_price":       target_price,
+        "best_day_of_week":   best_dow,
+        "dow_avg_prices":     dow_avg,
+        "price_stats":        price_stats,
+        "price_heatmap":      price_heatmap,
+        "results":            results[:20],
+        "summary":            summary,
+        "source":             "Calculated pricing (set AMADEUS_CLIENT_ID for live fares)",
+    }
+
+
+def find_cheapest_month(
+    origin: str,
+    destination: str,
+    months_ahead: int = 12,
+    trip_duration_nights: int = 7,
+    passengers: int = 1,
+    cabin_class: str = "economy",
+) -> dict:
+    """
+    Scan the next N months to find the cheapest time to fly this route.
+
+    Samples representative midweek dates in each month, applies realistic
+    day-of-week + seasonal pricing, and overlays season context (peak/shoulder/off).
+    Returns months ranked cheapest-first plus a chronological list for charting.
+    """
+    from datetime import date as date_type, timedelta
+    from calendar import monthrange
+
+    o_res = _find_airport(origin)
+    d_res = _find_airport(destination)
+    if not o_res:
+        return {"status": "error", "message": f"Unknown origin: '{origin}'"}
+    if not d_res:
+        return {"status": "error", "message": f"Unknown destination: '{destination}'"}
+
+    origin_iata = o_res[0]
+    dest_iata   = d_res[0]
+    o_city, o_country, o_lat, o_lon, _ = o_res[1]
+    d_city, d_country, d_lat, d_lon, _ = d_res[1]
+    km = _haversine(o_lat, o_lon, d_lat, d_lon)
+
+    today = datetime.utcnow().date()
+    month_results = []
+
+    for i in range(months_ahead):
+        total_month = today.month - 1 + i
+        year        = today.year + total_month // 12
+        month       = total_month % 12 + 1
+        _, days_in  = monthrange(year, month)
+
+        # Sample midweek dates spread across the month
+        sample_dates = [
+            date_type(year, month, day)
+            for day in range(1, days_in + 1)
+            if date_type(year, month, day) >= today
+            and date_type(year, month, day).weekday() in (1, 2, 3)  # Tue/Wed/Thu
+        ]
+        if not sample_dates:
+            continue
+        # Take up to 8 evenly spread samples
+        step         = max(1, len(sample_dates) // 8)
+        sample_dates = sample_dates[::step][:8]
+
+        prices = []
+        for d in sample_dates:
+            seed       = int(km) + hash(d.isoformat()) % 10000
+            base_price = _price_estimate(km, cabin_class, 1, seed)
+            price      = int(base_price * _date_mult(d, d_lat)) * passengers
+            if trip_duration_nights:
+                ret_d  = d + timedelta(days=trip_duration_nights)
+                r_seed = int(km) + hash(ret_d.isoformat()) % 10000
+                price += int(_price_estimate(km, cabin_class, 1, r_seed) * _date_mult(ret_d, d_lat)) * passengers
+            prices.append((d, price))
+
+        prices.sort(key=lambda x: x[1])
+        min_d, min_price = prices[0]
+        avg_price        = int(sum(p for _, p in prices) / len(prices))
+        max_price        = max(p for _, p in prices)
+
+        season_info = None
+        try:
+            from tools.seasons import get_season
+            season_info = get_season(destination, month)
+        except Exception:
+            pass
+
+        month_results.append({
+            "month":         f"{year}-{month:02d}",
+            "month_label":   date_type(year, month, 1).strftime("%B %Y"),
+            "avg_price_usd": avg_price,
+            "min_price_usd": min_price,
+            "max_price_usd": max_price,
+            "cheapest_date": min_d.isoformat(),
+            "cheapest_dow":  min_d.strftime("%A"),
+            "season":        season_info,
+        })
+
+    if not month_results:
+        return {"status": "error", "message": "No future dates found in the requested range."}
+
+    peak_price = max(m["avg_price_usd"] for m in month_results)
+    month_results.sort(key=lambda x: x["avg_price_usd"])
+
+    for idx, m in enumerate(month_results):
+        m["rank"]                    = idx + 1
+        m["savings_vs_peak"]         = peak_price - m["avg_price_usd"]
+        m["pct_cheaper_than_peak"]   = round((1 - m["avg_price_usd"] / peak_price) * 100, 1)
+        m["recommended"]             = (idx == 0)
+
+    # Chronological copy for bar-chart rendering
+    chrono = sorted(month_results, key=lambda x: x["month"])
+    best   = month_results[0]
+
+    summary = (
+        f"Best value: {best['month_label']} — avg ${best['avg_price_usd']:,}/person, "
+        f"{best['pct_cheaper_than_peak']:.0f}% cheaper than the most expensive month. "
+        f"Cheapest specific date: {best['cheapest_date']} ({best['cheapest_dow']})"
+    )
+
+    return {
+        "status":               "success",
+        "origin":               origin_iata,
+        "origin_city":          o_city,
+        "destination":          dest_iata,
+        "destination_city":     d_city,
+        "trip_duration_nights": trip_duration_nights,
+        "months_analyzed":      len(month_results),
+        "cheapest_month":       best["month"],
+        "cheapest_month_label": best["month_label"],
+        "results_by_price":     month_results,
+        "results_by_date":      chrono,
+        "summary":              summary,
+        "source":               "Calculated pricing + season data",
     }
 
 
@@ -548,24 +753,32 @@ def _amadeus_cheapest_dates(
     trip_duration: int | None,
 ) -> dict | None:
     """Amadeus /v1/shopping/flight-dates — cheapest dates for a route."""
+    from datetime import timedelta
+
     token = _get_amadeus_token()
     if not token:
         return None
     host = os.getenv("AMADEUS_HOST", "https://test.api.amadeus.com")
 
-    # Parse target date → derive a departure date range for the API
     try:
-        base = datetime.strptime(target_date, "%Y-%m-%d").date()
+        base     = datetime.strptime(target_date, "%Y-%m-%d").date()
+        win_start = base - timedelta(days=flexibility_days)
+        win_end   = base + timedelta(days=flexibility_days)
+        today    = datetime.utcnow().date()
+        if win_start < today:
+            win_start = today
     except ValueError:
         return None
 
+    # Pass the full window as a date range so Amadeus returns all dates at once
+    date_range = f"{win_start},{win_end}"
     params: dict = {
-        "origin":          origin,
-        "destination":     destination,
-        "departureDate":   target_date,
-        "oneWay":          "false" if trip_duration else "true",
-        "currency":        "USD",
-        "viewBy":          "DATE",
+        "origin":        origin,
+        "destination":   destination,
+        "departureDate": date_range,
+        "oneWay":        "false" if trip_duration else "true",
+        "currency":      "USD",
+        "viewBy":        "DATE",
     }
     if trip_duration:
         params["duration"] = trip_duration
@@ -583,8 +796,15 @@ def _amadeus_cheapest_dates(
     if not data:
         return None
 
-    from datetime import timedelta
-    results = []
+    # Try to get destination lat for deal_reason (best-effort)
+    dest_lat = 0.0
+    d_res    = _find_airport(destination)
+    if d_res:
+        dest_lat = d_res[1][2]  # lat is index 2
+
+    results      = []
+    price_heatmap: dict[str, int] = {}
+
     for item in data:
         dep_date = item.get("departureDate", "")
         price    = float(item.get("price", {}).get("total", 0))
@@ -594,15 +814,17 @@ def _amadeus_cheapest_dates(
             chk = datetime.strptime(dep_date, "%Y-%m-%d").date()
         except ValueError:
             continue
-        delta = (chk - base).days
-        if abs(delta) > flexibility_days:
-            continue
+        delta     = (chk - base).days
+        price_int = int(price * passengers)
+        price_heatmap[dep_date] = price_int
         results.append({
             "departure_date":   dep_date,
             "return_date":      item.get("returnDate"),
-            "price_usd":        int(price * passengers),
+            "price_usd":        price_int,
             "days_from_target": delta,
-            "day_label":        f"{'Target' if delta == 0 else (f'+{delta}d' if delta > 0 else f'{delta}d')}",
+            "day_label":        ("Target" if delta == 0 else (f"+{delta}d" if delta > 0 else f"{delta}d")),
+            "day_of_week":      chk.strftime("%A"),
+            "deal_reason":      _deal_reason(chk, dest_lat),
         })
 
     if not results:
@@ -619,23 +841,39 @@ def _amadeus_cheapest_dates(
             r["savings_vs_target"] = 0
             r["pct_vs_target"]     = 0.0
 
-    best     = results[0]
-    cheapest = best["price_usd"]
-    summary  = f"Cheapest: {best['departure_date']} at ${cheapest:,}/person"
+    dow_buckets: dict[str, list[int]] = {}
+    for r in results:
+        dow_buckets.setdefault(r["day_of_week"], []).append(r["price_usd"])
+    dow_avg  = {dow: int(sum(ps) / len(ps)) for dow, ps in dow_buckets.items()}
+    best_dow = min(dow_avg, key=dow_avg.get)
+
+    all_prices  = [r["price_usd"] for r in results]
+    price_stats = {
+        "min": min(all_prices), "max": max(all_prices),
+        "avg": int(sum(all_prices) / len(all_prices)), "target": target_price,
+    }
+
+    best    = results[0]
+    summary = f"Cheapest: {best['departure_date']} ({best['day_of_week']}) — ${best['price_usd']:,}/person"
     if best["days_from_target"] != 0 and target_price:
-        summary += f" — saves ${best['savings_vs_target']:,} vs your target date"
+        pct = abs(best["pct_vs_target"])
+        summary += f" — saves ${best['savings_vs_target']:,} ({pct:.0f}% cheaper) vs your target date"
 
     return {
-        "status":         "success",
-        "origin":         origin,
-        "destination":    destination,
-        "target_date":    target_date,
-        "flexibility":    f"±{flexibility_days} days",
-        "cheapest_price": cheapest,
-        "target_price":   target_price,
-        "results":        results[:20],
-        "summary":        summary,
-        "source":         "Amadeus (live pricing)",
+        "status":           "success",
+        "origin":           origin,
+        "destination":      destination,
+        "target_date":      target_date,
+        "flexibility":      f"±{flexibility_days} days",
+        "cheapest_price":   best["price_usd"],
+        "target_price":     target_price,
+        "best_day_of_week": best_dow,
+        "dow_avg_prices":   dow_avg,
+        "price_stats":      price_stats,
+        "price_heatmap":    price_heatmap,
+        "results":          results[:20],
+        "summary":          summary,
+        "source":           "Amadeus (live pricing)",
     }
 
 

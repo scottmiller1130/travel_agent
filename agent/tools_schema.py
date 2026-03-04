@@ -109,6 +109,31 @@ TOOLS: list[dict] = [
         },
     },
     {
+        "name": "find_cheapest_month",
+        "description": (
+            "Scan the next N months to find the cheapest time to fly a route. "
+            "Use this when the user asks 'when is cheapest to fly to X?' or has flexible travel dates. "
+            "Returns monthly average prices with season context (peak/shoulder/off) and savings vs peak month. "
+            "Returns both a price-ranked list and a chronological list for charting."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "origin": {"type": "string", "description": "Origin city or IATA code"},
+                "destination": {"type": "string", "description": "Destination city or IATA code"},
+                "months_ahead": {"type": "integer", "description": "How many months to scan", "default": 12},
+                "trip_duration_nights": {"type": "integer", "description": "Length of stay for round-trip pricing", "default": 7},
+                "passengers": {"type": "integer", "default": 1},
+                "cabin_class": {
+                    "type": "string",
+                    "enum": ["economy", "premium_economy", "business", "first"],
+                    "default": "economy",
+                },
+            },
+            "required": ["origin", "destination"],
+        },
+    },
+    {
         "name": "get_weather",
         "description": (
             "Get weather forecast for a destination during a date range. Returns daily forecasts, "
