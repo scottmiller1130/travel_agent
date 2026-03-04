@@ -245,4 +245,90 @@ TOOLS: list[dict] = [
             "required": [],
         },
     },
+    {
+        "name": "update_itinerary",
+        "description": (
+            "Push a structured trip itinerary to the visual planning board. "
+            "Call this whenever you have a concrete day-by-day plan — the user will see "
+            "draggable cards they can rearrange across days. Include all known flights, "
+            "hotels, activities, transfers, plus any issues or budget breakdown. "
+            "Call again whenever the plan changes significantly."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "destination": {"type": "string", "description": "Primary trip destination"},
+                "start_date": {"type": "string", "description": "YYYY-MM-DD"},
+                "end_date": {"type": "string", "description": "YYYY-MM-DD"},
+                "days": {
+                    "type": "array",
+                    "description": "Day-by-day breakdown of the trip",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "date": {"type": "string", "description": "YYYY-MM-DD"},
+                            "label": {"type": "string", "description": "Short theme e.g. 'Arrival', 'Beach Day', 'City Tour'"},
+                            "weather": {
+                                "type": "object",
+                                "description": "Weather forecast if known",
+                                "properties": {
+                                    "condition": {"type": "string"},
+                                    "temp_high": {"type": "number", "description": "High temp in Celsius"},
+                                    "temp_low": {"type": "number", "description": "Low temp in Celsius"},
+                                },
+                            },
+                            "items": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "id": {"type": "string", "description": "Unique ID e.g. 'f1', 'h1', 'a1'"},
+                                        "type": {
+                                            "type": "string",
+                                            "enum": ["flight", "hotel", "activity", "transfer", "restaurant", "free_time"],
+                                        },
+                                        "title": {"type": "string"},
+                                        "subtitle": {"type": "string", "description": "Secondary info (airline, address, etc.)"},
+                                        "time": {"type": "string", "description": "Start time HH:MM 24h"},
+                                        "end_time": {"type": "string", "description": "End time HH:MM"},
+                                        "duration_hours": {"type": "number"},
+                                        "price_usd": {"type": "number"},
+                                        "notes": {"type": "string"},
+                                        "status": {"type": "string", "enum": ["confirmed", "suggested", "alternative"]},
+                                    },
+                                    "required": ["id", "type", "title"],
+                                },
+                            },
+                        },
+                        "required": ["date", "items"],
+                    },
+                },
+                "budget": {
+                    "type": "object",
+                    "description": "Estimated cost breakdown by category in USD",
+                    "properties": {
+                        "flights": {"type": "number"},
+                        "hotels": {"type": "number"},
+                        "activities": {"type": "number"},
+                        "food": {"type": "number"},
+                        "transport": {"type": "number"},
+                    },
+                },
+                "issues": {
+                    "type": "array",
+                    "description": "Known conflicts or warnings to surface on the board",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "severity": {"type": "string", "enum": ["error", "warning", "info"]},
+                            "message": {"type": "string"},
+                            "item_ids": {"type": "array", "items": {"type": "string"}},
+                        },
+                        "required": ["severity", "message"],
+                    },
+                },
+            },
+            "required": ["destination", "days"],
+        },
+    },
 ]

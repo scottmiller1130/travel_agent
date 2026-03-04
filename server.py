@@ -50,6 +50,7 @@ def get_or_create_session(session_id: str) -> dict:
             "agent": TravelAgent(),
             "prefs": PreferenceStore(),
             "trips": TripStore(),
+            "itinerary": None,
         }
     return SESSIONS[session_id]
 
@@ -87,6 +88,8 @@ async def chat(session_id: str, body: ChatRequest):
 
     def progress_callback(event_type: str, data: dict):
         """Called from the agent thread; pushes SSE events to the async queue."""
+        if event_type == "itinerary_update":
+            session["itinerary"] = data.get("itinerary")
         asyncio.run_coroutine_threadsafe(
             event_queue.put({"type": event_type, **data}),
             loop,
@@ -130,6 +133,15 @@ async def chat(session_id: str, body: ChatRequest):
             "X-Accel-Buffering": "no",  # disable nginx buffering if behind proxy
         },
     )
+
+
+# ---------------------------------------------------------------------------
+# Itinerary (visual board state)
+# ---------------------------------------------------------------------------
+@app.get("/api/itinerary/{session_id}")
+async def get_itinerary(session_id: str):
+    session = get_or_create_session(session_id)
+    return JSONResponse({"itinerary": session.get("itinerary")})
 
 
 # ---------------------------------------------------------------------------

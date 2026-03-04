@@ -29,6 +29,7 @@ TOOL_LABELS = {
     "get_preferences": "Loading your preferences...",
     "save_trip": "Saving trip...",
     "get_trips": "Loading trip history...",
+    "update_itinerary": "Building your trip board...",
 }
 
 from memory.preferences import PreferenceStore
@@ -62,6 +63,7 @@ How you work:
 5. After booking, add the trip to the calendar automatically.
 6. Be proactive: if you notice a better flight option, a weather issue, or a price drop opportunity, mention it.
 7. Keep a running trip budget and flag if options exceed it.
+8. Whenever you have a concrete day-by-day plan (with specific dates, flights, or activities), call update_itinerary to populate the visual trip board. Call it again whenever the plan changes meaningfully. Include weather per day if you've checked it, and flag any issues (timing conflicts, missing transfers, tight connections, etc.).
 
 Tone: Knowledgeable, efficient, and personalized. You know the user's preferences and apply them automatically.
 """
@@ -85,6 +87,7 @@ class TravelAgent:
         self._confirm = confirm_callback or (lambda msg: False)
         self._conversation: list[dict] = []
         self._current_trip: dict = {}
+        self._progress_callback = None
 
     def chat(self, user_message: str, progress_callback: Callable | None = None) -> str:
         """Send a message and run the agentic loop until a final response is produced.
@@ -94,6 +97,7 @@ class TravelAgent:
                                Called with ("tool_start", {"tool": ..., "label": ...})
                                and ("tool_done", {"tool": ...}) around each tool call.
         """
+        self._progress_callback = progress_callback
         self._conversation.append({"role": "user", "content": user_message})
         system = self._build_system_prompt()
 
@@ -181,6 +185,7 @@ class TravelAgent:
             "get_preferences": lambda i: self._prefs.get_all(),
             "save_trip": self._handle_save_trip,
             "get_trips": self._handle_get_trips,
+            "update_itinerary": self._handle_update_itinerary,
         }
 
         handler = dispatch.get(name)
@@ -203,6 +208,11 @@ class TravelAgent:
         trip_id = self._trips.save_trip(trip)
         self._current_trip = trip
         return {"status": "success", "trip_id": trip_id, "message": "Trip saved."}
+
+    def _handle_update_itinerary(self, inputs: dict) -> dict:
+        if self._progress_callback:
+            self._progress_callback("itinerary_update", {"itinerary": inputs})
+        return {"status": "success", "message": "Trip board updated."}
 
     def _handle_get_trips(self, inputs: dict) -> dict:
         status = inputs.get("status")
