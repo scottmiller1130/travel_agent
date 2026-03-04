@@ -1,103 +1,221 @@
 """
-Maps and places tool — POI search and distance/travel time estimates.
-Uses mock data; swap in Google Maps API when key is set.
+Maps and places tool — real POI data from OpenStreetMap.
+Uses Nominatim for geocoding and Overpass API for POI search.
+No API key or registration required.
+
+Nominatim usage policy: max 1 req/sec, include a User-Agent.
 """
 
-import os
-import random
+import math
+import time
 
+try:
+    import httpx as _httpx
+    _HTTPX = True
+except ImportError:
+    _HTTPX = False
 
-POPULAR_POIS = {
-    "lisbon": ["Belém Tower", "Jerónimos Monastery", "Alfama District", "Time Out Market", "Sintra", "LX Factory"],
-    "paris": ["Eiffel Tower", "Louvre Museum", "Notre-Dame Cathedral", "Montmartre", "Versailles", "Musée d'Orsay"],
-    "barcelona": ["Sagrada Família", "Park Güell", "Las Ramblas", "Gothic Quarter", "Camp Nou", "Barceloneta Beach"],
-    "rome": ["Colosseum", "Vatican Museums", "Trevi Fountain", "Pantheon", "Borghese Gallery", "Trastevere"],
-    "bali": ["Ubud Monkey Forest", "Tanah Lot Temple", "Tegallalang Rice Terraces", "Seminyak Beach", "Uluwatu Temple"],
-    "london": ["Big Ben", "Tower of London", "British Museum", "Covent Garden", "Borough Market", "Hyde Park"],
-    "tokyo": ["Senso-ji Temple", "Shibuya Crossing", "Tsukiji Market", "Meiji Shrine", "Akihabara", "Mount Fuji"],
-    "new york": ["Central Park", "Metropolitan Museum", "Brooklyn Bridge", "Times Square", "The High Line", "MoMA"],
+NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
+OVERPASS_URL  = "https://overpass-api.de/api/interpreter"
+HEADERS       = {"User-Agent": "TravelAgentApp/1.0 (travel-agent-demo)"}
+
+# Map our category names to OSM tags
+OSM_CATEGORY_MAP = {
+    "restaurant":   '[amenity~"restaurant|cafe|fast_food|food_court"]',
+    "museum":       '[tourism~"museum|gallery|attraction"][name]',
+    "attraction":   '[tourism~"attraction|viewpoint|museum|gallery|theme_park|zoo|aquarium"][name]',
+    "hotel":        '[tourism~"hotel|hostel|guest_house|motel"][name]',
+    "beach":        '[natural="beach"][name]',
+    "park":         '[leisure~"park|nature_reserve|garden"][name]',
+    "shopping":     '[shop~"mall|department_store|market|supermarket"][name]',
+    "bar":          '[amenity~"bar|pub|nightclub"][name]',
+    "cafe":         '[amenity~"cafe|coffee_shop"][name]',
+    "nightlife":    '[amenity~"bar|pub|nightclub|casino"][name]',
+    "transport":    '[amenity~"bus_station|taxi|ferry_terminal"][name]',
 }
 
-CATEGORY_POIS = {
-    "restaurant": ["La Trattoria", "Saffron Garden", "The Blue Anchor", "Mama Rosa's", "Fusion 88", "Harbor View"],
-    "museum": ["City History Museum", "Modern Art Gallery", "Natural Science Museum", "Archaeological Museum"],
-    "beach": ["North Beach", "Crystal Cove", "Sunset Bay", "Palm Shore"],
-    "park": ["Central Gardens", "Riverside Park", "Mountain View Reserve"],
-    "shopping": ["Grand Market Hall", "Old Town Bazaar", "Fashion District Mall", "Artisan Market"],
-}
+
+def _geocode_city(city: str) -> dict | None:
+    """Return bounding box and center for a city."""
+    try:
+        time.sleep(0.3)  # Respect Nominatim rate limit
+        r = _httpx.get(NOMINATIM_URL, headers=HEADERS, params={
+            "q": city, "format": "json", "limit": 1,
+            "featuretype": "city,town,village",
+            "addressdetails": 0,
+        }, timeout=8)
+        data = r.json()
+        if not data:
+            return None
+        loc = data[0]
+        bb = loc.get("boundingbox", [])
+        return {
+            "lat":     float(loc["lat"]),
+            "lon":     float(loc["lon"]),
+            "name":    loc.get("display_name", city).split(",")[0].strip(),
+            "bbox":    [float(b) for b in bb] if len(bb) == 4 else None,
+        }
+    except Exception:
+        return None
 
 
-def search_places(
-    destination: str,
-    category: str = "attraction",
-    query: str | None = None,
-    limit: int = 6,
-) -> dict:
-    """Search for places of interest in a destination."""
-    if os.getenv("GOOGLE_MAPS_API_KEY"):
-        raise NotImplementedError("Real Google Maps integration not yet wired up")
+def _overpass_pois(bbox: list[float], osm_filter: str, limit: int) -> list[dict]:
+    """Query Overpass for POIs within a bounding box."""
+    s, n, w, e = bbox[0], bbox[1], bbox[2], bbox[3]
+    # Expand box slightly if very small
+    spread = max(abs(n - s), abs(e - w))
+    if spread < 0.05:
+        pad = (0.05 - spread) / 2
+        s -= pad; n += pad; w -= pad; e += pad
 
-    dest_lower = destination.lower()
-    poi_list = None
-    for city, pois in POPULAR_POIS.items():
-        if city in dest_lower:
-            poi_list = pois
-            break
+    query = f"""
+[out:json][timeout:12];
+(
+  node{osm_filter}({s},{w},{n},{e});
+  way{osm_filter}({s},{w},{n},{e});
+);
+out center {limit * 2};
+""".strip()
 
-    if poi_list is None:
-        cat_lower = category.lower()
-        for cat, pois in CATEGORY_POIS.items():
-            if cat in cat_lower:
-                poi_list = pois
-                break
-        poi_list = poi_list or [f"Popular Attraction {i+1}" in destination for i in range(6)]
-        poi_list = [f"Popular {category.title()} {i+1} in {destination}" for i in range(6)]
+    r = _httpx.post(OVERPASS_URL, data={"data": query}, timeout=15)
+    r.raise_for_status()
+    elements = r.json().get("elements", [])
 
-    random.seed(f"{destination}{category}")
     results = []
-    for i, name in enumerate(poi_list[:limit]):
+    for el in elements:
+        tags = el.get("tags", {})
+        name = tags.get("name") or tags.get("name:en")
+        if not name:
+            continue
+        lat = el.get("lat") or el.get("center", {}).get("lat")
+        lon = el.get("lon") or el.get("center", {}).get("lon")
         results.append({
-            "place_id": f"PLC{i+1:03d}",
-            "name": name,
-            "category": category,
-            "rating": round(random.uniform(3.8, 5.0), 1),
-            "review_count": random.randint(100, 15000),
-            "address": f"{random.randint(1, 200)} {random.choice(['Main St', 'Old Town Sq', 'Via Roma', 'Rue de la Paix'])}, {destination}",
-            "opening_hours": "09:00–18:00" if category != "restaurant" else "12:00–23:00",
-            "price_range": random.choice(["Free", "$", "$$", "$$$"]),
-            "description": f"A must-visit {category} in {destination}.",
-            "recommended_duration": f"{random.randint(1, 4)} hour(s)",
+            "name":         name,
+            "lat":          lat,
+            "lon":          lon,
+            "website":      tags.get("website") or tags.get("contact:website"),
+            "phone":        tags.get("phone") or tags.get("contact:phone"),
+            "opening_hours":tags.get("opening_hours"),
+            "cuisine":      tags.get("cuisine"),
+            "stars":        tags.get("stars"),
+            "wheelchair":   tags.get("wheelchair"),
+            "description":  tags.get("description"),
         })
+    return results[:limit]
+
+
+def _haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Distance in km between two lat/lon points."""
+    R = 6371.0
+    φ1, φ2 = math.radians(lat1), math.radians(lat2)
+    dφ = math.radians(lat2 - lat1)
+    dλ = math.radians(lon2 - lon1)
+    a = math.sin(dφ/2)**2 + math.cos(φ1) * math.cos(φ2) * math.sin(dλ/2)**2
+    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+
+def search_places(destination: str, category: str = "attraction",
+                  query: str | None = None, limit: int = 8) -> dict:
+    """
+    Search for real places of interest using OpenStreetMap data.
+    No API key required.
+    """
+    if not _HTTPX:
+        return {"status": "error", "message": "httpx not installed"}
+
+    search_query = f"{query} {destination}" if query else destination
+    loc = _geocode_city(search_query)
+    if not loc:
+        return {"status": "error", "message": f"Could not locate '{destination}'"}
+
+    if not loc["bbox"]:
+        # Fake a small bounding box around the point
+        d = 0.15
+        loc["bbox"] = [loc["lat"] - d, loc["lat"] + d, loc["lon"] - d, loc["lon"] + d]
+
+    osm_filter = OSM_CATEGORY_MAP.get(category.lower(),
+                                      '[tourism~"attraction|viewpoint|museum"][name]')
+
+    try:
+        pois = _overpass_pois(loc["bbox"], osm_filter, limit)
+    except Exception as exc:
+        return {"status": "error", "message": f"Places lookup failed: {exc}",
+                "destination": destination}
+
+    # Build rich result objects
+    results = []
+    for p in pois:
+        entry = {
+            "name":      p["name"],
+            "category":  category,
+            "address":   destination,
+        }
+        if p.get("website"):
+            entry["website"] = p["website"]
+        if p.get("opening_hours"):
+            entry["opening_hours"] = p["opening_hours"]
+        if p.get("cuisine"):
+            entry["cuisine"] = p["cuisine"].replace(";", ", ")
+        if p.get("stars"):
+            entry["stars"] = p["stars"]
+        if p.get("description"):
+            entry["description"] = p["description"][:200]
+        results.append(entry)
 
     return {
-        "status": "success",
-        "destination": destination,
-        "category": category,
-        "query": query,
-        "results": results,
-        "note": "Mock data — connect Google Maps/Foursquare for live results",
+        "status":      "success",
+        "destination": loc["name"],
+        "coordinates": {"lat": loc["lat"], "lon": loc["lon"]},
+        "category":    category,
+        "results":     results,
+        "count":       len(results),
+        "source":      "OpenStreetMap (live — no API key required)",
     }
 
 
 def get_distance(origin: str, destination: str, mode: str = "transit") -> dict:
-    """Get travel distance and time between two places."""
-    if os.getenv("GOOGLE_MAPS_API_KEY"):
-        raise NotImplementedError("Real Google Maps integration not yet wired up")
+    """
+    Calculate real distance between two places using Nominatim geocoding
+    + haversine formula. Travel time estimated from real average speeds.
+    No API key required.
+    """
+    if not _HTTPX:
+        return {"status": "error", "message": "httpx not installed"}
 
-    random.seed(f"{origin}{destination}{mode}")
-    km = random.randint(1, 80)
-    speeds = {"driving": 40, "transit": 25, "walking": 5, "cycling": 15}
-    speed = speeds.get(mode, 25)
+    origin_loc = _geocode_city(origin)
+    time.sleep(0.3)
+    dest_loc   = _geocode_city(destination)
+
+    if not origin_loc:
+        return {"status": "error", "message": f"Could not locate '{origin}'"}
+    if not dest_loc:
+        return {"status": "error", "message": f"Could not locate '{destination}'"}
+
+    km = _haversine(origin_loc["lat"], origin_loc["lon"], dest_loc["lat"], dest_loc["lon"])
+
+    # Real-world average speeds (km/h) accounting for actual travel overhead
+    speeds = {
+        "driving":  55,   # city + highway mix
+        "transit":  35,   # including waits
+        "walking":   5,
+        "cycling":  14,
+        "flying":  750,   # includes airport time at short distances
+    }
+    speed   = speeds.get(mode, 35)
     minutes = int((km / speed) * 60)
+    if mode == "flying" and km < 300:
+        minutes += 120  # airport overhead dominates short flights
 
     return {
-        "status": "success",
-        "origin": origin,
-        "destination": destination,
-        "mode": mode,
-        "distance_km": km,
-        "distance_miles": round(km * 0.621, 1),
-        "duration_minutes": minutes,
-        "duration_display": f"{minutes // 60}h {minutes % 60}m" if minutes >= 60 else f"{minutes}m",
-        "note": "Mock data — connect Google Maps Directions API for real routing",
+        "status":          "success",
+        "origin":          origin_loc["name"],
+        "destination":     dest_loc["name"],
+        "origin_coords":   {"lat": origin_loc["lat"], "lon": origin_loc["lon"]},
+        "dest_coords":     {"lat": dest_loc["lat"],   "lon": dest_loc["lon"]},
+        "mode":            mode,
+        "distance_km":     round(km, 1),
+        "distance_miles":  round(km * 0.621, 1),
+        "duration_minutes":minutes,
+        "duration_display":f"{minutes // 60}h {minutes % 60}m" if minutes >= 60 else f"{minutes}m",
+        "source":          "OpenStreetMap Nominatim (real coordinates) + haversine distance",
     }

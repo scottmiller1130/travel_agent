@@ -325,8 +325,11 @@
     delete activeTools[tool];
   }
 
+  const messageQueue = [];
+
   async function sendMessage() {
-    const text = inputEl.value.trim(); if (!text || isThinking) return;
+    const text = inputEl.value.trim(); if (!text) return;
+    if (isThinking) { showToast('Agent is thinking — your message is queued.'); messageQueue.push(text); inputEl.value = ''; autoResize(inputEl); return; }
     isThinking = true; sendBtn.disabled = true; inputEl.value = ''; autoResize(inputEl);
     addUserMessage(text); addThinkingMessage();
     try {
@@ -359,7 +362,14 @@
       if (!gotResponse) replaceThinkingWithResponse('*(Connection lost. Please try again.)*');
     } catch (err) {
       replaceThinkingWithResponse('**Connection error:** ' + err.message);
-    } finally { isThinking = false; sendBtn.disabled = false; inputEl.focus(); }
+    } finally {
+      isThinking = false; sendBtn.disabled = false; inputEl.focus();
+      if (messageQueue.length > 0) {
+        const next = messageQueue.shift();
+        inputEl.value = next;
+        setTimeout(() => sendMessage(), 300);
+      }
+    }
   }
 
   async function loadTrips() {
@@ -374,15 +384,32 @@
   }
 
   async function resetConversation() {
-    if (!confirm('Reset the conversation? Saved trips and preferences are kept.')) return;
-    await fetch('/api/reset/' + sessionId, { method: 'POST' });
-    currentItinerary = null; localStorage.removeItem('itin_' + sessionId); location.reload();
+    // Use a custom modal instead of confirm() which is blocked in HTTPS iframes/cross-origin
+    showConfirmToast('Reset conversation? Trips and preferences are kept.', async () => {
+      await fetch('/api/reset/' + sessionId, { method: 'POST' });
+      currentItinerary = null; localStorage.removeItem('itin_' + sessionId); location.reload();
+    });
+  }
+
+  function showConfirmToast(msg, onConfirm) {
+    const existing = document.getElementById('confirm-toast');
+    if (existing) existing.remove();
+    const el = document.createElement('div');
+    el.id = 'confirm-toast';
+    el.style.cssText = 'position:fixed;bottom:20px;right:20px;background:#22263a;border:1px solid #f87171;border-radius:10px;padding:14px 16px;font-size:13px;color:#e2e8f0;z-index:200;max-width:320px;box-shadow:0 4px 20px rgba(0,0,0,.5)';
+    el.innerHTML = '<div style="margin-bottom:10px">' + escapeHtml(msg) + '</div>' +
+      '<div style="display:flex;gap:8px;justify-content:flex-end">' +
+      '<button onclick="document.getElementById(\'confirm-toast\').remove()" style="padding:5px 12px;border-radius:6px;border:1px solid #2e3350;background:transparent;color:#64748b;cursor:pointer;font-size:12px">Cancel</button>' +
+      '<button id="confirm-yes-btn" style="padding:5px 12px;border-radius:6px;border:none;background:#f87171;color:#fff;cursor:pointer;font-size:12px;font-weight:600">Reset</button>' +
+      '</div>';
+    document.body.appendChild(el);
+    document.getElementById('confirm-yes-btn').onclick = () => { el.remove(); onConfirm(); };
   }
   function newTrip() { inputEl.value = ''; inputEl.focus(); showToast('Start typing to plan your next trip!'); }
   function fillHint(el) { inputEl.value = el.textContent; autoResize(inputEl); inputEl.focus(); }
   function handleKey(e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }
   function autoResize(el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 140) + 'px'; }
-  function escapeHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function escapeHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 
   // ════════════════════════════════
   //  TRIP BOARD
@@ -431,8 +458,11 @@
     const total = Object.values(budget).reduce((s, v) => s + (v || 0), 0);
     const chips = Object.entries(budget).filter(([,v]) => v > 0)
       .map(([k,v]) => '<span class="budget-chip">' + (BEMOJI[k]||'•') + ' $' + v.toLocaleString() + '</span>').join('');
-    el.innerHTML = '<div class="budget-row"><span class="budget-total">Est. $' + total.toLocaleString() + '</span></div>' +
-      '<div class="budget-bar-outer"><div class="budget-bar-inner" style="width:72%"></div></div>' +
+    const maxBudget = (currentItinerary && currentItinerary.max_budget_usd) || total * 1.3;
+    const pct = Math.min(100, Math.round((total / maxBudget) * 100));
+    const barColor = pct > 90 ? 'var(--red)' : pct > 70 ? 'var(--yellow)' : 'linear-gradient(90deg,var(--accent),var(--accent2))';
+    el.innerHTML = '<div class="budget-row"><span class="budget-total">Est. $' + total.toLocaleString() + '</span><span style="font-size:11px;color:var(--text-dim)">' + pct + '% of budget</span></div>' +
+      '<div class="budget-bar-outer"><div class="budget-bar-inner" style="width:' + pct + '%;background:' + barColor + '"></div></div>' +
       '<div class="budget-chips">' + chips + '</div>';
   }
 
@@ -491,7 +521,8 @@
     const dLbl = day.date
       ? new Date(day.date+'T12:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}).toUpperCase()
       : 'DAY '+(idx+1);
-    const weather = day.weather ? wIcon(day.weather.condition)+' '+day.weather.temp_high+'°/'+day.weather.temp_low+'°C' : '';
+    const w = day.weather;
+    const weather = w ? wIcon(w.condition)+' '+(w.temp_high_c??w.temp_high??'?')+'°/'+(w.temp_low_c??w.temp_low??'?')+'°C' : '';
     const cards = (day.items||[]).map(item => renderCard(item, idx)).join('');
     const empty = !day.items?.length ? '<div class="day-empty">Drop cards here</div>' : '';
     return '<div class="day-section" id="dsec-' + idx + '">' +
@@ -600,12 +631,14 @@
   // ── Utilities ──
   function wIcon(c) {
     c = (c||'').toLowerCase();
-    if (c.includes('sun')||c.includes('clear'))    return '☀️';
-    if (c.includes('cloud')||c.includes('overcast'))return '☁️';
-    if (c.includes('rain')||c.includes('shower'))  return '🌧';
-    if (c.includes('storm')||c.includes('thunder'))return '⛈';
-    if (c.includes('snow'))                        return '❄️';
-    if (c.includes('fog')||c.includes('mist'))     return '🌫';
+    if (c.includes('thunder'))                      return '⛈';
+    if (c.includes('snow')||c.includes('blizzard')) return '❄️';
+    if (c.includes('sleet')||c.includes('hail'))    return '🌨';
+    if (c.includes('rain')||c.includes('shower')||c.includes('drizzle')) return '🌧';
+    if (c.includes('fog')||c.includes('mist')||c.includes('rime'))       return '🌫';
+    if (c.includes('overcast'))                     return '☁️';
+    if (c.includes('cloud')||c.includes('partly'))  return '⛅';
+    if (c.includes('sun')||c.includes('clear')||c.includes('mainly clear')) return '☀️';
     return '🌤';
   }
 
