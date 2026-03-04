@@ -82,7 +82,7 @@ async def chat(session_id: str, body: ChatRequest):
     agent: TravelAgent = session["agent"]
 
     # asyncio.Queue lets the background thread push events to the async generator
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     event_queue: asyncio.Queue = asyncio.Queue()
 
     def progress_callback(event_type: str, data: dict):
@@ -109,8 +109,15 @@ async def chat(session_id: str, body: ChatRequest):
     threading.Thread(target=run_agent, daemon=True).start()
 
     async def event_stream():
+        # Send an immediate heartbeat so Railway/proxies don't buffer the response
+        yield ": connected\n\n"
         while True:
-            event = await event_queue.get()
+            try:
+                # Wait up to 15s; if nothing arrives, send a heartbeat to keep the connection alive
+                event = await asyncio.wait_for(event_queue.get(), timeout=15)
+            except asyncio.TimeoutError:
+                yield ": heartbeat\n\n"
+                continue
             yield f"data: {json.dumps(event)}\n\n"
             if event["type"] in ("done", "error"):
                 break

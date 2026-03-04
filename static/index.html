@@ -589,6 +589,7 @@
       const decoder = new TextDecoder();
       let buffer = '';
 
+      let gotResponse = false;
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
@@ -599,19 +600,26 @@
 
         for (const line of lines) {
           if (!line.startsWith('data: ')) continue;
-          const data = JSON.parse(line.slice(6));
+          let data;
+          try { data = JSON.parse(line.slice(6)); } catch { continue; }
 
           if (data.type === 'tool_start') {
             onToolStart(data.tool, data.label);
           } else if (data.type === 'tool_done') {
             onToolDone(data.tool);
           } else if (data.type === 'done') {
-            replaceThinkingWithResponse(data.content);
+            gotResponse = true;
+            replaceThinkingWithResponse(data.content || '*(empty response)*');
             await loadTrips();
           } else if (data.type === 'error') {
+            gotResponse = true;
             replaceThinkingWithResponse(`**Error:** ${data.message}`);
           }
         }
+      }
+      // Stream ended without a done/error event (timeout or dropped connection)
+      if (!gotResponse) {
+        replaceThinkingWithResponse('*(Connection lost before a response arrived. Please try again.)*');
       }
     } catch (err) {
       replaceThinkingWithResponse(`**Connection error:** ${err.message}`);
