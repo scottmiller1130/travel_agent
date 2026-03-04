@@ -14,6 +14,23 @@ from typing import Callable
 
 import anthropic
 
+TOOL_LABELS = {
+    "search_flights": "Searching flights...",
+    "book_flight": "Booking flight...",
+    "search_hotels": "Searching hotels...",
+    "book_hotel": "Booking hotel...",
+    "get_weather": "Checking weather...",
+    "search_places": "Finding places of interest...",
+    "get_distance": "Calculating distances...",
+    "check_availability": "Checking your calendar...",
+    "add_to_calendar": "Adding to calendar...",
+    "web_search": "Researching destination...",
+    "save_preference": "Saving your preference...",
+    "get_preferences": "Loading your preferences...",
+    "save_trip": "Saving trip...",
+    "get_trips": "Loading trip history...",
+}
+
 from memory.preferences import PreferenceStore
 from memory.trips import TripStore
 from tools.flights import search_flights, book_flight
@@ -69,11 +86,15 @@ class TravelAgent:
         self._conversation: list[dict] = []
         self._current_trip: dict = {}
 
-    def chat(self, user_message: str) -> str:
-        """Send a message and run the agentic loop until a final response is produced."""
-        self._conversation.append({"role": "user", "content": user_message})
+    def chat(self, user_message: str, progress_callback: Callable | None = None) -> str:
+        """Send a message and run the agentic loop until a final response is produced.
 
-        # Build a dynamic system prompt with user context
+        Args:
+            progress_callback: Optional callable(event_type: str, data: dict).
+                               Called with ("tool_start", {"tool": ..., "label": ...})
+                               and ("tool_done", {"tool": ...}) around each tool call.
+        """
+        self._conversation.append({"role": "user", "content": user_message})
         system = self._build_system_prompt()
 
         while True:
@@ -85,11 +106,9 @@ class TravelAgent:
                 messages=self._conversation,
             )
 
-            # Append assistant turn to conversation
             self._conversation.append({"role": "assistant", "content": response.content})
 
             if response.stop_reason == "end_turn":
-                # Extract the final text response
                 return self._extract_text(response.content)
 
             if response.stop_reason == "tool_use":
@@ -98,7 +117,17 @@ class TravelAgent:
                     if block.type != "tool_use":
                         continue
 
+                    if progress_callback:
+                        progress_callback("tool_start", {
+                            "tool": block.name,
+                            "label": TOOL_LABELS.get(block.name, f"Using {block.name}..."),
+                        })
+
                     result = self._dispatch_tool(block.name, block.input)
+
+                    if progress_callback:
+                        progress_callback("tool_done", {"tool": block.name})
+
                     tool_results.append({
                         "type": "tool_result",
                         "tool_use_id": block.id,
@@ -108,7 +137,6 @@ class TravelAgent:
                 self._conversation.append({"role": "user", "content": tool_results})
                 continue
 
-            # Unexpected stop reason
             break
 
         return self._extract_text(response.content)

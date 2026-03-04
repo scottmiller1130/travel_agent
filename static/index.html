@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Travel Agent</title>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface2: #22263a;
+      --border: #2e3350;
+      --accent: #4f8ef7;
+      --accent2: #7c5cbf;
+      --green: #34d399;
+      --yellow: #fbbf24;
+      --red: #f87171;
+      --text: #e2e8f0;
+      --text-dim: #64748b;
+      --user-bubble: #1e3a5f;
+      --agent-bubble: #1a1d27;
+      --radius: 12px;
+      --sidebar-w: 280px;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      display: flex;
+      overflow: hidden;
+    }
+
+    /* ── Sidebar ── */
+    #sidebar {
+      width: var(--sidebar-w);
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+    }
+
+    .sidebar-header {
+      padding: 20px 16px 12px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .sidebar-header h1 {
+      font-size: 18px;
+      font-weight: 700;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .sidebar-header p {
+      font-size: 11px;
+      color: var(--text-dim);
+      margin-top: 2px;
+    }
+
+    .sidebar-section {
+      padding: 12px 16px 0;
+    }
+
+    .sidebar-section h3 {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 8px;
+    }
+
+    .sidebar-actions {
+      padding: 12px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .btn {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text);
+      font-size: 13px;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+      text-align: left;
+      width: 100%;
+    }
+
+    .btn:hover { background: var(--surface2); border-color: var(--accent); }
+    .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+    .btn.primary:hover { background: #3b7de8; }
+    .btn.danger { border-color: var(--red); color: var(--red); }
+    .btn.danger:hover { background: rgba(248,113,113,0.1); }
+
+    #trips-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0 16px 12px;
+    }
+
+    .trip-card {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin-bottom: 6px;
+      cursor: default;
+      font-size: 12px;
+    }
+
+    .trip-card .dest { font-weight: 600; color: var(--text); font-size: 13px; }
+    .trip-card .dates { color: var(--text-dim); margin-top: 2px; }
+    .trip-card .status {
+      display: inline-block;
+      margin-top: 4px;
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: 600;
+      background: rgba(79,142,247,0.15);
+      color: var(--accent);
+    }
+    .trip-card .status.completed { background: rgba(52,211,153,0.15); color: var(--green); }
+
+    .empty-state { color: var(--text-dim); font-size: 12px; padding: 8px 0; }
+
+    /* ── Main area ── */
+    #main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    #chat-header {
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--surface);
+    }
+
+    #chat-header .title { font-weight: 600; font-size: 15px; }
+    #chat-header .status-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--green);
+      display: inline-block;
+      margin-right: 6px;
+    }
+
+    /* ── Messages ── */
+    #messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px 24px 0;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      scroll-behavior: smooth;
+    }
+
+    .message { display: flex; gap: 12px; max-width: 860px; }
+    .message.user { flex-direction: row-reverse; align-self: flex-end; }
+
+    .avatar {
+      width: 32px; height: 32px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px;
+      flex-shrink: 0;
+    }
+
+    .message.user .avatar { background: var(--user-bubble); }
+    .message.agent .avatar { background: linear-gradient(135deg, var(--accent), var(--accent2)); }
+
+    .bubble {
+      padding: 12px 16px;
+      border-radius: var(--radius);
+      font-size: 14px;
+      line-height: 1.6;
+      max-width: calc(100% - 44px);
+    }
+
+    .message.user .bubble {
+      background: var(--user-bubble);
+      border: 1px solid #2a4a7f;
+      border-radius: var(--radius) var(--radius) 4px var(--radius);
+    }
+
+    .message.agent .bubble {
+      background: var(--agent-bubble);
+      border: 1px solid var(--border);
+      border-radius: var(--radius) var(--radius) var(--radius) 4px;
+    }
+
+    /* Markdown inside agent bubbles */
+    .bubble h1, .bubble h2, .bubble h3 { margin: 12px 0 6px; color: var(--text); }
+    .bubble h1 { font-size: 18px; }
+    .bubble h2 { font-size: 15px; }
+    .bubble h3 { font-size: 14px; color: var(--accent); }
+    .bubble p { margin-bottom: 8px; }
+    .bubble p:last-child { margin-bottom: 0; }
+    .bubble ul, .bubble ol { padding-left: 20px; margin-bottom: 8px; }
+    .bubble li { margin-bottom: 3px; }
+    .bubble strong { color: #fff; }
+    .bubble code {
+      background: var(--surface2);
+      padding: 1px 5px;
+      border-radius: 4px;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 12px;
+    }
+    .bubble pre {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+      overflow-x: auto;
+      margin: 8px 0;
+    }
+    .bubble pre code { background: transparent; padding: 0; }
+    .bubble table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 13px; }
+    .bubble th { background: var(--surface2); padding: 6px 10px; text-align: left; border: 1px solid var(--border); }
+    .bubble td { padding: 5px 10px; border: 1px solid var(--border); }
+    .bubble hr { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
+    .bubble blockquote { border-left: 3px solid var(--accent); padding-left: 12px; color: var(--text-dim); }
+
+    /* Tool activity chips */
+    .tool-activity {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      padding: 8px 0;
+    }
+
+    .tool-chip {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 10px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      font-size: 11px;
+      color: var(--text-dim);
+      animation: fadein 0.2s ease;
+    }
+
+    .tool-chip.active { border-color: var(--accent); color: var(--accent); }
+    .tool-chip .spinner {
+      width: 10px; height: 10px;
+      border: 1.5px solid var(--accent);
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+    .tool-chip .done-icon { color: var(--green); font-size: 10px; }
+
+    /* Thinking indicator */
+    .thinking {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 12px 16px;
+      color: var(--text-dim);
+      font-size: 13px;
+      font-style: italic;
+    }
+
+    .thinking-dots span {
+      display: inline-block;
+      width: 5px; height: 5px;
+      border-radius: 50%;
+      background: var(--text-dim);
+      animation: bounce 1.2s infinite;
+      margin: 0 1px;
+    }
+    .thinking-dots span:nth-child(2) { animation-delay: 0.2s; }
+    .thinking-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+    @keyframes bounce {
+      0%, 80%, 100% { transform: translateY(0); }
+      40% { transform: translateY(-5px); }
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes fadein { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+
+    /* ── Input area ── */
+    #input-area {
+      padding: 16px 24px 20px;
+      border-top: 1px solid var(--border);
+      background: var(--surface);
+    }
+
+    #input-row {
+      display: flex;
+      gap: 10px;
+      align-items: flex-end;
+    }
+
+    #input {
+      flex: 1;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 14px;
+      color: var(--text);
+      font-size: 14px;
+      font-family: inherit;
+      resize: none;
+      max-height: 140px;
+      line-height: 1.5;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    #input:focus { border-color: var(--accent); }
+    #input::placeholder { color: var(--text-dim); }
+
+    #send-btn {
+      width: 42px; height: 42px;
+      border-radius: 10px;
+      border: none;
+      background: var(--accent);
+      color: #fff;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px;
+      transition: background 0.15s, transform 0.1s;
+      flex-shrink: 0;
+    }
+    #send-btn:hover { background: #3b7de8; }
+    #send-btn:active { transform: scale(0.95); }
+    #send-btn:disabled { background: var(--surface2); cursor: not-allowed; color: var(--text-dim); }
+
+    .hints {
+      margin-top: 8px;
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .hint {
+      padding: 4px 10px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      font-size: 11px;
+      color: var(--text-dim);
+      cursor: pointer;
+      transition: border-color 0.15s, color 0.15s;
+    }
+    .hint:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* ── Toast ── */
+    #toast {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 16px;
+      font-size: 13px;
+      color: var(--text);
+      opacity: 0;
+      transform: translateY(8px);
+      transition: opacity 0.2s, transform 0.2s;
+      z-index: 100;
+      pointer-events: none;
+    }
+    #toast.show { opacity: 1; transform: translateY(0); }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  </style>
+</head>
+<body>
+
+<!-- ═══════════ SIDEBAR ═══════════ -->
+<div id="sidebar">
+  <div class="sidebar-header">
+    <h1>✈ Travel Agent</h1>
+    <p>AI-powered personal travel planner</p>
+  </div>
+
+  <div class="sidebar-actions">
+    <button class="btn primary" onclick="newTrip()">+ New Trip</button>
+    <button class="btn danger" onclick="resetConversation()">↺ Reset Conversation</button>
+  </div>
+
+  <div class="sidebar-section">
+    <h3>Saved Trips</h3>
+  </div>
+  <div id="trips-list">
+    <p class="empty-state">No trips yet. Ask me to plan one!</p>
+  </div>
+</div>
+
+<!-- ═══════════ MAIN CHAT ═══════════ -->
+<div id="main">
+  <div id="chat-header">
+    <div>
+      <span class="status-dot"></span>
+      <span class="title">Chat with your travel agent</span>
+    </div>
+    <div style="font-size: 12px; color: var(--text-dim);" id="session-label"></div>
+  </div>
+
+  <div id="messages">
+    <!-- Welcome message -->
+    <div class="message agent" id="welcome-msg">
+      <div class="avatar">✈</div>
+      <div class="bubble">
+        <p>Hello! I'm your personal travel agent. I can:</p>
+        <ul>
+          <li>Plan complete trips with flights, hotels &amp; itineraries</li>
+          <li>Check weather, research destinations, find activities</li>
+          <li>Check your calendar availability</li>
+          <li>Book flights and hotels on your behalf</li>
+          <li>Remember your preferences for future trips</li>
+        </ul>
+        <p style="margin-top:10px">Where would you like to go? 🌍</p>
+      </div>
+    </div>
+  </div>
+
+  <div id="input-area">
+    <div id="input-row">
+      <textarea
+        id="input"
+        rows="1"
+        placeholder="Ask me to plan a trip, search flights, check weather..."
+        onkeydown="handleKey(event)"
+        oninput="autoResize(this)"
+      ></textarea>
+      <button id="send-btn" onclick="sendMessage()" title="Send (Enter)">➤</button>
+    </div>
+    <div class="hints">
+      <span class="hint" onclick="fillHint(this)">Plan a 5-day trip to Lisbon in May</span>
+      <span class="hint" onclick="fillHint(this)">Find cheap flights from NYC next weekend</span>
+      <span class="hint" onclick="fillHint(this)">What's the weather in Bali in July?</span>
+      <span class="hint" onclick="fillHint(this)">I prefer window seats on Delta — remember that</span>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+  // ── Session management ──
+  let sessionId = localStorage.getItem('travel_agent_session');
+  if (!sessionId) {
+    sessionId = crypto.randomUUID();
+    localStorage.setItem('travel_agent_session', sessionId);
+  }
+  document.getElementById('session-label').textContent = `Session: ${sessionId.slice(0, 8)}`;
+
+  let isThinking = false;
+
+  // ── Marked.js config ──
+  marked.setOptions({ breaks: true, gfm: true });
+
+  // ── DOM helpers ──
+  const messagesEl = document.getElementById('messages');
+  const inputEl = document.getElementById('input');
+  const sendBtn = document.getElementById('send-btn');
+
+  function scrollToBottom() {
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+  function showToast(msg, duration = 3000) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), duration);
+  }
+
+  // ── Message rendering ──
+  function addUserMessage(text) {
+    const div = document.createElement('div');
+    div.className = 'message user';
+    div.innerHTML = `
+      <div class="avatar">👤</div>
+      <div class="bubble">${escapeHtml(text)}</div>
+    `;
+    messagesEl.appendChild(div);
+    scrollToBottom();
+  }
+
+  function addThinkingMessage() {
+    const div = document.createElement('div');
+    div.className = 'message agent';
+    div.id = 'thinking-msg';
+    div.innerHTML = `
+      <div class="avatar">✈</div>
+      <div>
+        <div class="tool-activity" id="tool-chips"></div>
+        <div class="thinking">
+          Thinking
+          <div class="thinking-dots"><span></span><span></span><span></span></div>
+        </div>
+      </div>
+    `;
+    messagesEl.appendChild(div);
+    scrollToBottom();
+    return div;
+  }
+
+  function replaceThinkingWithResponse(text) {
+    const thinking = document.getElementById('thinking-msg');
+    if (thinking) thinking.remove();
+
+    const div = document.createElement('div');
+    div.className = 'message agent';
+    div.innerHTML = `
+      <div class="avatar">✈</div>
+      <div class="bubble">${marked.parse(text)}</div>
+    `;
+    messagesEl.appendChild(div);
+    scrollToBottom();
+  }
+
+  // ── Tool chips ──
+  const activeTools = {};
+
+  function onToolStart(tool, label) {
+    const chips = document.getElementById('tool-chips');
+    if (!chips) return;
+    const chip = document.createElement('div');
+    chip.className = 'tool-chip active';
+    chip.id = `chip-${tool}`;
+    chip.innerHTML = `<div class="spinner"></div> ${label}`;
+    chips.appendChild(chip);
+    activeTools[tool] = chip;
+    scrollToBottom();
+  }
+
+  function onToolDone(tool) {
+    const chip = activeTools[tool];
+    if (!chip) return;
+    chip.classList.remove('active');
+    chip.innerHTML = `<span class="done-icon">✓</span> ${chip.textContent.trim()}`;
+    delete activeTools[tool];
+  }
+
+  // ── Send message ──
+  async function sendMessage() {
+    const text = inputEl.value.trim();
+    if (!text || isThinking) return;
+
+    isThinking = true;
+    sendBtn.disabled = true;
+    inputEl.value = '';
+    autoResize(inputEl);
+
+    addUserMessage(text);
+    addThinkingMessage();
+
+    try {
+      const response = await fetch(`/api/chat/${sessionId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: text }),
+      });
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop(); // keep incomplete line
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const data = JSON.parse(line.slice(6));
+
+          if (data.type === 'tool_start') {
+            onToolStart(data.tool, data.label);
+          } else if (data.type === 'tool_done') {
+            onToolDone(data.tool);
+          } else if (data.type === 'done') {
+            replaceThinkingWithResponse(data.content);
+            await loadTrips();
+          } else if (data.type === 'error') {
+            replaceThinkingWithResponse(`**Error:** ${data.message}`);
+          }
+        }
+      }
+    } catch (err) {
+      replaceThinkingWithResponse(`**Connection error:** ${err.message}`);
+    } finally {
+      isThinking = false;
+      sendBtn.disabled = false;
+      inputEl.focus();
+    }
+  }
+
+  // ── Trips sidebar ──
+  async function loadTrips() {
+    try {
+      const res = await fetch(`/api/trips/${sessionId}`);
+      const data = await res.json();
+      renderTrips(data.trips || []);
+    } catch (_) {}
+  }
+
+  function renderTrips(trips) {
+    const el = document.getElementById('trips-list');
+    if (!trips.length) {
+      el.innerHTML = '<p class="empty-state">No trips yet. Ask me to plan one!</p>';
+      return;
+    }
+    el.innerHTML = trips.map(t => `
+      <div class="trip-card">
+        <div class="dest">📍 ${t.destination || 'Unknown'}</div>
+        <div class="dates">${t.start_date || '?'} → ${t.end_date || '?'}</div>
+        <span class="status ${t.status === 'completed' ? 'completed' : ''}">${t.status || 'planned'}</span>
+      </div>
+    `).join('');
+  }
+
+  // ── Controls ──
+  async function resetConversation() {
+    if (!confirm('Reset the conversation? Your saved trips and preferences are kept.')) return;
+    await fetch(`/api/reset/${sessionId}`, { method: 'POST' });
+    messagesEl.innerHTML = '';
+    document.getElementById('welcome-msg') && messagesEl.appendChild(
+      Object.assign(document.createElement('div'), { outerHTML: document.getElementById('welcome-msg').outerHTML })
+    );
+    location.reload();
+  }
+
+  function newTrip() {
+    inputEl.value = '';
+    inputEl.focus();
+    showToast('Start typing to plan your next trip!');
+  }
+
+  function fillHint(el) {
+    inputEl.value = el.textContent;
+    autoResize(inputEl);
+    inputEl.focus();
+  }
+
+  // ── Keyboard / resize ──
+  function handleKey(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  }
+
+  function autoResize(el) {
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 140) + 'px';
+  }
+
+  function escapeHtml(text) {
+    return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  // ── Init ──
+  loadTrips();
+  inputEl.focus();
+</script>
+
+</body>
+</html>
