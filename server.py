@@ -79,7 +79,15 @@ class ChatRequest(BaseModel):
 
 @app.post("/api/chat/{session_id}")
 async def chat(session_id: str, body: ChatRequest):
-    session = get_or_create_session(session_id)
+    try:
+        session = get_or_create_session(session_id)
+    except Exception as startup_err:
+        err_msg = str(startup_err)
+        async def err_stream():
+            yield f"data: {json.dumps({'type': 'error', 'message': err_msg})}\n\n"
+        return StreamingResponse(err_stream(), media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
     agent: TravelAgent = session["agent"]
 
     # asyncio.Queue lets the background thread push events to the async generator

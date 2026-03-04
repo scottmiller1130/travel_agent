@@ -36,7 +36,7 @@ class PreferenceStore:
 
     def __init__(self):
         DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(str(DB_PATH))
+        self._conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
         self._init_db()
 
     def _init_db(self):

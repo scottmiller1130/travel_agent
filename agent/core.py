@@ -79,8 +79,7 @@ class TravelAgent:
         """
         api_key = os.getenv("ANTHROPIC_API_KEY")
         if not api_key:
-            raise ValueError("ANTHROPIC_API_KEY environment variable not set.")
-
+            raise ValueError("ANTHROPIC_API_KEY is not set. Please add it to your Railway environment variables.")
         self._client = anthropic.Anthropic(api_key=api_key)
         self._prefs = PreferenceStore()
         self._trips = TripStore()
