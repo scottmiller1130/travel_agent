@@ -8,7 +8,9 @@ import sqlite3
 from pathlib import Path
 from datetime import datetime
 
-DB_PATH = Path.home() / ".travel_agent" / "trips.db"
+from memory._data_dir import data_dir
+
+DB_PATH = data_dir() / "trips.db"
 
 
 class TripStore:

@@ -14,6 +14,25 @@ from typing import Callable
 
 import anthropic
 
+
+def _blocks_to_dicts(content) -> list[dict] | str:
+    """Convert Anthropic SDK content blocks to plain JSON-serialisable dicts.
+
+    The API accepts plain dicts as message content, so storing everything as
+    dicts lets us serialise the conversation to SQLite and restore it later.
+    """
+    if isinstance(content, str):
+        return content
+    result = []
+    for block in content:
+        if hasattr(block, "model_dump"):
+            result.append(block.model_dump())
+        elif isinstance(block, dict):
+            result.append(block)
+        else:
+            result.append({"type": "text", "text": str(block)})
+    return result
+
 TOOL_LABELS = {
     "search_flights": "Searching flights...",
     "book_flight": "Booking flight...",
@@ -109,7 +128,7 @@ class TravelAgent:
                 messages=self._conversation,
             )
 
-            self._conversation.append({"role": "assistant", "content": response.content})
+            self._conversation.append({"role": "assistant", "content": _blocks_to_dicts(response.content)})
 
             if response.stop_reason == "end_turn":
                 return self._extract_text(response.content)
@@ -148,6 +167,24 @@ class TravelAgent:
         """Start a fresh conversation (keeps memory/preferences)."""
         self._conversation = []
         self._current_trip = {}
+
+    # ── Persistence helpers ───────────────────────────────────────────────────
+
+    def get_conversation(self) -> list[dict]:
+        """Return the conversation as a JSON-serialisable list."""
+        return self._conversation
+
+    def load_conversation(self, conversation: list[dict]) -> None:
+        """Restore a previously saved conversation."""
+        self._conversation = conversation
+
+    def get_itinerary(self) -> dict | None:
+        """Return the most recent itinerary pushed via update_itinerary."""
+        return self._current_trip if self._current_trip else None
+
+    def load_itinerary(self, itinerary: dict | None) -> None:
+        """Restore a previously saved itinerary."""
+        self._current_trip = itinerary or {}
 
     def _build_system_prompt(self) -> str:
         prefs_context = self._prefs.as_context_string()
@@ -209,6 +246,7 @@ class TravelAgent:
         return {"status": "success", "trip_id": trip_id, "message": "Trip saved."}
 
     def _handle_update_itinerary(self, inputs: dict) -> dict:
+        self._current_trip = inputs  # persist so get_itinerary() is always current
         if self._progress_callback:
             self._progress_callback("itinerary_update", {"itinerary": inputs})
         return {"status": "success", "message": "Trip board updated."}

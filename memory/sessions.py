@@ -1,0 +1,82 @@
+"""
+Session store — persists conversation history and itinerary state to SQLite.
+
+This is the key piece that lets users return days later and pick up exactly
+where they left off. Each browser sessionId maps to a full conversation
+history and the latest itinerary snapshot.
+"""
+
+import json
+import sqlite3
+from datetime import datetime
+from pathlib import Path
+
+from memory._data_dir import data_dir
+
+
+DB_PATH = data_dir() / "sessions.db"
+
+
+class SessionStore:
+    """Persistent store for per-session conversation history and itinerary."""
+
+    def __init__(self):
+        DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+        self._conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
+        self._init_db()
+
+    def _init_db(self):
+        self._conn.execute("""
+            CREATE TABLE IF NOT EXISTS sessions (
+                id          TEXT PRIMARY KEY,
+                conversation TEXT NOT NULL DEFAULT '[]',
+                itinerary   TEXT,
+                created_at  TEXT NOT NULL,
+                updated_at  TEXT NOT NULL
+            )
+        """)
+        self._conn.commit()
+
+    def load(self, session_id: str) -> dict | None:
+        """Return saved session data or None if not found."""
+        row = self._conn.execute(
+            "SELECT conversation, itinerary FROM sessions WHERE id = ?",
+            (session_id,),
+        ).fetchone()
+        if not row:
+            return None
+        return {
+            "conversation": json.loads(row[0]),
+            "itinerary": json.loads(row[1]) if row[1] else None,
+        }
+
+    def save(self, session_id: str, conversation: list, itinerary=None) -> None:
+        """Upsert session data."""
+        now = datetime.now().isoformat()
+        self._conn.execute("""
+            INSERT INTO sessions (id, conversation, itinerary, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                conversation = excluded.conversation,
+                itinerary    = excluded.itinerary,
+                updated_at   = excluded.updated_at
+        """, (
+            session_id,
+            json.dumps(conversation),
+            json.dumps(itinerary) if itinerary is not None else None,
+            now,
+            now,
+        ))
+        self._conn.commit()
+
+    def delete(self, session_id: str) -> None:
+        """Delete a session (used on conversation reset)."""
+        self._conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
+        self._conn.commit()
+
+    def list_sessions(self) -> list[dict]:
+        """Return metadata for all sessions (for admin/debugging)."""
+        rows = self._conn.execute(
+            "SELECT id, created_at, updated_at FROM sessions ORDER BY updated_at DESC"
+        ).fetchall()
+        return [{"id": r[0], "created_at": r[1], "updated_at": r[2]} for r in rows]

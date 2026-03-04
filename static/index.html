@@ -3,219 +3,235 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Travel Agent</title>
+  <title>Travel Agent ✈</title>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
-      --bg: #0f1117; --surface: #1a1d27; --surface2: #22263a; --border: #2e3350;
-      --accent: #4f8ef7; --accent2: #7c5cbf; --green: #34d399; --yellow: #fbbf24;
-      --red: #f87171; --text: #e2e8f0; --text-dim: #64748b;
-      --user-bubble: #1e3a5f; --agent-bubble: #1a1d27; --radius: 12px;
+      --sky:     #0ea5e9;
+      --sky-d:   #0284c7;
+      --sky-l:   #e0f2fe;
+      --teal:    #0d9488;
+      --teal-l:  #ccfbf1;
+      --coral:   #f97316;
+      --coral-l: #ffedd5;
+      --gold:    #f59e0b;
+      --gold-l:  #fef3c7;
+      --rose:    #f43f5e;
+      --rose-l:  #ffe4e6;
+      --green:   #10b981;
+      --green-l: #d1fae5;
+      --bg:       #f0f9ff;
+      --surface:  #ffffff;
+      --surface2: #f8fafc;
+      --border:   #e2e8f0;
+      --border2:  #cbd5e1;
+      --text:     #0f172a;
+      --text-2:   #334155;
+      --text-3:   #64748b;
+      --text-4:   #94a3b8;
+      --user-bg:  linear-gradient(135deg, #0ea5e9, #0284c7);
+      --radius:   14px;
+      --shadow-sm: 0 1px 3px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04);
+      --shadow:    0 4px 12px rgba(0,0,0,.08), 0 1px 4px rgba(0,0,0,.04);
+      --shadow-lg: 0 10px 30px rgba(0,0,0,.12), 0 4px 10px rgba(0,0,0,.06);
     }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); height: 100vh; display: flex; overflow: hidden; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); height: 100vh; display: flex; overflow: hidden; }
 
     /* ── Sidebar ── */
-    #sidebar { width: 260px; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; flex-shrink: 0; }
-    .sidebar-header { padding: 20px 16px 12px; border-bottom: 1px solid var(--border); }
-    .sidebar-header h1 { font-size: 18px; font-weight: 700; background: linear-gradient(135deg, var(--accent), var(--accent2)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
-    .sidebar-header p { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
-    .sidebar-section { padding: 12px 16px 0; }
-    .sidebar-section h3 { font-size: 11px; font-weight: 600; color: var(--text-dim); text-transform: uppercase; letter-spacing: .08em; margin-bottom: 8px; }
-    .sidebar-actions { padding: 12px 16px; display: flex; flex-direction: column; gap: 6px; border-bottom: 1px solid var(--border); }
-    .btn { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border); background: transparent; color: var(--text); font-size: 13px; cursor: pointer; transition: background .15s, border-color .15s; text-align: left; width: 100%; }
-    .btn:hover { background: var(--surface2); border-color: var(--accent); }
-    .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
-    .btn.primary:hover { background: #3b7de8; }
-    .btn.danger { border-color: var(--red); color: var(--red); }
-    .btn.danger:hover { background: rgba(248,113,113,.1); }
-    #trips-list { flex: 1; overflow-y: auto; padding: 0 16px 12px; }
-    .trip-card { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-bottom: 6px; font-size: 12px; }
-    .trip-card .dest { font-weight: 600; color: var(--text); font-size: 13px; }
-    .trip-card .dates { color: var(--text-dim); margin-top: 2px; }
-    .trip-card .status { display: inline-block; margin-top: 4px; padding: 1px 6px; border-radius: 4px; font-size: 10px; font-weight: 600; background: rgba(79,142,247,.15); color: var(--accent); }
-    .trip-card .status.completed { background: rgba(52,211,153,.15); color: var(--green); }
-    .empty-state { color: var(--text-dim); font-size: 12px; padding: 8px 0; }
+    #sidebar { width: 270px; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; flex-shrink: 0; box-shadow: 2px 0 12px rgba(14,165,233,.06); }
+    .sidebar-logo { padding: 22px 20px 16px; background: linear-gradient(135deg, #0ea5e9 0%, #0d9488 100%); position: relative; overflow: hidden; }
+    .sidebar-logo::before { content: '✈'; position: absolute; right: -8px; top: 50%; transform: translateY(-50%) rotate(15deg); font-size: 72px; opacity: .12; }
+    .sidebar-logo h1 { font-size: 20px; font-weight: 800; color: #fff; letter-spacing: -.3px; }
+    .sidebar-logo p { font-size: 11px; color: rgba(255,255,255,.75); margin-top: 3px; }
+    .sidebar-actions { padding: 14px 14px 10px; display: flex; flex-direction: column; gap: 7px; border-bottom: 1px solid var(--border); }
+    .btn { display: flex; align-items: center; gap: 8px; padding: 9px 13px; border-radius: 10px; border: 1.5px solid var(--border); background: transparent; color: var(--text-2); font-size: 13px; font-weight: 600; cursor: pointer; transition: all .15s; text-align: left; width: 100%; }
+    .btn:hover { background: var(--surface2); border-color: var(--sky); color: var(--sky-d); }
+    .btn.primary { background: linear-gradient(135deg, var(--sky), var(--teal)); border-color: transparent; color: #fff; box-shadow: 0 3px 10px rgba(14,165,233,.3); }
+    .btn.primary:hover { filter: brightness(1.06); }
+    .btn.danger { border-color: var(--rose); color: var(--rose); }
+    .btn.danger:hover { background: var(--rose-l); }
+    .btn .icon { font-size: 15px; }
+    .sidebar-section { padding: 14px 18px 6px; }
+    .sidebar-section h3 { font-size: 10px; font-weight: 700; color: var(--text-4); text-transform: uppercase; letter-spacing: .1em; }
+    #trips-list { flex: 1; overflow-y: auto; padding: 6px 10px 12px; }
+    .trip-card { background: var(--surface); border: 1.5px solid var(--border); border-radius: 10px; padding: 10px 13px; margin-bottom: 6px; cursor: pointer; transition: all .15s; box-shadow: var(--shadow-sm); }
+    .trip-card:hover { border-color: var(--sky); box-shadow: var(--shadow); transform: translateY(-1px); }
+    .trip-card .dest { font-weight: 700; font-size: 13px; color: var(--text); display: flex; align-items: center; gap: 5px; }
+    .trip-card .dates { font-size: 11px; color: var(--text-3); margin-top: 3px; }
+    .trip-badge { display: inline-flex; align-items: center; gap: 3px; margin-top: 5px; padding: 2px 7px; border-radius: 5px; font-size: 10px; font-weight: 700; background: var(--sky-l); color: var(--sky-d); }
+    .trip-badge.completed { background: var(--green-l); color: var(--teal); }
+    .empty-state { font-size: 12px; color: var(--text-4); padding: 10px 4px; line-height: 1.6; }
 
     /* ── Main ── */
     #main { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
-    #chat-header { padding: 14px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; background: var(--surface); flex-shrink: 0; }
-    #chat-header .title { font-weight: 600; font-size: 15px; }
-    #chat-header .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); display: inline-block; margin-right: 6px; }
+    #chat-header { padding: 14px 22px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; background: var(--surface); flex-shrink: 0; box-shadow: var(--shadow-sm); }
+    .header-left { display: flex; align-items: center; gap: 10px; }
+    .header-avatar { width: 36px; height: 36px; background: linear-gradient(135deg, var(--sky), var(--teal)); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 16px; box-shadow: 0 2px 8px rgba(14,165,233,.3); }
+    .header-info .title { font-weight: 700; font-size: 15px; color: var(--text); }
+    .header-info .subtitle { font-size: 11px; color: var(--text-3); display: flex; align-items: center; gap: 5px; }
+    .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 2px var(--green-l); display: inline-block; }
     #header-right { display: flex; align-items: center; gap: 10px; }
-    #board-toggle-btn { display: flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 7px; border: 1px solid var(--border); background: transparent; color: var(--text-dim); font-size: 12px; font-weight: 600; cursor: pointer; transition: all .15s; white-space: nowrap; }
-    #board-toggle-btn:hover { border-color: var(--accent); color: var(--accent); }
-    #board-toggle-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
-    #issue-badge { background: var(--red); color: #fff; border-radius: 10px; padding: 0 5px; font-size: 10px; font-weight: 700; display: none; }
+    #board-toggle-btn { display: flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 9px; border: 1.5px solid var(--border); background: var(--surface2); color: var(--text-3); font-size: 12px; font-weight: 700; cursor: pointer; transition: all .15s; white-space: nowrap; }
+    #board-toggle-btn:hover { border-color: var(--sky); color: var(--sky-d); background: var(--sky-l); }
+    #board-toggle-btn.active { background: linear-gradient(135deg, var(--sky), var(--teal)); border-color: transparent; color: #fff; box-shadow: 0 3px 10px rgba(14,165,233,.3); }
+    #issue-badge { background: var(--rose); color: #fff; border-radius: 10px; padding: 1px 6px; font-size: 10px; font-weight: 800; display: none; }
     #issue-badge.show { display: inline; }
+    #session-label { font-size: 11px; color: var(--text-4); }
 
     /* ── Messages ── */
-    #messages { flex: 1; overflow-y: auto; padding: 24px 24px 0; display: flex; flex-direction: column; gap: 20px; scroll-behavior: smooth; }
-    .message { display: flex; gap: 12px; max-width: 860px; }
+    #messages { flex: 1; overflow-y: auto; padding: 28px 28px 12px; display: flex; flex-direction: column; gap: 18px; scroll-behavior: smooth; }
+    .message { display: flex; gap: 12px; max-width: 900px; animation: msgIn .3s ease; }
     .message.user { flex-direction: row-reverse; align-self: flex-end; }
-    .avatar { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; flex-shrink: 0; }
-    .message.user .avatar { background: var(--user-bubble); }
-    .message.agent .avatar { background: linear-gradient(135deg, var(--accent), var(--accent2)); }
-    .bubble { padding: 12px 16px; border-radius: var(--radius); font-size: 14px; line-height: 1.6; max-width: calc(100% - 44px); }
-    .message.user .bubble { background: var(--user-bubble); border: 1px solid #2a4a7f; border-radius: var(--radius) var(--radius) 4px var(--radius); }
-    .message.agent .bubble { background: var(--agent-bubble); border: 1px solid var(--border); border-radius: var(--radius) var(--radius) var(--radius) 4px; }
-    .bubble h1,.bubble h2,.bubble h3 { margin: 12px 0 6px; color: var(--text); }
-    .bubble h1 { font-size: 18px; } .bubble h2 { font-size: 15px; } .bubble h3 { font-size: 14px; color: var(--accent); }
+    @keyframes msgIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    .avatar { width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 15px; flex-shrink: 0; margin-top: 2px; }
+    .message.user .avatar { background: linear-gradient(135deg, var(--sky), var(--teal)); box-shadow: 0 2px 8px rgba(14,165,233,.25); }
+    .message.agent .avatar { background: var(--surface); border: 1.5px solid var(--border); box-shadow: var(--shadow-sm); }
+    .bubble { padding: 13px 17px; border-radius: var(--radius); font-size: 14px; line-height: 1.65; max-width: calc(100% - 46px); box-shadow: var(--shadow-sm); }
+    .message.user .bubble { background: var(--user-bg); color: #fff; border-radius: var(--radius) var(--radius) 4px var(--radius); box-shadow: 0 4px 14px rgba(14,165,233,.25); }
+    .message.agent .bubble { background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--radius) var(--radius) var(--radius) 4px; }
+    .bubble h1,.bubble h2,.bubble h3 { margin: 14px 0 6px; color: var(--text); }
+    .bubble h1 { font-size: 18px; } .bubble h2 { font-size: 15px; color: var(--sky-d); } .bubble h3 { font-size: 14px; color: var(--teal); }
     .bubble p { margin-bottom: 8px; } .bubble p:last-child { margin-bottom: 0; }
-    .bubble ul,.bubble ol { padding-left: 20px; margin-bottom: 8px; } .bubble li { margin-bottom: 3px; }
-    .bubble strong { color: #fff; }
-    .bubble code { background: var(--surface2); padding: 1px 5px; border-radius: 4px; font-family: 'SF Mono','Fira Code',monospace; font-size: 12px; }
-    .bubble pre { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 12px; overflow-x: auto; margin: 8px 0; }
-    .bubble pre code { background: transparent; padding: 0; }
-    .bubble table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 13px; }
-    .bubble th { background: var(--surface2); padding: 6px 10px; text-align: left; border: 1px solid var(--border); }
-    .bubble td { padding: 5px 10px; border: 1px solid var(--border); }
-    .bubble blockquote { border-left: 3px solid var(--accent); padding-left: 12px; color: var(--text-dim); }
-    .tool-activity { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 0; }
-    .tool-chip { display: flex; align-items: center; gap: 5px; padding: 4px 10px; background: var(--surface2); border: 1px solid var(--border); border-radius: 20px; font-size: 11px; color: var(--text-dim); animation: fadein .2s ease; }
-    .tool-chip.active { border-color: var(--accent); color: var(--accent); }
-    .tool-chip .spinner { width: 10px; height: 10px; border: 1.5px solid var(--accent); border-top-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; }
-    .tool-chip .done-icon { color: var(--green); font-size: 10px; }
-    .thinking { display: flex; align-items: center; gap: 4px; padding: 12px 16px; color: var(--text-dim); font-size: 13px; font-style: italic; }
-    .thinking-dots span { display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: var(--text-dim); animation: bounce 1.2s infinite; margin: 0 1px; }
+    .bubble ul,.bubble ol { padding-left: 20px; margin-bottom: 8px; } .bubble li { margin-bottom: 4px; }
+    .bubble strong { color: var(--text); font-weight: 700; } .message.user .bubble strong { color: #fff; }
+    .bubble code { background: var(--sky-l); color: var(--sky-d); padding: 2px 6px; border-radius: 5px; font-family: 'SF Mono','Fira Code',monospace; font-size: 12px; }
+    .bubble pre { background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 13px; overflow-x: auto; margin: 10px 0; }
+    .bubble pre code { background: transparent; padding: 0; color: var(--text-2); }
+    .bubble table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 13px; }
+    .bubble th { background: var(--sky-l); color: var(--sky-d); padding: 7px 11px; text-align: left; border: 1px solid var(--border); font-weight: 700; }
+    .bubble td { padding: 6px 11px; border: 1px solid var(--border); }
+    .bubble tr:nth-child(even) td { background: var(--surface2); }
+    .bubble blockquote { border-left: 3px solid var(--sky); padding-left: 13px; color: var(--text-3); margin: 8px 0; font-style: italic; }
+    .tool-activity { display: flex; flex-wrap: wrap; gap: 7px; padding: 8px 0; }
+    .tool-chip { display: flex; align-items: center; gap: 6px; padding: 5px 11px; background: var(--surface); border: 1.5px solid var(--border); border-radius: 20px; font-size: 11px; font-weight: 600; color: var(--text-3); animation: fadein .2s ease; }
+    .tool-chip.active { border-color: var(--sky); color: var(--sky-d); background: var(--sky-l); }
+    .tool-chip .spinner { width: 11px; height: 11px; border: 2px solid var(--sky); border-top-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; }
+    .tool-chip .done-icon { color: var(--green); font-size: 11px; }
+    .thinking { display: flex; align-items: center; gap: 6px; padding: 13px 17px; color: var(--text-3); font-size: 13px; font-style: italic; }
+    .thinking-dots span { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--sky); animation: bounce 1.2s infinite; margin: 0 1px; }
     .thinking-dots span:nth-child(2) { animation-delay: .2s; } .thinking-dots span:nth-child(3) { animation-delay: .4s; }
     @keyframes bounce { 0%,80%,100% { transform: translateY(0); } 40% { transform: translateY(-5px); } }
     @keyframes spin { to { transform: rotate(360deg); } }
     @keyframes fadein { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 
     /* ── Input ── */
-    #input-area { padding: 16px 24px 20px; border-top: 1px solid var(--border); background: var(--surface); flex-shrink: 0; }
+    #input-area { padding: 14px 22px 18px; border-top: 1px solid var(--border); background: var(--surface); flex-shrink: 0; }
     #input-row { display: flex; gap: 10px; align-items: flex-end; }
-    #input { flex: 1; background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; color: var(--text); font-size: 14px; font-family: inherit; resize: none; max-height: 140px; line-height: 1.5; outline: none; transition: border-color .15s; }
-    #input:focus { border-color: var(--accent); } #input::placeholder { color: var(--text-dim); }
-    #send-btn { width: 42px; height: 42px; border-radius: 10px; border: none; background: var(--accent); color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 16px; transition: background .15s,transform .1s; flex-shrink: 0; }
-    #send-btn:hover { background: #3b7de8; } #send-btn:active { transform: scale(.95); }
-    #send-btn:disabled { background: var(--surface2); cursor: not-allowed; color: var(--text-dim); }
-    .hints { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
-    .hint { padding: 4px 10px; background: var(--surface2); border: 1px solid var(--border); border-radius: 20px; font-size: 11px; color: var(--text-dim); cursor: pointer; transition: border-color .15s,color .15s; }
-    .hint:hover { border-color: var(--accent); color: var(--accent); }
+    #input { flex: 1; background: var(--surface2); border: 1.5px solid var(--border); border-radius: 12px; padding: 12px 15px; color: var(--text); font-size: 14px; font-family: inherit; resize: none; max-height: 140px; line-height: 1.55; outline: none; transition: border-color .15s, box-shadow .15s; }
+    #input:focus { border-color: var(--sky); box-shadow: 0 0 0 3px rgba(14,165,233,.12); }
+    #input::placeholder { color: var(--text-4); }
+    #send-btn { width: 44px; height: 44px; border-radius: 12px; border: none; background: linear-gradient(135deg, var(--sky), var(--teal)); color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 17px; transition: filter .15s, transform .1s; flex-shrink: 0; box-shadow: 0 3px 10px rgba(14,165,233,.3); }
+    #send-btn:hover { filter: brightness(1.07); } #send-btn:active { transform: scale(.95); }
+    #send-btn:disabled { background: var(--surface2); box-shadow: none; cursor: not-allowed; color: var(--text-4); }
+    .hints { margin-top: 9px; display: flex; gap: 6px; flex-wrap: wrap; }
+    .hint { padding: 5px 11px; background: var(--surface2); border: 1.5px solid var(--border); border-radius: 20px; font-size: 11px; font-weight: 600; color: var(--text-3); cursor: pointer; transition: all .15s; }
+    .hint:hover { border-color: var(--sky); color: var(--sky-d); background: var(--sky-l); }
 
     /* ── Toast ── */
-    #toast { position: fixed; bottom: 20px; right: 20px; background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 10px 16px; font-size: 13px; color: var(--text); opacity: 0; transform: translateY(8px); transition: opacity .2s,transform .2s; z-index: 100; pointer-events: none; }
+    #toast { position: fixed; bottom: 22px; right: 22px; background: var(--text); color: #fff; border-radius: 11px; padding: 11px 17px; font-size: 13px; font-weight: 600; opacity: 0; transform: translateY(8px); transition: opacity .2s, transform .2s; z-index: 100; pointer-events: none; box-shadow: var(--shadow-lg); max-width: 340px; }
     #toast.show { opacity: 1; transform: translateY(0); }
-    ::-webkit-scrollbar { width: 5px; } ::-webkit-scrollbar-track { background: transparent; } ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 
-    /* ════════════════════════════════
-       TRIP BOARD
-    ════════════════════════════════ */
-    #board-panel { width: 0; flex-shrink: 0; background: var(--surface); border-left: 1px solid var(--border); overflow: hidden; transition: width .3s ease; display: flex; flex-direction: column; }
-    #board-panel.open { width: 460px; }
-    #board-inner { width: 460px; display: flex; flex-direction: column; height: 100%; overflow: hidden; }
-    #board-header { padding: 13px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
-    #board-title { font-size: 15px; font-weight: 700; background: linear-gradient(135deg, var(--accent), var(--accent2)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
-    #board-subtitle { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
-    #board-close { background: transparent; border: none; color: var(--text-dim); font-size: 20px; cursor: pointer; padding: 2px 6px; border-radius: 6px; line-height: 1; transition: color .15s,background .15s; }
-    #board-close:hover { color: var(--text); background: var(--surface2); }
-
-    #budget-section { padding: 10px 16px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
-    .budget-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 5px; }
-    .budget-total { font-size: 13px; font-weight: 700; }
-    .budget-bar-outer { height: 3px; background: var(--surface2); border-radius: 2px; margin-bottom: 6px; }
-    .budget-bar-inner { height: 3px; background: linear-gradient(90deg, var(--accent), var(--accent2)); border-radius: 2px; transition: width .5s ease; }
+    /* ════ TRIP BOARD ════ */
+    #board-panel { width: 0; flex-shrink: 0; background: var(--surface); border-left: 1px solid var(--border); overflow: hidden; transition: width .3s ease; display: flex; flex-direction: column; box-shadow: -4px 0 16px rgba(0,0,0,.05); }
+    #board-panel.open { width: 470px; }
+    #board-inner { width: 470px; display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+    #board-header { padding: 15px 18px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; background: linear-gradient(135deg, #e0f2fe 0%, #ccfbf1 100%); }
+    #board-title { font-size: 16px; font-weight: 800; background: linear-gradient(135deg, var(--sky-d), var(--teal)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+    #board-subtitle { font-size: 11px; color: var(--text-3); margin-top: 2px; }
+    #board-close { background: rgba(255,255,255,.7); border: 1.5px solid var(--border); color: var(--text-3); font-size: 18px; cursor: pointer; padding: 3px 8px; border-radius: 8px; line-height: 1; transition: all .15s; }
+    #board-close:hover { color: var(--text); background: #fff; }
+    #budget-section { padding: 11px 16px; border-bottom: 1px solid var(--border); flex-shrink: 0; background: var(--surface2); }
+    .budget-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+    .budget-total { font-size: 14px; font-weight: 800; color: var(--text); }
+    .budget-bar-outer { height: 4px; background: var(--border); border-radius: 3px; margin-bottom: 8px; }
+    .budget-bar-inner { height: 4px; background: linear-gradient(90deg, var(--sky), var(--teal)); border-radius: 3px; transition: width .5s ease; }
     .budget-chips { display: flex; gap: 6px; flex-wrap: wrap; }
-    .budget-chip { font-size: 11px; color: var(--text-dim); padding: 2px 6px; background: var(--surface2); border-radius: 4px; border: 1px solid var(--border); }
-
+    .budget-chip { font-size: 11px; font-weight: 600; color: var(--text-3); padding: 3px 8px; background: var(--surface); border-radius: 6px; border: 1px solid var(--border); }
     #issues-section { flex-shrink: 0; border-bottom: 1px solid var(--border); max-height: 130px; overflow-y: auto; }
-    .issue-item { display: flex; align-items: flex-start; gap: 8px; padding: 7px 16px; font-size: 12px; border-bottom: 1px solid var(--border); }
+    .issue-item { display: flex; align-items: flex-start; gap: 8px; padding: 8px 16px; font-size: 12px; border-bottom: 1px solid var(--border); }
     .issue-item:last-child { border-bottom: none; }
-    .issue-item.error .issue-text { color: var(--red); }
-    .issue-item.warning .issue-text { color: var(--yellow); }
-    .issue-item.info .issue-text { color: var(--accent); }
-    .issue-text { color: var(--text-dim); line-height: 1.4; flex: 1; }
-    .issue-suggest { margin-left: 6px; font-size: 11px; color: var(--accent); cursor: pointer; white-space: nowrap; text-decoration: underline; text-underline-offset: 2px; flex-shrink: 0; }
-    .issue-suggest:hover { color: #fff; }
-
-    #day-tabs { display: flex; gap: 4px; padding: 8px 12px; border-bottom: 1px solid var(--border); overflow-x: auto; flex-shrink: 0; scrollbar-width: none; }
+    .issue-item.error { background: #fff5f5; } .issue-item.warning { background: #fffbeb; } .issue-item.info { background: var(--sky-l); }
+    .issue-text { flex: 1; color: var(--text-2); line-height: 1.45; }
+    .issue-item.error .issue-text { color: var(--rose); } .issue-item.warning .issue-text { color: #92400e; } .issue-item.info .issue-text { color: var(--sky-d); }
+    .issue-suggest { font-size: 11px; font-weight: 600; color: var(--sky-d); cursor: pointer; white-space: nowrap; text-decoration: underline; text-underline-offset: 2px; flex-shrink: 0; }
+    .issue-suggest:hover { color: var(--teal); }
+    #day-tabs { display: flex; gap: 5px; padding: 9px 12px; border-bottom: 1px solid var(--border); overflow-x: auto; flex-shrink: 0; scrollbar-width: none; background: var(--surface2); }
     #day-tabs::-webkit-scrollbar { display: none; }
-    .day-tab { padding: 4px 9px; border-radius: 6px; border: 1px solid var(--border); background: transparent; color: var(--text-dim); font-size: 11px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: all .15s; flex-shrink: 0; }
-    .day-tab:hover { border-color: var(--accent); color: var(--text); }
-    .day-tab.active { background: var(--accent); border-color: var(--accent); color: #fff; }
-    .day-tab.has-error { border-color: var(--red); }
-    .day-tab.has-warning { border-color: var(--yellow); }
-
-    #board-days { flex: 1; overflow-y: auto; padding: 0 12px 20px; }
-    .day-section { margin-top: 16px; }
-    .day-section-header { display: flex; align-items: center; justify-content: space-between; padding: 5px 4px 7px; }
-    .day-label-grp { display: flex; align-items: baseline; gap: 6px; }
-    .day-date-lbl { font-size: 11px; font-weight: 800; color: var(--text-dim); text-transform: uppercase; letter-spacing: .07em; }
-    .day-theme { font-size: 11px; color: var(--accent); }
-    .day-weather { font-size: 11px; color: var(--text-dim); }
-    .day-drop-zone { min-height: 52px; border-radius: 8px; border: 2px dashed transparent; transition: background .15s,border-color .15s; }
-    .day-drop-zone.drag-over { background: rgba(79,142,247,.07); border-color: var(--accent); }
-    .day-empty { display: flex; align-items: center; justify-content: center; height: 48px; color: var(--text-dim); font-size: 11px; font-style: italic; border: 2px dashed var(--border); border-radius: 8px; }
-
-    .itin-card { background: var(--surface2); border: 1px solid var(--border); border-left: 3px solid var(--border); border-radius: 8px; padding: 9px 12px; margin-bottom: 5px; cursor: grab; transition: opacity .15s,box-shadow .15s,transform .1s; user-select: none; position: relative; }
-    .itin-card:hover { box-shadow: 0 2px 10px rgba(0,0,0,.35); transform: translateY(-1px); }
+    .day-tab { padding: 5px 11px; border-radius: 8px; border: 1.5px solid var(--border); background: var(--surface); color: var(--text-3); font-size: 11px; font-weight: 700; cursor: pointer; white-space: nowrap; transition: all .15s; flex-shrink: 0; }
+    .day-tab:hover { border-color: var(--sky); color: var(--sky-d); }
+    .day-tab.active { background: linear-gradient(135deg, var(--sky), var(--teal)); border-color: transparent; color: #fff; box-shadow: 0 2px 8px rgba(14,165,233,.25); }
+    .day-tab.has-error { border-color: var(--rose); } .day-tab.has-warning { border-color: var(--gold); }
+    #board-days { flex: 1; overflow-y: auto; padding: 0 12px 24px; background: var(--bg); }
+    .day-section { margin-top: 18px; }
+    .day-section-header { display: flex; align-items: center; justify-content: space-between; padding: 6px 4px 8px; }
+    .day-label-grp { display: flex; align-items: baseline; gap: 7px; }
+    .day-date-lbl { font-size: 11px; font-weight: 800; color: var(--text-3); text-transform: uppercase; letter-spacing: .08em; }
+    .day-theme { font-size: 12px; font-weight: 600; color: var(--sky-d); }
+    .day-weather { font-size: 11px; font-weight: 600; color: var(--text-3); background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 2px 7px; }
+    .day-drop-zone { min-height: 56px; border-radius: 10px; border: 2px dashed transparent; transition: background .15s, border-color .15s; }
+    .day-drop-zone.drag-over { background: var(--sky-l); border-color: var(--sky); }
+    .day-empty { display: flex; align-items: center; justify-content: center; height: 52px; color: var(--text-4); font-size: 11px; border: 2px dashed var(--border); border-radius: 10px; font-weight: 600; }
+    .itin-card { background: var(--surface); border: 1.5px solid var(--border); border-left: 4px solid var(--border); border-radius: 10px; padding: 10px 13px; margin-bottom: 6px; cursor: grab; transition: box-shadow .15s, transform .1s; position: relative; box-shadow: var(--shadow-sm); }
+    .itin-card:hover { box-shadow: var(--shadow); transform: translateY(-1px); }
     .itin-card:active { cursor: grabbing; }
-    .itin-card.dragging { opacity: .3; transform: scale(.97); }
-    .itin-card.type-flight    { border-left-color: var(--accent); }
-    .itin-card.type-hotel     { border-left-color: var(--accent2); }
-    .itin-card.type-activity  { border-left-color: var(--green); }
-    .itin-card.type-transfer  { border-left-color: #64748b; }
-    .itin-card.type-restaurant{ border-left-color: var(--yellow); }
-    .itin-card.type-free_time { border: 2px dashed var(--border); border-left: 2px dashed var(--border); background: transparent; cursor: default; opacity: .7; }
-    .itin-card.status-alternative { opacity: .65; }
-    .itin-card.locked { cursor: not-allowed; }
+    .itin-card.dragging { opacity: .35; transform: scale(.97); }
+    .itin-card.type-flight { border-left-color: var(--sky); } .itin-card.type-hotel { border-left-color: var(--teal); } .itin-card.type-activity { border-left-color: var(--coral); } .itin-card.type-transfer { border-left-color: var(--text-4); } .itin-card.type-restaurant { border-left-color: var(--gold); }
+    .itin-card.type-free_time { border: 2px dashed var(--border); border-left: 2px dashed var(--border); background: transparent; cursor: default; opacity: .65; }
+    .itin-card.status-alternative { opacity: .7; } .itin-card.locked { cursor: not-allowed; }
     .itin-card.locked::after { content: '🔒'; position: absolute; top: 8px; right: 8px; font-size: 10px; }
-
-    .card-top { display: flex; align-items: flex-start; gap: 8px; }
-    .card-icon { font-size: 15px; flex-shrink: 0; margin-top: 1px; }
+    .card-top { display: flex; align-items: flex-start; gap: 9px; }
+    .card-icon { font-size: 16px; flex-shrink: 0; margin-top: 1px; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border-radius: 7px; }
+    .type-flight .card-icon { background: var(--sky-l); } .type-hotel .card-icon { background: var(--teal-l); } .type-activity .card-icon { background: var(--coral-l); } .type-restaurant .card-icon { background: var(--gold-l); } .type-transfer .card-icon { background: var(--surface2); }
     .card-main { flex: 1; min-width: 0; }
-    .card-title { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .card-subtitle { font-size: 11px; color: var(--text-dim); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .card-badge { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; padding: 2px 5px; border-radius: 3px; flex-shrink: 0; margin-top: 2px; }
-    .card-badge.confirmed  { background: rgba(52,211,153,.15); color: var(--green); }
-    .card-badge.suggested  { background: rgba(79,142,247,.15); color: var(--accent); }
-    .card-badge.alternative{ background: rgba(100,116,139,.15); color: var(--text-dim); }
-    .card-meta { display: flex; align-items: center; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
-    .card-time     { font-size: 11px; color: var(--accent); font-weight: 700; font-family: 'SF Mono',monospace; }
-    .card-price    { font-size: 11px; color: var(--green); font-weight: 600; }
-    .card-duration { font-size: 11px; color: var(--text-dim); }
-    .card-notes { font-size: 11px; color: var(--text-dim); margin-top: 4px; font-style: italic; line-height: 1.4; }
-    .card-actions { display: none; gap: 6px; margin-top: 7px; padding-top: 7px; border-top: 1px solid var(--border); }
+    .card-title { font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .card-subtitle { font-size: 11px; color: var(--text-3); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .card-badge { font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .07em; padding: 2px 6px; border-radius: 5px; flex-shrink: 0; margin-top: 2px; }
+    .card-badge.confirmed { background: var(--green-l); color: var(--teal); } .card-badge.suggested { background: var(--sky-l); color: var(--sky-d); } .card-badge.alternative { background: var(--surface2); color: var(--text-3); border: 1px solid var(--border); }
+    .card-meta { display: flex; align-items: center; gap: 8px; margin-top: 7px; flex-wrap: wrap; }
+    .card-time { font-size: 11px; font-weight: 700; color: var(--sky-d); font-family: 'SF Mono','Fira Code',monospace; }
+    .card-price { font-size: 11px; font-weight: 700; color: var(--teal); }
+    .card-duration { font-size: 11px; color: var(--text-3); font-weight: 600; }
+    .card-notes { font-size: 11px; color: var(--text-3); margin-top: 5px; font-style: italic; line-height: 1.45; }
+    .card-actions { display: none; gap: 6px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
     .itin-card:hover .card-actions { display: flex; }
-    .card-btn { font-size: 10px; padding: 2px 8px; border-radius: 4px; border: 1px solid var(--border); background: transparent; color: var(--text-dim); cursor: pointer; transition: all .15s; }
-    .card-btn:hover { border-color: var(--accent); color: var(--accent); }
-    .card-btn.lock:hover { border-color: var(--yellow); color: var(--yellow); }
-
-    #board-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px 24px; text-align: center; color: var(--text-dim); height: 100%; }
-    #board-empty .empty-icon { font-size: 40px; margin-bottom: 14px; }
-    #board-empty p { font-size: 13px; line-height: 1.6; max-width: 280px; }
+    .card-btn { font-size: 10px; font-weight: 700; padding: 3px 9px; border-radius: 6px; border: 1.5px solid var(--border); background: transparent; color: var(--text-3); cursor: pointer; transition: all .15s; }
+    .card-btn:hover { border-color: var(--sky); color: var(--sky-d); background: var(--sky-l); }
+    .card-btn.lock:hover { border-color: var(--gold); color: var(--gold); background: var(--gold-l); }
+    #board-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 50px 28px; text-align: center; color: var(--text-3); height: 100%; }
+    #board-empty .empty-icon { font-size: 48px; margin-bottom: 16px; opacity: .7; }
+    #board-empty p { font-size: 13px; line-height: 1.7; max-width: 300px; color: var(--text-3); }
+    #board-empty strong { color: var(--sky-d); }
+    ::-webkit-scrollbar { width: 5px; height: 5px; } ::-webkit-scrollbar-track { background: transparent; } ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; } ::-webkit-scrollbar-thumb:hover { background: var(--text-4); }
   </style>
 </head>
 <body>
 
-<!-- SIDEBAR -->
 <div id="sidebar">
-  <div class="sidebar-header">
-    <h1>✈ Travel Agent</h1>
+  <div class="sidebar-logo">
+    <h1>Travel Agent</h1>
     <p>AI-powered personal travel planner</p>
   </div>
   <div class="sidebar-actions">
-    <button class="btn primary" onclick="newTrip()">+ New Trip</button>
-    <button class="btn danger" onclick="resetConversation()">↺ Reset Conversation</button>
+    <button class="btn primary" onclick="newTrip()"><span class="icon">✈</span> New Trip</button>
+    <button class="btn danger" onclick="resetConversation()"><span class="icon">↺</span> Reset Conversation</button>
   </div>
   <div class="sidebar-section"><h3>Saved Trips</h3></div>
-  <div id="trips-list"><p class="empty-state">No trips yet. Ask me to plan one!</p></div>
+  <div id="trips-list"><p class="empty-state">No trips yet.<br>Ask me to plan one!</p></div>
 </div>
 
-<!-- MAIN CHAT -->
 <div id="main">
   <div id="chat-header">
-    <div>
-      <span class="status-dot"></span>
-      <span class="title">Chat with your travel agent</span>
+    <div class="header-left">
+      <div class="header-avatar">✈</div>
+      <div class="header-info">
+        <div class="title">Your Travel Agent</div>
+        <div class="subtitle"><span class="status-dot"></span> Ready to plan your next adventure</div>
+      </div>
     </div>
     <div id="header-right">
-      <button id="board-toggle-btn" onclick="toggleBoard()">
-        🗺 Trip Board <span id="issue-badge" class="badge"></span>
-      </button>
-      <div style="font-size:12px;color:var(--text-dim)" id="session-label"></div>
+      <button id="board-toggle-btn" onclick="toggleBoard()">🗺 Trip Board <span id="issue-badge"></span></button>
+      <div id="session-label"></div>
     </div>
   </div>
 
@@ -223,15 +239,16 @@
     <div class="message agent">
       <div class="avatar">✈</div>
       <div class="bubble">
-        <p>Hello! I'm your personal travel agent. I can:</p>
+        <p><strong>Hello! I'm your personal travel agent.</strong> Here's what I can do for you:</p>
         <ul>
-          <li>Plan complete trips with flights, hotels &amp; itineraries</li>
-          <li>Check weather, research destinations, find activities</li>
-          <li>Check your calendar availability</li>
-          <li>Book flights and hotels on your behalf</li>
-          <li>Remember your preferences for future trips</li>
+          <li>✈ Search &amp; compare flights with real-time pricing</li>
+          <li>🏨 Find and book hotels tailored to your preferences</li>
+          <li>🌤 Check weather forecasts and build day-by-day itineraries</li>
+          <li>🗺 Research destinations — visas, currency, local tips</li>
+          <li>📅 Check your calendar so trips never clash</li>
+          <li>🧠 Remember your preferences for future trips</li>
         </ul>
-        <p style="margin-top:10px">Where would you like to go? 🌍</p>
+        <p style="margin-top:10px">Where in the world would you like to go? 🌍</p>
       </div>
     </div>
   </div>
@@ -244,14 +261,13 @@
     </div>
     <div class="hints">
       <span class="hint" onclick="fillHint(this)">Plan a 5-day trip to Lisbon in May</span>
-      <span class="hint" onclick="fillHint(this)">Find cheap flights from NYC next weekend</span>
+      <span class="hint" onclick="fillHint(this)">Find flights NYC → Tokyo next month</span>
       <span class="hint" onclick="fillHint(this)">What's the weather in Bali in July?</span>
       <span class="hint" onclick="fillHint(this)">I prefer window seats on Delta — remember that</span>
     </div>
   </div>
 </div>
 
-<!-- TRIP BOARD -->
 <div id="board-panel">
   <div id="board-inner">
     <div id="board-header">
@@ -267,7 +283,7 @@
     <div id="board-days">
       <div id="board-empty">
         <div class="empty-icon">🗺</div>
-        <p>Ask me to plan a trip and your visual itinerary will appear here as draggable puzzle pieces you can rearrange.</p>
+        <p>Ask me to plan a trip and your <strong>visual itinerary</strong> will appear here — draggable cards you can rearrange across days.</p>
       </div>
     </div>
   </div>
@@ -276,10 +292,9 @@
 <div id="toast"></div>
 
 <script>
-  // ── Session ──
   let sessionId = localStorage.getItem('travel_agent_session');
   if (!sessionId) { sessionId = crypto.randomUUID(); localStorage.setItem('travel_agent_session', sessionId); }
-  document.getElementById('session-label').textContent = 'Session: ' + sessionId.slice(0, 8);
+  document.getElementById('session-label').textContent = 'ID: ' + sessionId.slice(0, 8);
   let isThinking = false;
   marked.setOptions({ breaks: true, gfm: true });
   const messagesEl = document.getElementById('messages');
@@ -287,121 +302,63 @@
   const sendBtn    = document.getElementById('send-btn');
 
   function scrollToBottom() { messagesEl.scrollTop = messagesEl.scrollHeight; }
-  function showToast(msg, ms = 3000) {
-    const t = document.getElementById('toast'); t.textContent = msg;
-    t.classList.add('show'); setTimeout(() => t.classList.remove('show'), ms);
-  }
-
-  function addUserMessage(text) {
-    const d = document.createElement('div'); d.className = 'message user';
-    d.innerHTML = '<div class="avatar">👤</div><div class="bubble">' + escapeHtml(text) + '</div>';
-    messagesEl.appendChild(d); scrollToBottom();
-  }
-
-  function addThinkingMessage() {
-    const d = document.createElement('div'); d.className = 'message agent'; d.id = 'thinking-msg';
-    d.innerHTML = '<div class="avatar">✈</div><div><div class="tool-activity" id="tool-chips"></div>' +
-      '<div class="thinking">Thinking<div class="thinking-dots"><span></span><span></span><span></span></div></div></div>';
-    messagesEl.appendChild(d); scrollToBottom(); return d;
-  }
-
-  function replaceThinkingWithResponse(text) {
-    const t = document.getElementById('thinking-msg'); if (t) t.remove();
-    const d = document.createElement('div'); d.className = 'message agent';
-    d.innerHTML = '<div class="avatar">✈</div><div class="bubble">' + marked.parse(text) + '</div>';
-    messagesEl.appendChild(d); scrollToBottom();
-  }
+  function showToast(msg, ms = 3000) { const t = document.getElementById('toast'); t.textContent = msg; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), ms); }
+  function addUserMessage(text) { const d = document.createElement('div'); d.className = 'message user'; d.innerHTML = '<div class="avatar">👤</div><div class="bubble">' + escapeHtml(text) + '</div>'; messagesEl.appendChild(d); scrollToBottom(); }
+  function addThinkingMessage() { const d = document.createElement('div'); d.className = 'message agent'; d.id = 'thinking-msg'; d.innerHTML = '<div class="avatar">✈</div><div><div class="tool-activity" id="tool-chips"></div><div class="thinking">Thinking<div class="thinking-dots"><span></span><span></span><span></span></div></div></div>'; messagesEl.appendChild(d); scrollToBottom(); return d; }
+  function replaceThinkingWithResponse(text) { const t = document.getElementById('thinking-msg'); if (t) t.remove(); const d = document.createElement('div'); d.className = 'message agent'; d.innerHTML = '<div class="avatar">✈</div><div class="bubble">' + marked.parse(text) + '</div>'; messagesEl.appendChild(d); scrollToBottom(); }
 
   const activeTools = {};
-  function onToolStart(tool, label) {
-    const chips = document.getElementById('tool-chips'); if (!chips) return;
-    const c = document.createElement('div'); c.className = 'tool-chip active'; c.id = 'chip-' + tool;
-    c.innerHTML = '<div class="spinner"></div> ' + label; chips.appendChild(c);
-    activeTools[tool] = c; scrollToBottom();
-  }
-  function onToolDone(tool) {
-    const c = activeTools[tool]; if (!c) return;
-    c.classList.remove('active'); c.innerHTML = '<span class="done-icon">✓</span> ' + c.textContent.trim();
-    delete activeTools[tool];
-  }
+  function onToolStart(tool, label) { const chips = document.getElementById('tool-chips'); if (!chips) return; const c = document.createElement('div'); c.className = 'tool-chip active'; c.id = 'chip-' + tool; c.innerHTML = '<div class="spinner"></div> ' + label; chips.appendChild(c); activeTools[tool] = c; scrollToBottom(); }
+  function onToolDone(tool) { const c = activeTools[tool]; if (!c) return; c.classList.remove('active'); c.innerHTML = '<span class="done-icon">✓</span> ' + c.textContent.trim(); delete activeTools[tool]; }
 
   const messageQueue = [];
-
   async function sendMessage() {
     const text = inputEl.value.trim(); if (!text) return;
     if (isThinking) { showToast('Agent is thinking — your message is queued.'); messageQueue.push(text); inputEl.value = ''; autoResize(inputEl); return; }
     isThinking = true; sendBtn.disabled = true; inputEl.value = ''; autoResize(inputEl);
     addUserMessage(text); addThinkingMessage();
     try {
-      const res = await fetch('/api/chat/' + sessionId, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text }),
-      });
-      const reader = res.body.getReader(); const decoder = new TextDecoder(); let buf = '';
-      let gotResponse = false;
+      const res = await fetch('/api/chat/' + sessionId, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: text }) });
+      const reader = res.body.getReader(); const decoder = new TextDecoder(); let buf = ''; let gotResponse = false;
       while (true) {
         const { value, done } = await reader.read(); if (done) break;
-        buf += decoder.decode(value, { stream: true });
-        const lines = buf.split('\n'); buf = lines.pop();
+        buf += decoder.decode(value, { stream: true }); const lines = buf.split('\n'); buf = lines.pop();
         for (const line of lines) {
           if (!line.startsWith('data: ')) continue;
           let data; try { data = JSON.parse(line.slice(6)); } catch { continue; }
           if      (data.type === 'tool_start')       onToolStart(data.tool, data.label);
           else if (data.type === 'tool_done')        onToolDone(data.tool);
           else if (data.type === 'itinerary_update') updateItinerary(data.itinerary);
-          else if (data.type === 'done') {
-            gotResponse = true;
-            replaceThinkingWithResponse(data.content || '*(No response)*');
-            await loadTrips();
-          } else if (data.type === 'error') {
-            gotResponse = true;
-            replaceThinkingWithResponse('**Error:** ' + data.message);
-          }
+          else if (data.type === 'done')   { gotResponse = true; replaceThinkingWithResponse(data.content || '*(No response)*'); await loadTrips(); }
+          else if (data.type === 'error')  { gotResponse = true; replaceThinkingWithResponse('**Error:** ' + data.message); }
         }
       }
       if (!gotResponse) replaceThinkingWithResponse('*(Connection lost. Please try again.)*');
-    } catch (err) {
-      replaceThinkingWithResponse('**Connection error:** ' + err.message);
-    } finally {
+    } catch (err) { replaceThinkingWithResponse('**Connection error:** ' + err.message); }
+    finally {
       isThinking = false; sendBtn.disabled = false; inputEl.focus();
-      if (messageQueue.length > 0) {
-        const next = messageQueue.shift();
-        inputEl.value = next;
-        setTimeout(() => sendMessage(), 300);
-      }
+      if (messageQueue.length > 0) { const next = messageQueue.shift(); inputEl.value = next; setTimeout(() => sendMessage(), 300); }
     }
   }
 
-  async function loadTrips() {
-    try { const r = await fetch('/api/trips/' + sessionId); const d = await r.json(); renderTrips(d.trips || []); } catch (_) {}
-  }
+  async function loadTrips() { try { const r = await fetch('/api/trips/' + sessionId); const d = await r.json(); renderTrips(d.trips || []); } catch (_) {} }
   function renderTrips(trips) {
     const el = document.getElementById('trips-list');
-    if (!trips.length) { el.innerHTML = '<p class="empty-state">No trips yet. Ask me to plan one!</p>'; return; }
-    el.innerHTML = trips.map(t => '<div class="trip-card"><div class="dest">📍 ' + (t.destination || 'Unknown') + '</div>' +
-      '<div class="dates">' + (t.start_date || '?') + ' → ' + (t.end_date || '?') + '</div>' +
-      '<span class="status ' + (t.status === 'completed' ? 'completed' : '') + '">' + (t.status || 'planned') + '</span></div>').join('');
+    if (!trips.length) { el.innerHTML = '<p class="empty-state">No trips yet.<br>Ask me to plan one!</p>'; return; }
+    el.innerHTML = trips.map(t => '<div class="trip-card"><div class="dest">📍 ' + escapeHtml(t.destination || 'Unknown') + '</div><div class="dates">' + (t.start_date||'?') + ' → ' + (t.end_date||'?') + '</div><span class="trip-badge ' + (t.status==='completed'?'completed':'') + '">' + (t.status||'planned') + '</span></div>').join('');
   }
 
   async function resetConversation() {
-    // Use a custom modal instead of confirm() which is blocked in HTTPS iframes/cross-origin
-    showConfirmToast('Reset conversation? Trips and preferences are kept.', async () => {
+    showConfirmModal('Reset conversation? Your trips and preferences will be kept.', async () => {
       await fetch('/api/reset/' + sessionId, { method: 'POST' });
       currentItinerary = null; localStorage.removeItem('itin_' + sessionId); location.reload();
     });
   }
-
-  function showConfirmToast(msg, onConfirm) {
-    const existing = document.getElementById('confirm-toast');
-    if (existing) existing.remove();
-    const el = document.createElement('div');
-    el.id = 'confirm-toast';
-    el.style.cssText = 'position:fixed;bottom:20px;right:20px;background:#22263a;border:1px solid #f87171;border-radius:10px;padding:14px 16px;font-size:13px;color:#e2e8f0;z-index:200;max-width:320px;box-shadow:0 4px 20px rgba(0,0,0,.5)';
-    el.innerHTML = '<div style="margin-bottom:10px">' + escapeHtml(msg) + '</div>' +
-      '<div style="display:flex;gap:8px;justify-content:flex-end">' +
-      '<button onclick="document.getElementById(\'confirm-toast\').remove()" style="padding:5px 12px;border-radius:6px;border:1px solid #2e3350;background:transparent;color:#64748b;cursor:pointer;font-size:12px">Cancel</button>' +
-      '<button id="confirm-yes-btn" style="padding:5px 12px;border-radius:6px;border:none;background:#f87171;color:#fff;cursor:pointer;font-size:12px;font-weight:600">Reset</button>' +
-      '</div>';
+  function showConfirmModal(msg, onConfirm) {
+    const ex = document.getElementById('confirm-modal'); if (ex) ex.remove();
+    const el = document.createElement('div'); el.id = 'confirm-modal';
+    el.style.cssText = 'position:fixed;bottom:22px;right:22px;background:#fff;border:1.5px solid #fca5a5;border-radius:14px;padding:16px 18px;font-size:13px;color:#0f172a;z-index:200;max-width:320px;box-shadow:0 10px 30px rgba(0,0,0,.15)';
+    el.innerHTML = '<div style="font-weight:600;margin-bottom:10px">' + escapeHtml(msg) + '</div><div style="display:flex;gap:8px;justify-content:flex-end"><button onclick="document.getElementById(\'confirm-modal\').remove()" style="padding:6px 14px;border-radius:8px;border:1.5px solid #e2e8f0;background:transparent;color:#64748b;cursor:pointer;font-size:12px;font-weight:600">Cancel</button><button id="confirm-yes-btn" style="padding:6px 14px;border-radius:8px;border:none;background:#f43f5e;color:#fff;cursor:pointer;font-size:12px;font-weight:700">Reset</button></div>';
     document.body.appendChild(el);
     document.getElementById('confirm-yes-btn').onclick = () => { el.remove(); onConfirm(); };
   }
@@ -411,14 +368,9 @@
   function autoResize(el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 140) + 'px'; }
   function escapeHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 
-  // ════════════════════════════════
-  //  TRIP BOARD
-  // ════════════════════════════════
-  let currentItinerary = null;
-  let boardOpen        = false;
-  let draggedCard      = null;
-  let lockedCards      = new Set();
-
+  // ════ TRIP BOARD ════
+  let currentItinerary = null, boardOpen = false, draggedCard = null;
+  let lockedCards = new Set();
   const ICONS  = { flight:'✈', hotel:'🏨', activity:'🗺', transfer:'🚗', restaurant:'🍽', free_time:'☀️' };
   const BEMOJI = { flights:'✈', hotels:'🏨', activities:'🗺', food:'🍽', transport:'🚗' };
 
@@ -428,235 +380,103 @@
 
   function updateItinerary(data) {
     currentItinerary = JSON.parse(JSON.stringify(data));
-    const detected = detectConflicts(currentItinerary.days);
-    currentItinerary.allIssues = [...(data.issues || []), ...detected];
+    currentItinerary.allIssues = [...(data.issues||[]), ...detectConflicts(currentItinerary.days)];
     localStorage.setItem('itin_' + sessionId, JSON.stringify(currentItinerary));
-    renderBoard();
-    if (!boardOpen) openBoard();
+    renderBoard(); if (!boardOpen) openBoard();
   }
-
   function renderBoard() {
     if (!currentItinerary) return;
     const it = currentItinerary;
-    document.getElementById('board-title').textContent = '✈ ' + (it.destination || 'Your Trip');
-    const ds = [it.start_date, it.end_date].filter(Boolean).map(d => fmtDate(d)).join(' → ');
+    document.getElementById('board-title').textContent = '✈ ' + (it.destination||'Your Trip');
+    const ds = [it.start_date,it.end_date].filter(Boolean).map(d=>fmtDate(d)).join(' → ');
     document.getElementById('board-subtitle').textContent = ds;
-    renderBudget(it.budget);
-    renderIssues(it.allIssues || []);
-    renderDayTabs(it.days);
-    renderDays(it.days);
-    const errs = (it.allIssues || []).filter(i => i.severity !== 'info').length;
+    renderBudget(it.budget); renderIssues(it.allIssues||[]); renderDayTabs(it.days); renderDays(it.days);
+    const errs = (it.allIssues||[]).filter(i=>i.severity!=='info').length;
     const badge = document.getElementById('issue-badge');
-    if (errs > 0) { badge.textContent = errs; badge.classList.add('show'); }
-    else badge.classList.remove('show');
+    if (errs>0){badge.textContent=errs;badge.classList.add('show');}else badge.classList.remove('show');
   }
-
   function renderBudget(budget) {
     const el = document.getElementById('budget-section');
-    if (!budget || !Object.values(budget).some(v => v > 0)) { el.style.display = 'none'; return; }
-    el.style.display = 'block';
-    const total = Object.values(budget).reduce((s, v) => s + (v || 0), 0);
-    const chips = Object.entries(budget).filter(([,v]) => v > 0)
-      .map(([k,v]) => '<span class="budget-chip">' + (BEMOJI[k]||'•') + ' $' + v.toLocaleString() + '</span>').join('');
-    const maxBudget = (currentItinerary && currentItinerary.max_budget_usd) || total * 1.3;
-    const pct = Math.min(100, Math.round((total / maxBudget) * 100));
-    const barColor = pct > 90 ? 'var(--red)' : pct > 70 ? 'var(--yellow)' : 'linear-gradient(90deg,var(--accent),var(--accent2))';
-    el.innerHTML = '<div class="budget-row"><span class="budget-total">Est. $' + total.toLocaleString() + '</span><span style="font-size:11px;color:var(--text-dim)">' + pct + '% of budget</span></div>' +
-      '<div class="budget-bar-outer"><div class="budget-bar-inner" style="width:' + pct + '%;background:' + barColor + '"></div></div>' +
-      '<div class="budget-chips">' + chips + '</div>';
+    if (!budget||!Object.values(budget).some(v=>v>0)){el.style.display='none';return;}
+    el.style.display='block';
+    const total=Object.values(budget).reduce((s,v)=>s+(v||0),0);
+    const chips=Object.entries(budget).filter(([,v])=>v>0).map(([k,v])=>'<span class="budget-chip">'+(BEMOJI[k]||'•')+' $'+v.toLocaleString()+'</span>').join('');
+    const max=(currentItinerary&&currentItinerary.max_budget_usd)||total*1.3;
+    const pct=Math.min(100,Math.round((total/max)*100));
+    const bar=pct>90?'var(--rose)':pct>70?'var(--gold)':'linear-gradient(90deg,var(--sky),var(--teal))';
+    el.innerHTML='<div class="budget-row"><span class="budget-total">Est. $'+total.toLocaleString()+'</span><span style="font-size:11px;font-weight:600;color:var(--text-3)">'+pct+'% of budget</span></div><div class="budget-bar-outer"><div class="budget-bar-inner" style="width:'+pct+'%;background:'+bar+'"></div></div><div class="budget-chips">'+chips+'</div>';
   }
-
   function renderIssues(issues) {
-    const el = document.getElementById('issues-section');
-    if (!issues.length) { el.style.display = 'none'; return; }
-    el.style.display = 'block';
-    const ico = { error:'🔴', warning:'🟡', info:'🔵' };
-    el.innerHTML = issues.map(issue => {
-      const suggest = issue.severity === 'info'
-        ? '<span class="issue-suggest" onclick="askAboutIssue(\'' + escapeHtml(issue.message).replace(/'/g,"\\'") + '\')">Ask agent →</span>'
-        : '';
-      return '<div class="issue-item ' + issue.severity + '">' +
-        '<span>' + (ico[issue.severity]||'•') + '</span>' +
-        '<span class="issue-text">' + escapeHtml(issue.message) + '</span>' + suggest + '</div>';
-    }).join('');
+    const el=document.getElementById('issues-section');
+    if(!issues.length){el.style.display='none';return;}
+    el.style.display='block';
+    const ico={error:'🔴',warning:'🟡',info:'🔵'};
+    el.innerHTML=issues.map(i=>'<div class="issue-item '+i.severity+'">'+(ico[i.severity]||'•')+'<span class="issue-text">'+escapeHtml(i.message)+'</span>'+(i.severity==='info'?'<span class="issue-suggest" onclick="askAboutIssue(\''+escapeHtml(i.message).replace(/'/g,"\\'")+'\')">Ask agent →</span>':'')+'</div>').join('');
   }
-
-  function askAboutIssue(msg) {
-    inputEl.value = msg.replace(/want activity suggestions\?/i, 'Please suggest activities for this slot.');
-    autoResize(inputEl); inputEl.focus();
-  }
-
+  function askAboutIssue(msg) { inputEl.value=msg.replace(/want activity suggestions\?/i,'Please suggest activities for this slot.'); autoResize(inputEl); inputEl.focus(); }
   function renderDayTabs(days) {
-    const el = document.getElementById('day-tabs'); el.style.display = 'flex';
-    const issMap = buildIssueDayMap(days, currentItinerary.allIssues || []);
-    el.innerHTML = days.map((day, i) => {
-      const lbl = day.date ? new Date(day.date + 'T12:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}) : 'Day '+(i+1);
-      const cls = issMap[i] === 'error' ? 'has-error' : issMap[i] === 'warning' ? 'has-warning' : '';
-      return '<button class="day-tab ' + (i===0?'active ':'') + cls + '" onclick="scrollToDay(' + i + ')">' + lbl + '</button>';
-    }).join('');
+    const el=document.getElementById('day-tabs'); el.style.display='flex';
+    const issMap=buildIssueDayMap(days,currentItinerary.allIssues||[]);
+    el.innerHTML=days.map((day,i)=>{const lbl=day.date?new Date(day.date+'T12:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}):'Day '+(i+1);const cls=issMap[i]==='error'?'has-error':issMap[i]==='warning'?'has-warning':'';return'<button class="day-tab '+(i===0?'active ':'')+cls+'" onclick="scrollToDay('+i+')">'+lbl+'</button>';}).join('');
   }
-
-  function buildIssueDayMap(days, issues) {
-    const map = {};
-    issues.forEach(issue => {
-      days.forEach((day, i) => {
-        const key = day.label || day.date || ('Day '+(i+1));
-        if (issue.message.includes(key)) { if (!map[i] || issue.severity==='error') map[i] = issue.severity; }
-      });
-    });
-    return map;
+  function buildIssueDayMap(days,issues){const map={};issues.forEach(issue=>{days.forEach((day,i)=>{const key=day.label||day.date||('Day '+(i+1));if(issue.message.includes(key)){if(!map[i]||issue.severity==='error')map[i]=issue.severity;}});});return map;}
+  function scrollToDay(idx){document.querySelectorAll('.day-tab').forEach((t,i)=>t.classList.toggle('active',i===idx));const el=document.getElementById('dsec-'+idx);if(el)el.scrollIntoView({behavior:'smooth',block:'start'});}
+  function renderDays(days){document.getElementById('board-days').innerHTML=days.map((d,i)=>renderDay(d,i)).join('');initDnD();}
+  function renderDay(day,idx){
+    const dLbl=day.date?new Date(day.date+'T12:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}).toUpperCase():'DAY '+(idx+1);
+    const w=day.weather;const weather=w?'<div class="day-weather">'+wIcon(w.condition)+' '+(w.temp_high_c??w.temp_high??'?')+'/'+(w.temp_low_c??w.temp_low??'?')+'°</div>':'';
+    const cards=(day.items||[]).map(item=>renderCard(item,idx)).join('');
+    const empty=!day.items?.length?'<div class="day-empty">Drop cards here</div>':'';
+    return'<div class="day-section" id="dsec-'+idx+'"><div class="day-section-header"><div class="day-label-grp"><span class="day-date-lbl">'+dLbl+'</span>'+(day.label?'<span class="day-theme">— '+day.label+'</span>':'')+'</div>'+weather+'</div><div class="day-drop-zone" data-idx="'+idx+'">'+cards+empty+'</div></div>';
   }
-
-  function scrollToDay(idx) {
-    document.querySelectorAll('.day-tab').forEach((t,i) => t.classList.toggle('active', i===idx));
-    const el = document.getElementById('dsec-' + idx); if (el) el.scrollIntoView({ behavior:'smooth', block:'start' });
+  function renderCard(item,dayIdx){
+    const icon=ICONS[item.type]||'📍'; const locked=lockedCards.has(item.id); const draggable=item.type!=='free_time'&&!locked;
+    const badge=item.status?'<span class="card-badge '+item.status+'">'+item.status+'</span>':'';
+    let meta='';
+    if(item.time)meta+='<span class="card-time">⏰ '+item.time+(item.end_time?' → '+item.end_time:'')+'</span>';
+    if(item.duration_hours)meta+='<span class="card-duration">'+item.duration_hours+'h</span>';
+    if(item.price_usd)meta+='<span class="card-price">$'+item.price_usd.toLocaleString()+'</span>';
+    const actions=item.type!=='free_time'?'<div class="card-actions"><button class="card-btn" onclick="askAlt(\''+escapeHtml(item.title).replace(/'/g,"\\'")+'\',event)">↔ Alternative</button><button class="card-btn lock" onclick="toggleLock(\''+item.id+'\',event)">'+(locked?'🔓 Unlock':'🔒 Lock')+'</button></div>':'';
+    return'<div class="itin-card type-'+item.type+' status-'+(item.status||'suggested')+(locked?' locked':'')+'" data-id="'+item.id+'" data-idx="'+dayIdx+'" '+(draggable?'draggable="true"':'')+'>'+
+      '<div class="card-top"><span class="card-icon">'+icon+'</span><div class="card-main"><div class="card-title">'+escapeHtml(item.title)+'</div>'+(item.subtitle?'<div class="card-subtitle">'+escapeHtml(item.subtitle)+'</div>':'')+'</div>'+badge+'</div>'+
+      (meta?'<div class="card-meta">'+meta+'</div>':'')+(item.notes?'<div class="card-notes">'+escapeHtml(item.notes)+'</div>':'')+actions+'</div>';
   }
+  function askAlt(title,e){e.stopPropagation();inputEl.value='Please suggest 2–3 alternatives for: '+title;autoResize(inputEl);inputEl.focus();}
+  function toggleLock(id,e){e.stopPropagation();if(lockedCards.has(id)){lockedCards.delete(id);showToast('Card unlocked.');}else{lockedCards.add(id);showToast('Card locked — won\'t move when dragging.');}renderDays(currentItinerary.days);}
 
-  function renderDays(days) {
-    document.getElementById('board-days').innerHTML = days.map((d,i) => renderDay(d,i)).join('');
-    initDnD();
-  }
-
-  function renderDay(day, idx) {
-    const dLbl = day.date
-      ? new Date(day.date+'T12:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}).toUpperCase()
-      : 'DAY '+(idx+1);
-    const w = day.weather;
-    const weather = w ? wIcon(w.condition)+' '+(w.temp_high_c??w.temp_high??'?')+'°/'+(w.temp_low_c??w.temp_low??'?')+'°C' : '';
-    const cards = (day.items||[]).map(item => renderCard(item, idx)).join('');
-    const empty = !day.items?.length ? '<div class="day-empty">Drop cards here</div>' : '';
-    return '<div class="day-section" id="dsec-' + idx + '">' +
-      '<div class="day-section-header">' +
-        '<div class="day-label-grp"><span class="day-date-lbl">'+dLbl+'</span>' +
-        (day.label ? '<span class="day-theme">— '+day.label+'</span>' : '') + '</div>' +
-        '<div class="day-weather">'+weather+'</div></div>' +
-      '<div class="day-drop-zone" data-idx="'+idx+'">' + cards + empty + '</div>' +
-      '</div>';
-  }
-
-  function renderCard(item, dayIdx) {
-    const icon = ICONS[item.type] || '📍';
-    const locked = lockedCards.has(item.id);
-    const draggable = item.type !== 'free_time' && !locked;
-    const badge = item.status ? '<span class="card-badge '+item.status+'">'+item.status+'</span>' : '';
-    let meta = '';
-    if (item.time) meta += '<span class="card-time">⏰ ' + item.time + (item.end_time ? ' → '+item.end_time : '') + '</span>';
-    if (item.duration_hours) meta += '<span class="card-duration">'+item.duration_hours+'h</span>';
-    if (item.price_usd)      meta += '<span class="card-price">$'+item.price_usd.toLocaleString()+'</span>';
-    const actions = item.type !== 'free_time'
-      ? '<div class="card-actions">' +
-          '<button class="card-btn" onclick="askAlt(\''+escapeHtml(item.title).replace(/'/g,"\\'")+'\',event)">↔ Alternative</button>' +
-          '<button class="card-btn lock" onclick="toggleLock(\''+item.id+'\',event)">'+(locked?'🔓 Unlock':'🔒 Lock')+'</button>' +
-        '</div>' : '';
-    return '<div class="itin-card type-'+item.type+' status-'+(item.status||'suggested')+(locked?' locked':'') +
-      '" data-id="'+item.id+'" data-idx="'+dayIdx+'" '+(draggable?'draggable="true"':'')+'>'+
-      '<div class="card-top"><span class="card-icon">'+icon+'</span>' +
-      '<div class="card-main"><div class="card-title">'+escapeHtml(item.title)+'</div>' +
-      (item.subtitle?'<div class="card-subtitle">'+escapeHtml(item.subtitle)+'</div>':'')+
-      '</div>'+badge+'</div>' +
-      (meta?'<div class="card-meta">'+meta+'</div>':'')+
-      (item.notes?'<div class="card-notes">'+escapeHtml(item.notes)+'</div>':'')+
-      actions+'</div>';
-  }
-
-  function askAlt(title, e) {
-    e.stopPropagation();
-    inputEl.value = 'Please suggest 2–3 alternatives for: ' + title;
-    autoResize(inputEl); inputEl.focus();
-  }
-
-  function toggleLock(id, e) {
-    e.stopPropagation();
-    if (lockedCards.has(id)) { lockedCards.delete(id); showToast('Card unlocked.'); }
-    else { lockedCards.add(id); showToast('Card locked — won\'t move when dragging.'); }
-    renderDays(currentItinerary.days);
-  }
-
-  // ── Conflict detection ──
-  function tMin(t) { if (!t) return null; const [h,m] = t.split(':').map(Number); return h*60+(m||0); }
-
-  function detectConflicts(days) {
-    const issues = [];
-    for (const day of days) {
-      const lbl = day.label || day.date || 'unknown';
-      const timed = (day.items||[]).filter(i => i.time && i.type!=='free_time')
-        .sort((a,b) => tMin(a.time)-tMin(b.time));
-      for (let i = 0; i < timed.length-1; i++) {
-        const cur = timed[i], nxt = timed[i+1];
-        if (!cur.duration_hours) continue;
-        const curEnd = tMin(cur.time) + cur.duration_hours*60;
-        const gap    = tMin(nxt.time) - curEnd;
-        if      (gap < 0)   issues.push({ severity:'error',   message:'Overlap on '+lbl+': "'+cur.title+'" runs into "'+nxt.title+'"' });
-        else if (gap < 20)  issues.push({ severity:'warning', message:'Tight on '+lbl+': only '+gap+'min between "'+cur.title+'" and "'+nxt.title+'"' });
-        else if (gap > 180) issues.push({ severity:'info',    message:Math.round(gap/60)+'h free on '+lbl+' between "'+cur.title+'" and "'+nxt.title+'" — want activity suggestions?' });
-      }
-    }
+  function tMin(t){if(!t)return null;const[h,m]=t.split(':').map(Number);return h*60+(m||0);}
+  function detectConflicts(days){
+    const issues=[];
+    for(const day of days){const lbl=day.label||day.date||'unknown';const timed=(day.items||[]).filter(i=>i.time&&i.type!=='free_time').sort((a,b)=>tMin(a.time)-tMin(b.time));for(let i=0;i<timed.length-1;i++){const cur=timed[i],nxt=timed[i+1];if(!cur.duration_hours)continue;const curEnd=tMin(cur.time)+cur.duration_hours*60;const gap=tMin(nxt.time)-curEnd;if(gap<0)issues.push({severity:'error',message:'Overlap on '+lbl+': "'+cur.title+'" runs into "'+nxt.title+'"'});else if(gap<20)issues.push({severity:'warning',message:'Tight on '+lbl+': only '+gap+'min between "'+cur.title+'" and "'+nxt.title+'"'});else if(gap>180)issues.push({severity:'info',message:Math.round(gap/60)+'h free on '+lbl+' between "'+cur.title+'" and "'+nxt.title+'" — want activity suggestions?'});}}
     return issues;
   }
 
-  // ── Drag & Drop ──
-  function initDnD() {
-    document.querySelectorAll('.itin-card[draggable="true"]').forEach(c => {
-      c.addEventListener('dragstart', onDS); c.addEventListener('dragend', onDE);
-    });
-    document.querySelectorAll('.day-drop-zone').forEach(z => {
-      z.addEventListener('dragover',  onDO); z.addEventListener('dragleave', onDL); z.addEventListener('drop', onDrop);
-    });
+  function initDnD(){document.querySelectorAll('.itin-card[draggable="true"]').forEach(c=>{c.addEventListener('dragstart',onDS);c.addEventListener('dragend',onDE);});document.querySelectorAll('.day-drop-zone').forEach(z=>{z.addEventListener('dragover',onDO);z.addEventListener('dragleave',onDL);z.addEventListener('drop',onDrop);});}
+  function onDS(e){draggedCard={id:e.currentTarget.dataset.id,fromIdx:parseInt(e.currentTarget.dataset.idx)};e.currentTarget.classList.add('dragging');e.dataTransfer.effectAllowed='move';}
+  function onDE(e){e.currentTarget.classList.remove('dragging');document.querySelectorAll('.day-drop-zone').forEach(z=>z.classList.remove('drag-over'));}
+  function onDO(e){e.preventDefault();e.dataTransfer.dropEffect='move';e.currentTarget.classList.add('drag-over');}
+  function onDL(e){if(!e.currentTarget.contains(e.relatedTarget))e.currentTarget.classList.remove('drag-over');}
+  function onDrop(e){
+    e.preventDefault();e.currentTarget.classList.remove('drag-over');
+    if(!draggedCard||!currentItinerary)return;
+    const toIdx=parseInt(e.currentTarget.dataset.idx);
+    if(draggedCard.fromIdx===toIdx){draggedCard=null;return;}
+    const fromDay=currentItinerary.days[draggedCard.fromIdx],toDay=currentItinerary.days[toIdx];
+    if(!fromDay||!toDay)return;
+    const idx=fromDay.items.findIndex(i=>i.id===draggedCard.id);
+    if(idx===-1){draggedCard=null;return;}
+    const[moved]=fromDay.items.splice(idx,1);toDay.items.push(moved);
+    currentItinerary.allIssues=[...(currentItinerary.issues||[]),...detectConflicts(currentItinerary.days)];
+    localStorage.setItem('itin_'+sessionId,JSON.stringify(currentItinerary));renderBoard();
+    showToast('"'+moved.title+'" moved to '+(toDay.label||'Day '+(toIdx+1)));draggedCard=null;
   }
 
-  function onDS(e) { draggedCard = { id: e.currentTarget.dataset.id, fromIdx: parseInt(e.currentTarget.dataset.idx) }; e.currentTarget.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; }
-  function onDE(e) { e.currentTarget.classList.remove('dragging'); document.querySelectorAll('.day-drop-zone').forEach(z=>z.classList.remove('drag-over')); }
-  function onDO(e) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; e.currentTarget.classList.add('drag-over'); }
-  function onDL(e) { if (!e.currentTarget.contains(e.relatedTarget)) e.currentTarget.classList.remove('drag-over'); }
+  function wIcon(c){c=(c||'').toLowerCase();if(c.includes('thunder'))return'⛈';if(c.includes('snow')||c.includes('blizzard'))return'❄️';if(c.includes('sleet')||c.includes('hail'))return'🌨';if(c.includes('rain')||c.includes('shower')||c.includes('drizzle'))return'🌧';if(c.includes('fog')||c.includes('mist'))return'🌫';if(c.includes('overcast'))return'☁️';if(c.includes('cloud')||c.includes('partly'))return'⛅';if(c.includes('sun')||c.includes('clear')||c.includes('mainly'))return'☀️';return'🌤';}
+  function fmtDate(d){try{return new Date(d+'T12:00').toLocaleDateString('en-US',{month:'short',day:'numeric'});}catch{return d;}}
 
-  function onDrop(e) {
-    e.preventDefault(); e.currentTarget.classList.remove('drag-over');
-    if (!draggedCard || !currentItinerary) return;
-    const toIdx = parseInt(e.currentTarget.dataset.idx);
-    if (draggedCard.fromIdx === toIdx) { draggedCard = null; return; }
-    const fromDay = currentItinerary.days[draggedCard.fromIdx];
-    const toDay   = currentItinerary.days[toIdx];
-    if (!fromDay || !toDay) return;
-    const idx = fromDay.items.findIndex(i => i.id === draggedCard.id);
-    if (idx === -1) { draggedCard = null; return; }
-    const [moved] = fromDay.items.splice(idx, 1);
-    toDay.items.push(moved);
-    currentItinerary.allIssues = [...(currentItinerary.issues||[]), ...detectConflicts(currentItinerary.days)];
-    localStorage.setItem('itin_' + sessionId, JSON.stringify(currentItinerary));
-    renderBoard();
-    showToast('"' + moved.title + '" moved to ' + (toDay.label || 'Day '+(toIdx+1)));
-    draggedCard = null;
-  }
-
-  // ── Utilities ──
-  function wIcon(c) {
-    c = (c||'').toLowerCase();
-    if (c.includes('thunder'))                      return '⛈';
-    if (c.includes('snow')||c.includes('blizzard')) return '❄️';
-    if (c.includes('sleet')||c.includes('hail'))    return '🌨';
-    if (c.includes('rain')||c.includes('shower')||c.includes('drizzle')) return '🌧';
-    if (c.includes('fog')||c.includes('mist')||c.includes('rime'))       return '🌫';
-    if (c.includes('overcast'))                     return '☁️';
-    if (c.includes('cloud')||c.includes('partly'))  return '⛅';
-    if (c.includes('sun')||c.includes('clear')||c.includes('mainly clear')) return '☀️';
-    return '🌤';
-  }
-
-  function fmtDate(d) {
-    try { return new Date(d+'T12:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}); }
-    catch { return d; }
-  }
-
-  // ── Init ──
   loadTrips();
   inputEl.focus();
-  (async () => {
-    try {
-      const r = await fetch('/api/itinerary/' + sessionId);
-      const d = await r.json();
-      if (d.itinerary) updateItinerary(d.itinerary);
-    } catch (_) {}
-  })();
+  (async()=>{try{const r=await fetch('/api/itinerary/'+sessionId);const d=await r.json();if(d.itinerary)updateItinerary(d.itinerary);}catch(_){}})();
 </script>
 </body>
 </html>
