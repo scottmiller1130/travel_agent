@@ -429,6 +429,216 @@ def search_flights(
     }
 
 
+def find_cheapest_dates(
+    origin: str,
+    destination: str,
+    target_date: str,
+    flexibility_days: int = 7,
+    passengers: int = 1,
+    cabin_class: str = "economy",
+    trip_duration_nights: int | None = None,
+) -> dict:
+    """
+    Find cheapest departure dates within ±flexibility_days of the target date.
+
+    With Amadeus: uses /v1/shopping/flight-dates for a full month view.
+    Without Amadeus: searches each date in the window with calculated pricing.
+
+    Returns sorted cheapest dates with savings vs target date price.
+    """
+    from datetime import date, timedelta
+
+    o_res = _find_airport(origin)
+    d_res = _find_airport(destination)
+    if not o_res:
+        return {"status": "error", "message": f"Unknown origin: '{origin}'"}
+    if not d_res:
+        return {"status": "error", "message": f"Unknown destination: '{destination}'"}
+
+    origin_iata = o_res[0]
+    dest_iata   = d_res[0]
+
+    # ── Try Amadeus flight-dates endpoint ─────────────────────────────────
+    if _HTTPX and os.getenv("AMADEUS_CLIENT_ID"):
+        try:
+            result = _amadeus_cheapest_dates(
+                origin_iata, dest_iata, target_date, flexibility_days,
+                passengers, cabin_class, trip_duration_nights,
+            )
+            if result:
+                return result
+        except Exception:
+            pass  # Fall through to calculated search
+
+    # ── Calculated pricing: brute-force the window ────────────────────────
+    try:
+        base = datetime.strptime(target_date, "%Y-%m-%d").date()
+    except ValueError:
+        return {"status": "error", "message": f"Invalid target_date: '{target_date}'"}
+
+    flex = min(flexibility_days, 30)
+    dates_to_check = [base + timedelta(days=d) for d in range(-flex, flex + 1)]
+    # Remove past dates
+    today = datetime.utcnow().date()
+    dates_to_check = [d for d in dates_to_check if d >= today]
+
+    if not dates_to_check:
+        return {"status": "error", "message": "All dates in the window are in the past."}
+
+    o_city, o_country, o_lat, o_lon, _ = o_res[1]
+    d_city, d_country, d_lat, d_lon, _ = d_res[1]
+    km = _haversine(o_lat, o_lon, d_lat, d_lon)
+
+    results = []
+    for chk_date in dates_to_check:
+        date_str  = chk_date.isoformat()
+        seed      = int(km) + hash(date_str) % 10000
+        price     = _price_estimate(km, cabin_class, passengers, seed)
+        ret_date  = None
+        if trip_duration_nights:
+            ret = chk_date + timedelta(days=trip_duration_nights)
+            ret_date = ret.isoformat()
+            ret_seed = seed + trip_duration_nights
+            price   += _price_estimate(km, cabin_class, passengers, ret_seed)
+        delta = (chk_date - base).days
+        results.append({
+            "departure_date":   date_str,
+            "return_date":      ret_date,
+            "price_usd":        price,
+            "days_from_target": delta,
+            "day_label":        f"{'Target' if delta == 0 else (f'+{delta}d' if delta > 0 else f'{delta}d')}",
+        })
+
+    results.sort(key=lambda x: x["price_usd"])
+    target_price = next((r["price_usd"] for r in results if r["days_from_target"] == 0), None)
+    cheapest     = results[0]["price_usd"]
+
+    for r in results:
+        if target_price:
+            r["savings_vs_target"] = max(0, target_price - r["price_usd"])
+            r["pct_vs_target"]     = round((r["price_usd"] / target_price - 1) * 100, 1)
+        else:
+            r["savings_vs_target"] = 0
+            r["pct_vs_target"]     = 0.0
+
+    best = results[0]
+    summary = (
+        f"Cheapest option: {best['departure_date']} at ${best['price_usd']:,}/person"
+    )
+    if best["days_from_target"] != 0 and target_price:
+        summary += f" — saves ${best['savings_vs_target']:,} vs your target date"
+
+    return {
+        "status":        "success",
+        "origin":        origin_iata,
+        "destination":   dest_iata,
+        "target_date":   target_date,
+        "flexibility":   f"±{flex} days",
+        "cheapest_price": cheapest,
+        "target_price":  target_price,
+        "results":       results[:20],  # top 20
+        "summary":       summary,
+        "source":        "Calculated pricing (set AMADEUS_CLIENT_ID for live fares)",
+    }
+
+
+def _amadeus_cheapest_dates(
+    origin: str, destination: str, target_date: str,
+    flexibility_days: int, passengers: int, cabin_class: str,
+    trip_duration: int | None,
+) -> dict | None:
+    """Amadeus /v1/shopping/flight-dates — cheapest dates for a route."""
+    token = _get_amadeus_token()
+    if not token:
+        return None
+    host = os.getenv("AMADEUS_HOST", "https://test.api.amadeus.com")
+
+    # Parse target date → derive a departure date range for the API
+    try:
+        base = datetime.strptime(target_date, "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+    params: dict = {
+        "origin":          origin,
+        "destination":     destination,
+        "departureDate":   target_date,
+        "oneWay":          "false" if trip_duration else "true",
+        "currency":        "USD",
+        "viewBy":          "DATE",
+    }
+    if trip_duration:
+        params["duration"] = trip_duration
+
+    r = _httpx.get(
+        f"{host}/v1/shopping/flight-dates",
+        headers={"Authorization": f"Bearer {token}"},
+        params=params,
+        timeout=15,
+    )
+    if r.status_code != 200:
+        return None
+
+    data = r.json().get("data", [])
+    if not data:
+        return None
+
+    from datetime import timedelta
+    results = []
+    for item in data:
+        dep_date = item.get("departureDate", "")
+        price    = float(item.get("price", {}).get("total", 0))
+        if not dep_date or not price:
+            continue
+        try:
+            chk = datetime.strptime(dep_date, "%Y-%m-%d").date()
+        except ValueError:
+            continue
+        delta = (chk - base).days
+        if abs(delta) > flexibility_days:
+            continue
+        results.append({
+            "departure_date":   dep_date,
+            "return_date":      item.get("returnDate"),
+            "price_usd":        int(price * passengers),
+            "days_from_target": delta,
+            "day_label":        f"{'Target' if delta == 0 else (f'+{delta}d' if delta > 0 else f'{delta}d')}",
+        })
+
+    if not results:
+        return None
+
+    results.sort(key=lambda x: x["price_usd"])
+    target_price = next((r["price_usd"] for r in results if r["days_from_target"] == 0), None)
+
+    for r in results:
+        if target_price:
+            r["savings_vs_target"] = max(0, target_price - r["price_usd"])
+            r["pct_vs_target"]     = round((r["price_usd"] / target_price - 1) * 100, 1)
+        else:
+            r["savings_vs_target"] = 0
+            r["pct_vs_target"]     = 0.0
+
+    best     = results[0]
+    cheapest = best["price_usd"]
+    summary  = f"Cheapest: {best['departure_date']} at ${cheapest:,}/person"
+    if best["days_from_target"] != 0 and target_price:
+        summary += f" — saves ${best['savings_vs_target']:,} vs your target date"
+
+    return {
+        "status":         "success",
+        "origin":         origin,
+        "destination":    destination,
+        "target_date":    target_date,
+        "flexibility":    f"±{flexibility_days} days",
+        "cheapest_price": cheapest,
+        "target_price":   target_price,
+        "results":        results[:20],
+        "summary":        summary,
+        "source":         "Amadeus (live pricing)",
+    }
+
+
 def book_flight(flight_id: str, passenger_name: str,
                 passenger_email: str, payment_confirmed: bool = False) -> dict:
     if not payment_confirmed:

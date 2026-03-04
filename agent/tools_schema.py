@@ -83,10 +83,37 @@ TOOLS: list[dict] = [
         },
     },
     {
+        "name": "find_cheapest_dates",
+        "description": (
+            "Find the cheapest flight dates for a route within a flexible window. "
+            "Use this to hunt for deals — it searches ±flexibility_days around a target date and returns "
+            "dates ranked by price with savings vs the target date. Always offer to search for cheap dates "
+            "when the user has any flexibility at all. Returns sorted results with savings_vs_target."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "origin": {"type": "string", "description": "Origin city or IATA code"},
+                "destination": {"type": "string", "description": "Destination city or IATA code"},
+                "target_date": {"type": "string", "description": "Preferred departure date YYYY-MM-DD"},
+                "flexibility_days": {"type": "integer", "description": "Days to search before/after target date", "default": 7},
+                "passengers": {"type": "integer", "description": "Number of passengers", "default": 1},
+                "cabin_class": {
+                    "type": "string",
+                    "enum": ["economy", "premium_economy", "business", "first"],
+                    "default": "economy",
+                },
+                "trip_duration_nights": {"type": "integer", "description": "Length of stay in nights (for round-trip pricing context)"},
+            },
+            "required": ["origin", "destination", "target_date"],
+        },
+    },
+    {
         "name": "get_weather",
         "description": (
             "Get weather forecast for a destination during a date range. Returns daily forecasts, "
-            "climate summary, and packing suggestions. Always check weather before finalizing trip plans."
+            "climate summary, packing suggestions, and peak/shoulder/off-season context. "
+            "Always check weather before finalizing trip plans."
         ),
         "input_schema": {
             "type": "object",
@@ -312,6 +339,18 @@ TOOLS: list[dict] = [
                         "activities": {"type": "number"},
                         "food": {"type": "number"},
                         "transport": {"type": "number"},
+                    },
+                },
+                "season": {
+                    "type": "object",
+                    "description": "Season context for the destination (from get_weather or get_season tool). Include when known.",
+                    "properties": {
+                        "season": {"type": "string", "description": "peak, shoulder, or off"},
+                        "label": {"type": "string", "description": "Human label e.g. 'Peak Season'"},
+                        "emoji": {"type": "string"},
+                        "crowd_level": {"type": "string"},
+                        "price_context": {"type": "string"},
+                        "notes": {"type": "string"},
                     },
                 },
                 "issues": {

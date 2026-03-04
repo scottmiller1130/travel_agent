@@ -20,7 +20,9 @@ import json
 import os
 import sys
 import threading
+import time
 import uuid
+from collections import defaultdict
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -29,6 +31,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from fastapi import FastAPI, Request, HTTPException
+from fastapi.middleware.base import BaseHTTPMiddleware
 from fastapi.responses import StreamingResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -39,6 +42,47 @@ from memory.trips import TripStore
 from memory.sessions import SessionStore
 
 app = FastAPI(title="Travel Agent API")
+
+# ---------------------------------------------------------------------------
+# Security headers middleware
+# ---------------------------------------------------------------------------
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+            "style-src 'self' 'unsafe-inline'; "
+            "connect-src 'self'; "
+            "img-src 'self' data:; "
+            "font-src 'self';"
+        )
+        return response
+
+app.add_middleware(SecurityHeadersMiddleware)
+
+# ---------------------------------------------------------------------------
+# Rate limiting — 20 requests/min per IP on /api/chat
+# ---------------------------------------------------------------------------
+_rate_limit_store: dict[str, list[float]] = defaultdict(list)
+_rate_lock = threading.Lock()
+RATE_LIMIT = 20
+RATE_WINDOW = 60  # seconds
+
+
+def _check_rate_limit(ip: str) -> bool:
+    """Return True if allowed, False if rate limit exceeded."""
+    now = time.monotonic()
+    with _rate_lock:
+        timestamps = _rate_limit_store[ip]
+        _rate_limit_store[ip] = [t for t in timestamps if now - t < RATE_WINDOW]
+        if len(_rate_limit_store[ip]) >= RATE_LIMIT:
+            return False
+        _rate_limit_store[ip].append(now)
+        return True
 
 # ---------------------------------------------------------------------------
 # Shared session store (all sessions, all users, persisted to SQLite)
@@ -106,7 +150,11 @@ class ChatRequest(BaseModel):
 
 
 @app.post("/api/chat/{session_id}")
-async def chat(session_id: str, body: ChatRequest):
+async def chat(session_id: str, body: ChatRequest, request: Request):
+    client_ip = request.client.host if request.client else "unknown"
+    if not _check_rate_limit(client_ip):
+        raise HTTPException(status_code=429, detail="Too many requests. Please wait a moment.")
+
     try:
         agent = _get_agent(session_id)
     except Exception as startup_err:
@@ -202,6 +250,15 @@ async def get_preferences(session_id: str):
     return JSONResponse(PreferenceStore().get_all())
 
 
+VALID_PREF_KEYS = {
+    "preferred_airlines", "avoided_airlines", "seat_preference",
+    "cabin_class", "hotel_min_stars", "max_budget_per_day_usd",
+    "dietary_restrictions", "accessibility_needs", "preferred_activities",
+    "avoided_activities", "travel_pace", "home_airport", "home_city",
+    "currency", "name", "email",
+}
+
+
 class PrefUpdate(BaseModel):
     key: str
     value: object
@@ -209,6 +266,8 @@ class PrefUpdate(BaseModel):
 
 @app.post("/api/preferences/{session_id}")
 async def set_preference(session_id: str, body: PrefUpdate):
+    if body.key not in VALID_PREF_KEYS:
+        raise HTTPException(status_code=400, detail=f"Invalid preference key: {body.key!r}")
     PreferenceStore().set(body.key, body.value)
     return JSONResponse({"status": "ok"})
 

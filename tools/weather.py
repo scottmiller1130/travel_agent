@@ -16,6 +16,8 @@ try:
 except ImportError:
     _HTTPX = False
 
+from tools.seasons import get_season_for_dates
+
 GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search"
 FORECAST_URL  = "https://api.open-meteo.com/v1/forecast"
 
@@ -134,6 +136,7 @@ def _mock_forecast(destination: str, start_date: str, end_date: str) -> dict:
         "summary":             f"Mostly {dominant.lower()} with average highs of {avg_high:.1f}°C. {rain_days} rainy day(s) expected.",
         "daily_forecast":      daily,
         "packing_suggestions": _PACKING.get(profile_key, []),
+        "season":              get_season_for_dates(destination, start_date, end_date),
         "source":              "Climate estimate (live API unreachable)",
     }
 
@@ -253,6 +256,7 @@ def get_weather(destination: str, start_date: str, end_date: str) -> dict:
         "summary":             f"Mostly {dominant.lower()} with average highs of {avg_high:.1f}°C ({avg_high * 9/5 + 32:.1f}°F). {rain_days} rainy day(s) expected.",
         "daily_forecast":      daily,
         "packing_suggestions": _packing_for_temp(avg_high),
+        "season":              get_season_for_dates(destination, start_date, end_date),
         "source":              "Open-Meteo (live forecast — free, no API key)",
     }
     if note:

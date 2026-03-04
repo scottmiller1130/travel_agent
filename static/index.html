@@ -203,6 +203,12 @@
     #board-empty p { font-size: 13px; line-height: 1.7; max-width: 300px; color: var(--text-3); }
     #board-empty strong { color: var(--sky-d); }
     ::-webkit-scrollbar { width: 5px; height: 5px; } ::-webkit-scrollbar-track { background: transparent; } ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; } ::-webkit-scrollbar-thumb:hover { background: var(--text-4); }
+
+    /* ── Season badge ── */
+    .season-badge { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; letter-spacing: .03em; margin-top: 4px; }
+    .season-badge.season-peak     { background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; }
+    .season-badge.season-shoulder { background: var(--gold-l); color: #92400e; border: 1px solid #fcd34d; }
+    .season-badge.season-off      { background: var(--green-l); color: #065f46; border: 1px solid #6ee7b7; }
   </style>
 </head>
 <body>
@@ -384,12 +390,21 @@
     localStorage.setItem('itin_' + sessionId, JSON.stringify(currentItinerary));
     renderBoard(); if (!boardOpen) openBoard();
   }
+  function renderSeasonBadge(season) {
+    if (!season || !season.season) return '';
+    const cls = 'season-' + season.season;
+    const label = season.label || season.season;
+    const emoji = season.emoji || (season.season==='peak'?'🔴':season.season==='shoulder'?'🟡':'🟢');
+    const tip = [season.crowd_level, season.price_context].filter(Boolean).join(' · ');
+    return '<span class="season-badge ' + cls + '" title="' + escapeHtml(tip) + '">' + emoji + ' ' + escapeHtml(label) + '</span>';
+  }
   function renderBoard() {
     if (!currentItinerary) return;
     const it = currentItinerary;
     document.getElementById('board-title').textContent = '✈ ' + (it.destination||'Your Trip');
     const ds = [it.start_date,it.end_date].filter(Boolean).map(d=>fmtDate(d)).join(' → ');
-    document.getElementById('board-subtitle').textContent = ds;
+    const seasonHtml = renderSeasonBadge(it.season);
+    document.getElementById('board-subtitle').innerHTML = escapeHtml(ds) + (seasonHtml ? '&nbsp;&nbsp;' + seasonHtml : '');
     renderBudget(it.budget); renderIssues(it.allIssues||[]); renderDayTabs(it.days); renderDays(it.days);
     const errs = (it.allIssues||[]).filter(i=>i.severity!=='info').length;
     const badge = document.getElementById('issue-badge');

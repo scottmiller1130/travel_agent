@@ -49,11 +49,12 @@ TOOL_LABELS = {
     "save_trip": "Saving trip...",
     "get_trips": "Loading trip history...",
     "update_itinerary": "Building your trip board...",
+    "find_cheapest_dates": "Hunting for cheap dates...",
 }
 
 from memory.preferences import PreferenceStore
 from memory.trips import TripStore
-from tools.flights import search_flights, book_flight
+from tools.flights import search_flights, book_flight, find_cheapest_dates
 from tools.hotels import search_hotels, book_hotel
 from tools.weather import get_weather
 from tools.maps import search_places, get_distance
@@ -68,6 +69,7 @@ SYSTEM_PROMPT = """You are a personal travel agent with full authority to plan, 
 
 Your capabilities:
 - Search and compare flights and hotels
+- Hunt for the cheapest flight dates using find_cheapest_dates (searches ±N days around a target)
 - Check weather forecasts and build day-by-day itineraries
 - Research destinations (visa requirements, currency, safety, local tips)
 - Check the user's calendar availability
@@ -83,6 +85,8 @@ How you work:
 6. Be proactive: if you notice a better flight option, a weather issue, or a price drop opportunity, mention it.
 7. Keep a running trip budget and flag if options exceed it.
 8. Whenever you have a concrete day-by-day plan (with specific dates, flights, or activities), call update_itinerary to populate the visual trip board. Call it again whenever the plan changes meaningfully. Include weather per day if you've checked it, and flag any issues (timing conflicts, missing transfers, tight connections, etc.).
+9. SEASON AWARENESS: When get_weather returns a 'season' field, always mention whether it is peak/shoulder/off season, what that means for crowds and prices, and include the season object in your update_itinerary call. This helps users make informed decisions.
+10. DEAL HUNTING: Proactively use find_cheapest_dates whenever the user has any date flexibility (even ±3 days). Always show how much they can save vs their target date. Mention off-season months as a way to cut costs significantly.
 
 Tone: Knowledgeable, efficient, and personalized. You know the user's preferences and apply them automatically.
 """
@@ -222,6 +226,7 @@ class TravelAgent:
             "save_trip": self._handle_save_trip,
             "get_trips": self._handle_get_trips,
             "update_itinerary": self._handle_update_itinerary,
+            "find_cheapest_dates": lambda i: find_cheapest_dates(**i),
         }
 
         handler = dispatch.get(name)
