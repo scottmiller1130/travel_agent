@@ -75,9 +75,10 @@
     #board-toggle-btn { display: flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 9px; border: 1.5px solid var(--border); background: var(--surface2); color: var(--text-3); font-size: 12px; font-weight: 700; cursor: pointer; transition: all .15s; white-space: nowrap; }
     #board-toggle-btn:hover { border-color: var(--sky); color: var(--sky-d); background: var(--sky-l); }
     #board-toggle-btn.active { background: linear-gradient(135deg, var(--sky), var(--teal)); border-color: transparent; color: #fff; box-shadow: 0 3px 10px rgba(14,165,233,.3); }
+    @keyframes pulse-ring { 0% { box-shadow: 0 0 0 0 rgba(14,165,233,.5); } 70% { box-shadow: 0 0 0 7px rgba(14,165,233,0); } 100% { box-shadow: 0 0 0 0 rgba(14,165,233,0); } }
+    #board-toggle-btn.has-update { border-color: var(--sky); color: var(--sky-d); background: var(--sky-l); animation: pulse-ring 1.4s ease 3; }
     #issue-badge { background: var(--rose); color: #fff; border-radius: 10px; padding: 1px 6px; font-size: 10px; font-weight: 800; display: none; }
     #issue-badge.show { display: inline; }
-    #session-label { font-size: 11px; color: var(--text-4); }
 
     /* ── Messages ── */
     #messages { flex: 1; overflow-y: auto; padding: 28px 28px 12px; display: flex; flex-direction: column; gap: 18px; scroll-behavior: smooth; }
@@ -103,15 +104,9 @@
     .bubble td { padding: 6px 11px; border: 1px solid var(--border); }
     .bubble tr:nth-child(even) td { background: var(--surface2); }
     .bubble blockquote { border-left: 3px solid var(--sky); padding-left: 13px; color: var(--text-3); margin: 8px 0; font-style: italic; }
-    .tool-activity { display: flex; flex-wrap: wrap; gap: 7px; padding: 8px 0; }
-    .tool-chip { display: flex; align-items: center; gap: 6px; padding: 5px 11px; background: var(--surface); border: 1.5px solid var(--border); border-radius: 20px; font-size: 11px; font-weight: 600; color: var(--text-3); animation: fadein .2s ease; }
-    .tool-chip.active { border-color: var(--sky); color: var(--sky-d); background: var(--sky-l); }
-    .tool-chip .spinner { width: 11px; height: 11px; border: 2px solid var(--sky); border-top-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; }
-    .tool-chip .done-icon { color: var(--green); font-size: 11px; }
-    .thinking { display: flex; align-items: center; gap: 6px; padding: 13px 17px; color: var(--text-3); font-size: 13px; font-style: italic; }
-    .thinking-dots span { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--sky); animation: bounce 1.2s infinite; margin: 0 1px; }
-    .thinking-dots span:nth-child(2) { animation-delay: .2s; } .thinking-dots span:nth-child(3) { animation-delay: .4s; }
-    @keyframes bounce { 0%,80%,100% { transform: translateY(0); } 40% { transform: translateY(-5px); } }
+    .thinking { display: flex; align-items: center; gap: 8px; padding: 13px 17px; color: var(--text-3); font-size: 13px; }
+    .thinking-spinner { width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--sky); border-radius: 50%; animation: spin .8s linear infinite; flex-shrink: 0; }
+    .thinking-label { color: var(--text-3); font-size: 13px; }
     @keyframes spin { to { transform: rotate(360deg); } }
     @keyframes fadein { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 
@@ -269,10 +264,12 @@
   </div>
   <div class="sidebar-actions">
     <button class="btn primary" onclick="newTrip()"><span class="icon">✈</span> New Trip</button>
-    <button class="btn danger" onclick="resetConversation()"><span class="icon">↺</span> Reset Conversation</button>
   </div>
   <div class="sidebar-section"><h3>Saved Trips</h3></div>
   <div id="trips-list"><p class="empty-state">No trips yet.<br>Ask me to plan one!</p></div>
+  <div style="padding:10px 14px 16px;border-top:1px solid var(--border);margin-top:auto">
+    <button class="btn" style="font-size:11px;color:var(--text-4);border-color:transparent;padding:5px 8px" onclick="resetConversation()">↺ Reset conversation</button>
+  </div>
 </div>
 
 <div id="main">
@@ -286,7 +283,6 @@
     </div>
     <div id="header-right">
       <button id="board-toggle-btn" onclick="toggleBoard()">🗺 Trip Board <span id="issue-badge"></span></button>
-      <div id="session-label"></div>
     </div>
   </div>
 
@@ -294,16 +290,7 @@
     <div class="message agent">
       <div class="avatar">✈</div>
       <div class="bubble">
-        <p><strong>Hello! I'm your personal travel agent.</strong> Here's what I can do for you:</p>
-        <ul>
-          <li>✈ Search &amp; compare flights with real-time pricing</li>
-          <li>🏨 Find and book hotels tailored to your preferences</li>
-          <li>🌤 Check weather forecasts and build day-by-day itineraries</li>
-          <li>🗺 Research destinations — visas, currency, local tips</li>
-          <li>📅 Check your calendar so trips never clash</li>
-          <li>🧠 Remember your preferences for future trips</li>
-        </ul>
-        <p style="margin-top:10px">Where in the world would you like to go? 🌍</p>
+        <p><strong>Hi! I'm your travel agent.</strong> Tell me where you'd like to go and I'll handle flights, hotels, weather, and a day-by-day plan. <strong>Where to?</strong> 🌍</p>
       </div>
     </div>
   </div>
@@ -315,10 +302,10 @@
       <button id="send-btn" onclick="sendMessage()" title="Send (Enter)">➤</button>
     </div>
     <div class="hints">
-      <span class="hint" onclick="fillHint(this)">When is the cheapest month to fly NYC → Lisbon?</span>
-      <span class="hint" onclick="fillHint(this)">Find the cheapest dates around July 15 NYC → Tokyo</span>
-      <span class="hint" onclick="fillHint(this)">Plan a 5-day trip to Bali — find me the best deal</span>
-      <span class="hint" onclick="fillHint(this)">I prefer window seats on Delta — remember that</span>
+      <span class="hint" onclick="fillHint(this)">Plan a trip to Bali</span>
+      <span class="hint" onclick="fillHint(this)">Flights NYC → Tokyo in July</span>
+      <span class="hint" onclick="fillHint(this)">Best month to visit Lisbon?</span>
+      <span class="hint" onclick="fillHint(this)">Remember I prefer window seats</span>
     </div>
   </div>
 </div>
@@ -338,7 +325,7 @@
     <div id="board-days">
       <div id="board-empty">
         <div class="empty-icon">🗺</div>
-        <p>Ask me to plan a trip and your <strong>visual itinerary</strong> will appear here — draggable cards you can rearrange across days.</p>
+        <p>Your itinerary will appear here once a trip is planned.</p>
       </div>
     </div>
   </div>
@@ -349,7 +336,6 @@
 <script>
   let sessionId = localStorage.getItem('travel_agent_session');
   if (!sessionId) { sessionId = crypto.randomUUID(); localStorage.setItem('travel_agent_session', sessionId); }
-  document.getElementById('session-label').textContent = 'ID: ' + sessionId.slice(0, 8);
   let isThinking = false;
   marked.setOptions({ breaks: true, gfm: true });
   const messagesEl = document.getElementById('messages');
@@ -359,12 +345,11 @@
   function scrollToBottom() { messagesEl.scrollTop = messagesEl.scrollHeight; }
   function showToast(msg, ms = 3000) { const t = document.getElementById('toast'); t.textContent = msg; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), ms); }
   function addUserMessage(text) { const d = document.createElement('div'); d.className = 'message user'; d.innerHTML = '<div class="avatar">👤</div><div class="bubble">' + escapeHtml(text) + '</div>'; messagesEl.appendChild(d); scrollToBottom(); }
-  function addThinkingMessage() { const d = document.createElement('div'); d.className = 'message agent'; d.id = 'thinking-msg'; d.innerHTML = '<div class="avatar">✈</div><div><div class="tool-activity" id="tool-chips"></div><div class="thinking">Thinking<div class="thinking-dots"><span></span><span></span><span></span></div></div></div>'; messagesEl.appendChild(d); scrollToBottom(); return d; }
+  function addThinkingMessage() { const d = document.createElement('div'); d.className = 'message agent'; d.id = 'thinking-msg'; d.innerHTML = '<div class="avatar">✈</div><div class="thinking"><div class="thinking-spinner"></div><span class="thinking-label" id="thinking-label">Thinking…</span></div>'; messagesEl.appendChild(d); scrollToBottom(); return d; }
   function replaceThinkingWithResponse(text) { const t = document.getElementById('thinking-msg'); if (t) t.remove(); const d = document.createElement('div'); d.className = 'message agent'; d.innerHTML = '<div class="avatar">✈</div><div class="bubble">' + marked.parse(text) + '</div>'; messagesEl.appendChild(d); scrollToBottom(); }
 
-  const activeTools = {};
-  function onToolStart(tool, label) { const chips = document.getElementById('tool-chips'); if (!chips) return; const c = document.createElement('div'); c.className = 'tool-chip active'; c.id = 'chip-' + tool; c.innerHTML = '<div class="spinner"></div> ' + label; chips.appendChild(c); activeTools[tool] = c; scrollToBottom(); }
-  function onToolDone(tool) { const c = activeTools[tool]; if (!c) return; c.classList.remove('active'); c.innerHTML = '<span class="done-icon">✓</span> ' + c.textContent.trim(); delete activeTools[tool]; }
+  function onToolStart(tool, label) { const el = document.getElementById('thinking-label'); if (el) el.textContent = label; }
+  function onToolDone(tool) { const el = document.getElementById('thinking-label'); if (el) el.textContent = 'Thinking…'; }
 
   const messageQueue = [];
   async function sendMessage() {
@@ -439,7 +424,15 @@
     currentItinerary = JSON.parse(JSON.stringify(data));
     currentItinerary.allIssues = [...(data.issues||[]), ...detectConflicts(currentItinerary.days)];
     localStorage.setItem('itin_' + sessionId, JSON.stringify(currentItinerary));
-    renderBoard(); if (!boardOpen) openBoard();
+    renderBoard();
+    if (!boardOpen) {
+      const btn = document.getElementById('board-toggle-btn');
+      btn.classList.remove('has-update');
+      // Force reflow so animation restarts
+      void btn.offsetWidth;
+      btn.classList.add('has-update');
+      setTimeout(() => btn.classList.remove('has-update'), 4500);
+    }
   }
   function renderSeasonBadge(season) {
     if (!season || !season.season) return '';
@@ -576,14 +569,9 @@
         <div class="deal-stat-sub">${deal.target_date}</div>
       </div>
       <div class="deal-stat">
-        <div class="deal-stat-label">Best Day to Fly</div>
+        <div class="deal-stat-label">Best Day</div>
         <div class="deal-stat-value">${deal.best_day_of_week||'—'}</div>
         <div class="deal-stat-sub">avg $${(deal.dow_avg_prices?.[deal.best_day_of_week]||0).toLocaleString()}</div>
-      </div>
-      <div class="deal-stat">
-        <div class="deal-stat-label">Window</div>
-        <div class="deal-stat-value">${prices.length}</div>
-        <div class="deal-stat-sub">dates checked</div>
       </div>
     </div>`;
 
@@ -629,7 +617,6 @@
       ${dowHtml ? `<div class="deal-dow"><span style="font-size:10px;font-weight:700;color:var(--text-4);text-transform:uppercase;letter-spacing:.07em;align-self:center">By weekday:</span>${dowHtml}</div>` : ''}
       <div class="deal-actions">
         <button class="deal-action-btn primary" onclick="searchFlightsForDate('${best?.departure_date||deal.target_date}','${deal.origin}','${deal.destination}')">✈ Search flights for ${best?.departure_date||'best date'}</button>
-        <button class="deal-action-btn" onclick="findCheapestMonth('${deal.origin}','${deal.destination}')">📊 Show cheapest month</button>
       </div>
     </div>`;
 
