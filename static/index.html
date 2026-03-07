@@ -174,7 +174,7 @@
       --shadow-lg: 0 12px 36px rgba(0,0,0,.13), 0 4px 12px rgba(0,0,0,.07);
       --ease:     cubic-bezier(.4,0,.2,1);
     }
-    body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-feature-settings: 'cv02','cv03','cv04','cv11'; background: var(--bg); color: var(--text); height: 100vh; display: flex; overflow: hidden; }
+    body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-feature-settings: 'cv02','cv03','cv04','cv11'; background: var(--bg); color: var(--text); height: 100vh; display: flex; overflow: hidden; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; text-rendering: optimizeLegibility; }
 
     /* ── Sidebar ── */
     #sidebar { width: 270px; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; flex-shrink: 0; box-shadow: 2px 0 20px rgba(14,165,233,.07); }
@@ -194,7 +194,7 @@
     .btn .icon { font-size: 15px; }
     .sidebar-section { padding: 14px 18px 5px; }
     .sidebar-section h3 { font-size: 10px; font-weight: 700; color: var(--text-4); text-transform: uppercase; letter-spacing: .12em; }
-    #trips-list { flex: 1; overflow-y: auto; padding: 5px 10px 12px; }
+    #trips-list { flex: 1; overflow-y: auto; padding: 5px 10px 12px; scroll-behavior: smooth; }
     .trip-card { background: var(--surface); border: 1.5px solid var(--border); border-left: 3px solid var(--sky); border-radius: 10px; padding: 10px 13px; margin-bottom: 6px; cursor: pointer; transition: all .18s var(--ease); box-shadow: var(--shadow-sm); }
     .trip-card:hover { border-color: var(--sky); border-left-color: var(--sky-d); box-shadow: var(--shadow); transform: translateY(-2px); }
     .trip-card.status-completed { border-left-color: var(--teal); }
@@ -317,7 +317,7 @@
     .day-tab:hover { border-color: var(--sky); color: var(--sky-d); background: var(--sky-l); }
     .day-tab.active { background: linear-gradient(135deg, var(--sky), var(--teal)); border-color: transparent; color: #fff; box-shadow: 0 2px 8px rgba(14,165,233,.28); }
     .day-tab.has-error { border-color: var(--rose); } .day-tab.has-warning { border-color: var(--gold); }
-    #board-days { flex: 1; overflow-y: auto; padding: 0 12px 28px; background: var(--bg); }
+    #board-days { flex: 1; overflow-y: auto; padding: 0 12px 28px; background: var(--bg); scroll-behavior: smooth; }
     .day-section { margin-top: 18px; }
     .day-section-header { display: flex; align-items: center; justify-content: space-between; padding: 6px 4px 8px; }
     .day-label-grp { display: flex; align-items: baseline; gap: 7px; }
@@ -327,7 +327,7 @@
     .day-drop-zone { min-height: 56px; border-radius: 10px; border: 2px dashed transparent; transition: background .15s, border-color .15s; }
     .day-drop-zone.drag-over { background: var(--sky-l); border-color: var(--sky); }
     .day-empty { display: flex; align-items: center; justify-content: center; height: 52px; color: var(--text-4); font-size: 11px; border: 2px dashed var(--border); border-radius: 10px; font-weight: 600; }
-    .itin-card { background: var(--surface); border: 1.5px solid var(--border); border-left: 4px solid var(--border); border-radius: 11px; padding: 11px 13px; margin-bottom: 7px; cursor: grab; transition: box-shadow .18s var(--ease), transform .15s var(--ease); position: relative; box-shadow: var(--shadow-sm); }
+    .itin-card { background: var(--surface); border: 1.5px solid var(--border); border-left: 4px solid var(--border); border-radius: 11px; padding: 11px 13px; margin-bottom: 7px; cursor: grab; transition: box-shadow .18s var(--ease), transform .15s var(--ease); position: relative; box-shadow: var(--shadow-sm); will-change: transform; }
     .itin-card:hover { box-shadow: var(--shadow); transform: translateY(-2px); }
     .itin-card:active { cursor: grabbing; }
     .itin-card.dragging { opacity: .3; transform: scale(.96); }
@@ -462,6 +462,16 @@
     .board-page-nav button:hover:not(:disabled) { border-color: var(--sky); color: var(--sky-d); background: var(--sky-l); }
     .board-page-nav button:disabled { opacity: .4; cursor: not-allowed; }
     .board-page-nav .page-label { font-size: 12px; font-weight: 700; color: var(--text-3); }
+
+    /* ── Copy button on agent messages ── */
+    .message.agent .bubble { position: relative; }
+    .bubble-copy { position: absolute; top: 8px; right: 10px; background: var(--surface2); border: 1.5px solid var(--border); color: var(--text-4); font-size: 11px; font-weight: 700; border-radius: 7px; padding: 3px 9px; cursor: pointer; opacity: 0; transition: all .15s; font-family: inherit; }
+    .message.agent .bubble:hover .bubble-copy { opacity: 1; }
+    .bubble-copy:hover { color: var(--text-2); background: var(--surface); border-color: var(--border2); }
+    .bubble-copy.copied { color: var(--teal); border-color: var(--teal); background: var(--teal-l); opacity: 1; }
+    /* ── Stop generation button ── */
+    #send-btn.stop-mode { background: linear-gradient(135deg, var(--rose), #e11d48); box-shadow: 0 3px 12px rgba(244,63,94,.32); }
+    #send-btn.stop-mode:hover { filter: brightness(1.08); }
 
     /* ── Welcome card ── */
     .welcome-bubble { padding: 20px 22px !important; }
@@ -628,7 +638,19 @@
   function showToast(msg, ms = 3000) { const t = document.getElementById('toast'); t.textContent = msg; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), ms); }
   function addUserMessage(text) { const d = document.createElement('div'); d.className = 'message user'; d.innerHTML = '<div class="avatar">👤</div><div class="bubble">' + escapeHtml(text) + '</div>'; messagesEl.appendChild(d); scrollToBottom(); }
   function addThinkingMessage() { const d = document.createElement('div'); d.className = 'message agent'; d.id = 'thinking-msg'; d.innerHTML = '<div class="avatar">✈</div><div class="thinking"><div class="thinking-spinner"></div><span class="thinking-label" id="thinking-label">Thinking…</span></div>'; messagesEl.appendChild(d); scrollToBottom(); return d; }
-  function replaceThinkingWithResponse(text) { const t = document.getElementById('thinking-msg'); if (t) t.remove(); const d = document.createElement('div'); d.className = 'message agent'; d.innerHTML = '<div class="avatar">✈</div><div class="bubble">' + marked.parse(text) + '</div>'; messagesEl.appendChild(d); scrollToBottom(); }
+  function replaceThinkingWithResponse(text) {
+    const t = document.getElementById('thinking-msg'); if (t) t.remove();
+    const d = document.createElement('div'); d.className = 'message agent';
+    d.innerHTML = '<div class="avatar">✈</div><div class="bubble">' + marked.parse(text) + '<button class="bubble-copy" onclick="copyBubble(this)" title="Copy response">Copy</button></div>';
+    messagesEl.appendChild(d); scrollToBottom();
+  }
+  function copyBubble(btn) {
+    const text = btn.closest('.bubble').innerText.replace(/\nCopy$/, '').trim();
+    navigator.clipboard.writeText(text).then(() => {
+      btn.textContent = 'Copied!'; btn.classList.add('copied');
+      setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 1800);
+    });
+  }
 
   function onToolStart(tool, label) { const el = document.getElementById('thinking-label'); if (el) el.textContent = label; }
   function onToolDone(tool) { const el = document.getElementById('thinking-label'); if (el) el.textContent = 'Thinking…'; }
@@ -695,13 +717,21 @@
   }
 
   const messageQueue = [];
+  let _abortCtrl = null;
+
+  function _setStopMode(on) {
+    if (on) { sendBtn.innerHTML = '⏹'; sendBtn.classList.add('stop-mode'); sendBtn.disabled = false; sendBtn.onclick = () => { if (_abortCtrl) _abortCtrl.abort(); }; }
+    else     { sendBtn.innerHTML = '➤'; sendBtn.classList.remove('stop-mode'); sendBtn.disabled = false; sendBtn.onclick = sendMessage; }
+  }
+
   async function sendMessage() {
     const text = inputEl.value.trim(); if (!text) return;
     if (isThinking) { showToast('Agent is thinking — your message is queued.'); messageQueue.push(text); inputEl.value = ''; autoResize(inputEl); return; }
-    isThinking = true; sendBtn.disabled = true; inputEl.value = ''; autoResize(inputEl);
+    isThinking = true; _abortCtrl = new AbortController(); _setStopMode(true);
+    inputEl.value = ''; autoResize(inputEl);
     addUserMessage(text); addThinkingMessage();
     try {
-      const res = await fetch('/api/chat/' + sessionId, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: text }) });
+      const res = await fetch('/api/chat/' + sessionId, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: text }), signal: _abortCtrl.signal });
       const reader = res.body.getReader(); const decoder = new TextDecoder(); let buf = ''; let gotResponse = false;
       while (true) {
         const { value, done } = await reader.read(); if (done) break;
@@ -720,9 +750,12 @@
         }
       }
       if (!gotResponse) replaceThinkingWithResponse('*(Connection lost. Please try again.)*');
-    } catch (err) { replaceThinkingWithResponse('**Connection error:** ' + err.message); }
+    } catch (err) {
+      if (err.name === 'AbortError') replaceThinkingWithResponse('*(Stopped.)*');
+      else replaceThinkingWithResponse('**Connection error:** ' + err.message);
+    }
     finally {
-      isThinking = false; sendBtn.disabled = false; inputEl.focus();
+      isThinking = false; _abortCtrl = null; _setStopMode(false); inputEl.focus();
       if (messageQueue.length > 0) { const next = messageQueue.shift(); inputEl.value = next; setTimeout(() => sendMessage(), 300); }
     }
   }
