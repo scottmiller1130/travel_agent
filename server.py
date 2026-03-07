@@ -17,6 +17,8 @@ Run with:
 
 import asyncio
 import json
+import logging
+import logging.config
 import os
 import secrets
 import shutil
@@ -46,14 +48,68 @@ from memory.sessions import SessionStore
 app = FastAPI(title="Travel Agent API")
 
 # ---------------------------------------------------------------------------
+# Structured logging — JSON-friendly format with level, time, and request ID
+# ---------------------------------------------------------------------------
+_LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+logging.config.dictConfig({
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "default": {
+            "format": "%(asctime)s %(levelname)-8s [%(name)s] %(message)s",
+            "datefmt": "%Y-%m-%dT%H:%M:%S",
+        }
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "default",
+            "stream": "ext://sys.stdout",
+        }
+    },
+    "root": {"level": _LOG_LEVEL, "handlers": ["console"]},
+    # Quieten chatty third-party loggers
+    "loggers": {
+        "uvicorn.access": {"level": "WARNING"},
+        "httpx":          {"level": "WARNING"},
+    },
+})
+log = logging.getLogger("travel_agent")
+
+
+class RequestLoggingMiddleware(BaseHTTPMiddleware):
+    """Log every API request with a unique request_id and elapsed time."""
+
+    async def dispatch(self, request: Request, call_next):
+        if not request.url.path.startswith("/api"):
+            return await call_next(request)
+        request_id = uuid.uuid4().hex[:8]
+        t0 = time.monotonic()
+        response = await call_next(request)
+        elapsed_ms = int((time.monotonic() - t0) * 1000)
+        log.info(
+            "%s %s %d %dms rid=%s ip=%s",
+            request.method,
+            request.url.path,
+            response.status_code,
+            elapsed_ms,
+            request_id,
+            request.client.host if request.client else "-",
+        )
+        response.headers["X-Request-Id"] = request_id
+        return response
+
+
+app.add_middleware(RequestLoggingMiddleware)
+
+# ---------------------------------------------------------------------------
 # Startup validation — fail fast if required environment variables are missing
 # ---------------------------------------------------------------------------
 _ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 if not _ANTHROPIC_API_KEY:
-    print(
-        "FATAL: ANTHROPIC_API_KEY is not set. "
-        "Add it to your environment or .env file before starting the server.",
-        file=sys.stderr,
+    logging.critical(
+        "ANTHROPIC_API_KEY is not set. "
+        "Add it to your environment or .env file before starting the server."
     )
     sys.exit(1)
 
@@ -322,6 +378,90 @@ async def set_preference(session_id: str, body: PrefUpdate):
 
 
 # ---------------------------------------------------------------------------
+# Trip sharing — read-only itinerary view via one-time-safe token
+# ---------------------------------------------------------------------------
+@app.post("/api/share/{session_id}")
+async def create_share_link(session_id: str, request: Request):
+    saved = _session_store.load(session_id)
+    if not saved or not saved.get("itinerary"):
+        raise HTTPException(status_code=404, detail="No itinerary to share for this session.")
+    token = _session_store.create_share_token(session_id)
+    base_url = str(request.base_url).rstrip("/")
+    return JSONResponse({"status": "ok", "share_url": f"{base_url}/s/{token}"})
+
+
+@app.get("/s/{token}", response_class=HTMLResponse)
+async def shared_itinerary(token: str):
+    """Render a read-only itinerary view for a share token."""
+    data = _session_store.get_session_for_token(token)
+    if not data or not data.get("itinerary"):
+        return HTMLResponse(
+            "<h2 style='font-family:sans-serif;padding:40px'>Share link not found or itinerary is empty.</h2>",
+            status_code=404,
+        )
+    it = data["itinerary"]
+    dest = it.get("destination") or (
+        " → ".join(it["destinations"]) if it.get("destinations") else "Trip"
+    )
+    date_range = " → ".join(filter(None, [it.get("start_date"), it.get("end_date")]))
+
+    budget_total = sum((it.get("budget") or {}).values())
+    budget_line = f"<p><strong>Estimated cost:</strong> ${budget_total:,.0f}</p>" if budget_total else ""
+
+    days_html = ""
+    for i, day in enumerate(it.get("days", [])):
+        try:
+            from datetime import date as dt_date
+            dlbl = dt_date.fromisoformat(day.get("date", "")).strftime("%A, %b %-d")
+        except Exception:
+            dlbl = f"Day {i+1}"
+        if day.get("label"):
+            dlbl += f" — {day['label']}"
+        items_html = "".join(
+            f"<li><strong>{_safe(item.get('time',''))}</strong> {_safe(item.get('title',''))}"
+            f"{'  <em>$' + str(item['price_usd']) + '</em>' if item.get('price_usd') else ''}"
+            f"{'<br><small>' + _safe(item['notes']) + '</small>' if item.get('notes') else ''}"
+            f"</li>"
+            for item in day.get("items", [])
+        )
+        days_html += f"<section><h2>{_safe(dlbl)}</h2><ul>{items_html}</ul></section>"
+
+    return HTMLResponse(f"""<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>✈ {_safe(dest)} — Travel Itinerary</title>
+<style>
+  body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:680px;margin:0 auto;padding:24px 16px;color:#0f172a;line-height:1.6}}
+  h1{{font-size:26px;margin-bottom:4px}}
+  .meta{{color:#64748b;font-size:14px;margin-bottom:20px}}
+  section{{margin-bottom:28px;border-left:3px solid #0ea5e9;padding-left:16px}}
+  h2{{font-size:15px;font-weight:700;color:#0284c7;margin:0 0 8px}}
+  ul{{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:6px}}
+  li{{font-size:14px;padding:6px 10px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0}}
+  li strong{{color:#0ea5e9;min-width:44px;display:inline-block}}
+  small{{color:#64748b}}
+  em{{color:#0d9488;font-style:normal}}
+  .banner{{background:linear-gradient(135deg,#0ea5e9,#0d9488);color:#fff;padding:20px 24px;border-radius:12px;margin-bottom:24px}}
+  .banner h1{{color:#fff;margin:0}}
+  .banner .meta{{color:rgba(255,255,255,.8);margin:4px 0 0}}
+  footer{{margin-top:40px;font-size:12px;color:#94a3b8;border-top:1px solid #e2e8f0;padding-top:16px}}
+</style></head><body>
+<div class="banner"><h1>✈ {_safe(dest)}</h1>
+<div class="meta">{_safe(date_range)}{" &nbsp;·&nbsp; " + _safe(str(it.get("travelers",""))) + " traveler(s)" if it.get("travelers") else ""}</div>
+</div>
+{budget_line}
+{days_html}
+<footer>Shared via Travel Agent &nbsp;·&nbsp; Read-only view</footer>
+</body></html>""")
+
+
+def _safe(s: object) -> str:
+    """HTML-escape a value for safe inline insertion."""
+    import html
+    return html.escape(str(s)) if s else ""
+
+
+# ---------------------------------------------------------------------------
 # Session management — server-generated IDs prevent client forgery
 # ---------------------------------------------------------------------------
 @app.post("/api/session/new")
@@ -399,7 +539,7 @@ def _backup_db() -> None:
                 for old in backups[:-7]:
                     old.unlink(missing_ok=True)
         except Exception as exc:
-            print(f"[backup] DB backup failed: {exc}", file=sys.stderr)
+            log.error("DB backup failed: %s", exc)
 
 
 threading.Thread(target=_backup_db, daemon=True, name="db-backup").start()

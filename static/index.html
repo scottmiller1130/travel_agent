@@ -348,6 +348,7 @@
           <div class="export-sep"></div>
           <button class="export-item" onclick="exportPrint()"><span class="eicon">🖨</span> Print / Save PDF</button>
           <div class="export-sep"></div>
+          <button class="export-item" onclick="shareItinerary()"><span class="eicon">🔗</span> Share link</button>
           <button class="export-item" onclick="triggerImport()"><span class="eicon">📂</span> Import JSON</button>
           <input type="file" id="import-file-input" accept=".json,application/json" style="display:none" onchange="handleImportFile(event)">
         </div>
@@ -848,6 +849,18 @@
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({itinerary: currentItinerary}),
     }).catch(() => {}); // fire-and-forget; localStorage is the fallback
+  }
+
+  async function shareItinerary() {
+    document.getElementById('export-menu').classList.remove('open');
+    if (!currentItinerary) { showToast('Plan a trip first to share it.'); return; }
+    try {
+      const r = await fetch('/api/share/' + sessionId, { method: 'POST' });
+      if (!r.ok) { showToast('Nothing to share yet — save an itinerary first.'); return; }
+      const d = await r.json();
+      await navigator.clipboard.writeText(d.share_url).catch(() => {});
+      showToast('Share link copied to clipboard! ' + d.share_url, 6000);
+    } catch (err) { showToast('Could not create share link: ' + err.message); }
   }
 
   function triggerImport() {
