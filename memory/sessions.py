@@ -58,7 +58,7 @@ class SessionStore:
             VALUES (?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 conversation = excluded.conversation,
-                itinerary    = excluded.itinerary,
+                itinerary    = COALESCE(excluded.itinerary, sessions.itinerary),
                 updated_at   = excluded.updated_at
         """, (
             session_id,
@@ -67,6 +67,18 @@ class SessionStore:
             now,
             now,
         ))
+        self._conn.commit()
+
+    def save_itinerary(self, session_id: str, itinerary: dict) -> None:
+        """Update only the itinerary for an existing session (e.g. drag-and-drop or import)."""
+        now = datetime.now().isoformat()
+        self._conn.execute("""
+            INSERT INTO sessions (id, conversation, itinerary, created_at, updated_at)
+            VALUES (?, '[]', ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                itinerary  = excluded.itinerary,
+                updated_at = excluded.updated_at
+        """, (session_id, json.dumps(itinerary), now, now))
         self._conn.commit()
 
     def delete(self, session_id: str) -> None:
