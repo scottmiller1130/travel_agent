@@ -80,6 +80,18 @@
     #issue-badge { background: var(--rose); color: #fff; border-radius: 10px; padding: 1px 6px; font-size: 10px; font-weight: 800; display: none; }
     #issue-badge.show { display: inline; }
 
+    /* ── Export button ── */
+    #export-wrap { position: relative; display: none; }
+    #export-wrap.visible { display: block; }
+    #export-btn { display: flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 9px; border: 1.5px solid var(--teal); background: var(--teal-l); color: var(--teal); font-size: 12px; font-weight: 700; cursor: pointer; transition: all .15s; white-space: nowrap; }
+    #export-btn:hover { background: var(--teal); color: #fff; }
+    #export-menu { position: absolute; top: calc(100% + 6px); right: 0; background: var(--surface); border: 1.5px solid var(--border); border-radius: 11px; box-shadow: var(--shadow-lg); min-width: 180px; overflow: hidden; z-index: 999; display: none; }
+    #export-menu.open { display: block; animation: msgIn .15s ease; }
+    .export-item { display: flex; align-items: center; gap: 10px; padding: 11px 15px; font-size: 13px; font-weight: 600; color: var(--text-2); cursor: pointer; transition: background .12s; border: none; background: none; width: 100%; text-align: left; }
+    .export-item:hover { background: var(--surface2); color: var(--text); }
+    .export-item .eicon { font-size: 16px; }
+    .export-sep { height: 1px; background: var(--border); margin: 3px 0; }
+
     /* ── Messages ── */
     #messages { flex: 1; overflow-y: auto; padding: 28px 28px 12px; display: flex; flex-direction: column; gap: 18px; scroll-behavior: smooth; }
     .message { display: flex; gap: 12px; max-width: 900px; animation: msgIn .3s ease; }
@@ -282,6 +294,15 @@
       </div>
     </div>
     <div id="header-right">
+      <div id="export-wrap">
+        <button id="export-btn" onclick="toggleExportMenu(event)">⬇ Export</button>
+        <div id="export-menu">
+          <button class="export-item" onclick="exportJSON()"><span class="eicon">📄</span> Download JSON</button>
+          <button class="export-item" onclick="exportMarkdown()"><span class="eicon">📝</span> Download Markdown</button>
+          <div class="export-sep"></div>
+          <button class="export-item" onclick="exportPrint()"><span class="eicon">🖨</span> Print / Save PDF</button>
+        </div>
+      </div>
       <button id="board-toggle-btn" onclick="toggleBoard()">🗺 Trip Board <span id="issue-badge"></span></button>
     </div>
   </div>
@@ -424,6 +445,7 @@
     currentItinerary = JSON.parse(JSON.stringify(data));
     currentItinerary.allIssues = [...(data.issues||[]), ...detectConflicts(currentItinerary.days)];
     localStorage.setItem('itin_' + sessionId, JSON.stringify(currentItinerary));
+    document.getElementById('export-wrap').classList.add('visible');
     renderBoard();
     if (!boardOpen) {
       const btn = document.getElementById('board-toggle-btn');
@@ -532,6 +554,88 @@
 
   function wIcon(c){c=(c||'').toLowerCase();if(c.includes('thunder'))return'⛈';if(c.includes('snow')||c.includes('blizzard'))return'❄️';if(c.includes('sleet')||c.includes('hail'))return'🌨';if(c.includes('rain')||c.includes('shower')||c.includes('drizzle'))return'🌧';if(c.includes('fog')||c.includes('mist'))return'🌫';if(c.includes('overcast'))return'☁️';if(c.includes('cloud')||c.includes('partly'))return'⛅';if(c.includes('sun')||c.includes('clear')||c.includes('mainly'))return'☀️';return'🌤';}
   function fmtDate(d){try{return new Date(d+'T12:00').toLocaleDateString('en-US',{month:'short',day:'numeric'});}catch{return d;}}
+
+  // ════ EXPORT ════
+  function toggleExportMenu(e) {
+    e.stopPropagation();
+    document.getElementById('export-menu').classList.toggle('open');
+  }
+  document.addEventListener('click', () => document.getElementById('export-menu').classList.remove('open'));
+
+  function exportJSON() {
+    if (!currentItinerary) return;
+    const blob = new Blob([JSON.stringify(currentItinerary, null, 2)], {type: 'application/json'});
+    const dest = (currentItinerary.destination || 'trip').replace(/[^a-z0-9]/gi, '-').toLowerCase();
+    _downloadBlob(blob, dest + '-itinerary.json');
+    document.getElementById('export-menu').classList.remove('open');
+  }
+
+  function exportMarkdown() {
+    if (!currentItinerary) return;
+    const it = currentItinerary;
+    const lines = [];
+    lines.push('# ' + (it.destination || 'Trip Itinerary'));
+    if (it.start_date || it.end_date) lines.push('**' + [it.start_date, it.end_date].filter(Boolean).join(' → ') + '**');
+    if (it.travelers) lines.push('Travelers: ' + it.travelers);
+    if (it.budget) {
+      const total = Object.values(it.budget).reduce((s,v) => s + (v||0), 0);
+      if (total > 0) lines.push('Estimated cost: $' + total.toLocaleString());
+    }
+    lines.push('');
+    (it.days || []).forEach((day, i) => {
+      const label = day.date
+        ? new Date(day.date + 'T12:00').toLocaleDateString('en-US', {weekday:'long', month:'long', day:'numeric'})
+        : 'Day ' + (i + 1);
+      lines.push('## ' + label + (day.label ? ' — ' + day.label : ''));
+      if (day.weather) lines.push('*Weather: ' + day.weather.condition + ', ' + (day.weather.temp_high_c ?? '?') + '/' + (day.weather.temp_low_c ?? '?') + '°C*');
+      lines.push('');
+      (day.items || []).forEach(item => {
+        const time = item.time ? item.time + ' ' : '';
+        const price = item.price_usd ? ' — $' + item.price_usd.toLocaleString() : '';
+        lines.push('- **' + time + item.title + '**' + price);
+        if (item.detail) lines.push('  ' + item.detail);
+      });
+      lines.push('');
+    });
+    const blob = new Blob([lines.join('\n')], {type: 'text/markdown'});
+    const dest = (it.destination || 'trip').replace(/[^a-z0-9]/gi, '-').toLowerCase();
+    _downloadBlob(blob, dest + '-itinerary.md');
+    document.getElementById('export-menu').classList.remove('open');
+  }
+
+  function exportPrint() {
+    if (!currentItinerary) return;
+    document.getElementById('export-menu').classList.remove('open');
+    const it = currentItinerary;
+    const rows = (it.days || []).map((day, i) => {
+      const label = day.date
+        ? new Date(day.date + 'T12:00').toLocaleDateString('en-US', {weekday:'long', month:'long', day:'numeric'})
+        : 'Day ' + (i + 1);
+      const items = (day.items || []).map(item => {
+        const time = item.time ? '<span style="color:#0284c7;font-weight:600;min-width:48px;display:inline-block">' + escapeHtml(item.time) + '</span> ' : '';
+        const price = item.price_usd ? ' <span style="color:#64748b;font-size:12px">$' + item.price_usd.toLocaleString() + '</span>' : '';
+        return '<li style="padding:5px 0;border-bottom:1px solid #f1f5f9">' + time + '<strong>' + escapeHtml(item.title) + '</strong>' + price + (item.detail ? '<br><span style="color:#64748b;font-size:12px">' + escapeHtml(item.detail) + '</span>' : '') + '</li>';
+      }).join('');
+      return '<div style="margin-bottom:24px;break-inside:avoid"><h2 style="font-size:14px;font-weight:700;color:#0284c7;padding:6px 0;border-bottom:2px solid #0ea5e9;margin-bottom:8px">' + escapeHtml(label) + (day.label ? ' <span style="color:#64748b;font-weight:400">— ' + escapeHtml(day.label) + '</span>' : '') + '</h2><ul style="list-style:none;padding:0">' + items + '</ul></div>';
+    }).join('');
+    const budgetLine = (() => {
+      if (!it.budget) return '';
+      const total = Object.values(it.budget).reduce((s,v) => s+(v||0), 0);
+      return total > 0 ? '<p style="color:#0d9488;font-weight:700;font-size:14px">Estimated Total: $' + total.toLocaleString() + '</p>' : '';
+    })();
+    const win = window.open('', '_blank');
+    win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${escapeHtml(it.destination||'Trip')} Itinerary</title><style>body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:720px;margin:40px auto;color:#0f172a;line-height:1.5}h1{font-size:24px;margin-bottom:4px}@media print{body{margin:20px}}</style></head><body><h1>✈ ${escapeHtml(it.destination||'Trip Itinerary')}</h1><p style="color:#64748b">${escapeHtml([it.start_date,it.end_date].filter(Boolean).join(' → '))}${it.travelers?' &nbsp;·&nbsp; '+it.travelers+' traveler'+(it.travelers>1?'s':''):''}</p>${budgetLine}<hr style="border:none;border-top:1px solid #e2e8f0;margin:16px 0">${rows}</body></html>`);
+    win.document.close();
+    win.focus();
+    setTimeout(() => win.print(), 400);
+  }
+
+  function _downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
 
   // ════ DEAL HUNTING UI ════
   function priceColor(pct) {
