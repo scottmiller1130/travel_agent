@@ -184,8 +184,6 @@ async def chat(session_id: str, body: ChatRequest, request: Request):
     def run_agent():
         try:
             response = agent.chat(body.message, progress_callback=progress_callback)
-            # Persist after every successful reply
-            _save_session(session_id, agent, latest_itinerary.get("value"))
             asyncio.run_coroutine_threadsafe(
                 event_queue.put({"type": "done", "content": response}),
                 loop,
@@ -195,6 +193,10 @@ async def chat(session_id: str, body: ChatRequest, request: Request):
                 event_queue.put({"type": "error", "message": str(e)}),
                 loop,
             )
+        finally:
+            # Always persist — the conversation sanitizer in load_conversation()
+            # will heal any incomplete tool turns if we crashed mid-loop.
+            _save_session(session_id, agent, latest_itinerary.get("value"))
 
     threading.Thread(target=run_agent, daemon=True).start()
 
@@ -231,6 +233,21 @@ async def get_itinerary(session_id: str):
             if live:
                 itinerary = live
     return JSONResponse({"itinerary": itinerary})
+
+
+class ItineraryUpdate(BaseModel):
+    itinerary: dict
+
+
+@app.post("/api/itinerary/{session_id}")
+async def save_itinerary(session_id: str, body: ItineraryUpdate):
+    """Persist an itinerary from the frontend (drag-and-drop reorder, import)."""
+    _session_store.save_itinerary(session_id, body.itinerary)
+    # Also update the live agent if it's in cache
+    with _cache_lock:
+        if session_id in _agent_cache:
+            _agent_cache[session_id].load_itinerary(body.itinerary)
+    return JSONResponse({"status": "ok"})
 
 
 # ---------------------------------------------------------------------------

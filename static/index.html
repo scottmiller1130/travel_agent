@@ -301,6 +301,9 @@
           <button class="export-item" onclick="exportMarkdown()"><span class="eicon">📝</span> Download Markdown</button>
           <div class="export-sep"></div>
           <button class="export-item" onclick="exportPrint()"><span class="eicon">🖨</span> Print / Save PDF</button>
+          <div class="export-sep"></div>
+          <button class="export-item" onclick="triggerImport()"><span class="eicon">📂</span> Import JSON</button>
+          <input type="file" id="import-file-input" accept=".json,application/json" style="display:none" onchange="handleImportFile(event)">
         </div>
       </div>
       <button id="board-toggle-btn" onclick="toggleBoard()">🗺 Trip Board <span id="issue-badge"></span></button>
@@ -549,6 +552,7 @@
     const[moved]=fromDay.items.splice(idx,1);toDay.items.push(moved);
     currentItinerary.allIssues=[...(currentItinerary.issues||[]),...detectConflicts(currentItinerary.days)];
     localStorage.setItem('itin_'+sessionId,JSON.stringify(currentItinerary));renderBoard();
+    persistItinerary();
     showToast('"'+moved.title+'" moved to '+(toDay.label||'Day '+(toIdx+1)));draggedCard=null;
   }
 
@@ -635,6 +639,43 @@
     const a = document.createElement('a');
     a.href = url; a.download = filename; a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  function persistItinerary() {
+    if (!currentItinerary) return;
+    fetch('/api/itinerary/' + sessionId, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({itinerary: currentItinerary}),
+    }).catch(() => {}); // fire-and-forget; localStorage is the fallback
+  }
+
+  function triggerImport() {
+    document.getElementById('export-menu').classList.remove('open');
+    document.getElementById('import-file-input').value = '';
+    document.getElementById('import-file-input').click();
+  }
+
+  function handleImportFile(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      let data;
+      try { data = JSON.parse(ev.target.result); } catch {
+        showToast('Invalid JSON file — could not import.'); return;
+      }
+      // Accept either a bare itinerary object or one wrapped in {itinerary:{...}}
+      const itin = data.itinerary || data;
+      if (!itin.days || !Array.isArray(itin.days)) {
+        showToast('File does not look like a trip itinerary.'); return;
+      }
+      updateItinerary(itin);
+      persistItinerary();
+      openBoard();
+      showToast('Itinerary imported — ' + (itin.destination || 'trip') + ' loaded!');
+    };
+    reader.readAsText(file);
   }
 
   // ════ DEAL HUNTING UI ════
@@ -811,7 +852,19 @@
 
   loadTrips();
   inputEl.focus();
-  (async()=>{try{const r=await fetch('/api/itinerary/'+sessionId);const d=await r.json();if(d.itinerary)updateItinerary(d.itinerary);}catch(_){}})();
+  (async()=>{
+    // Prefer localStorage (may include unsaved drag-and-drop changes),
+    // fall back to the server copy if localStorage is empty.
+    const local = localStorage.getItem('itin_' + sessionId);
+    if (local) {
+      try { updateItinerary(JSON.parse(local)); return; } catch(_) {}
+    }
+    try {
+      const r = await fetch('/api/itinerary/' + sessionId);
+      const d = await r.json();
+      if (d.itinerary) updateItinerary(d.itinerary);
+    } catch(_) {}
+  })();
 </script>
 </body>
 </html>
