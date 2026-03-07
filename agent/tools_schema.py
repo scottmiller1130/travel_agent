@@ -414,9 +414,18 @@ TOOLS: list[dict] = [
                         "required": ["date", "items"],
                     },
                 },
+                "travelers": {
+                    "type": "integer",
+                    "description": "Number of travelers. Default 1. Used to calculate per-person cost breakdowns.",
+                    "minimum": 1,
+                },
+                "max_budget_usd": {
+                    "type": "number",
+                    "description": "Maximum total budget in USD for all travelers combined. Used to show budget utilization as a percentage.",
+                },
                 "budget": {
                     "type": "object",
-                    "description": "Estimated cost breakdown by category in USD",
+                    "description": "Estimated cost breakdown by category in USD (totals for ALL travelers combined, not per person)",
                     "properties": {
                         "flights": {"type": "number"},
                         "hotels": {"type": "number"},
