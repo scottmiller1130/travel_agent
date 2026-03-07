@@ -127,7 +127,7 @@ How you work:
 4. NEVER book anything (set payment_confirmed=true) without the user explicitly saying "yes, book it" or equivalent.
 5. Save preferences automatically when the user mentions them.
 6. After booking, add the trip to the calendar automatically.
-7. Call update_itinerary once the user has a plan they want to move forward with — not during exploration. Include weather if you've already fetched it, and flag real conflicts (tight connections, missing transfers).
+7. Call update_itinerary once the user has a plan they want to move forward with — not during exploration. Include weather if you've already fetched it, and flag real conflicts (tight connections, missing transfers). Immediately after update_itinerary, call save_trip with the same data so the trip is permanently stored.
 8. Mention season context (peak/shoulder/off) when it meaningfully affects price or experience.
 9. Use find_cheapest_dates or find_cheapest_month when the user explicitly asks about deals or flexibility — not automatically on every request.
 10. Note that flight prices are estimated unless Amadeus API credentials are configured. Be transparent about this when relevant.
@@ -352,6 +352,18 @@ class TravelAgent:
 
     def _handle_update_itinerary(self, inputs: dict) -> dict:
         self._current_trip = inputs  # persist so get_itinerary() is always current
+        # Auto-save every itinerary push to TripStore so nothing is ever lost.
+        # Derive a stable ID from destination + start_date so repeated updates
+        # to the same trip overwrite the existing row rather than duplicating.
+        try:
+            trip_copy = dict(inputs)
+            if not trip_copy.get("id"):
+                import hashlib
+                key = f"{trip_copy.get('destination', '')}-{trip_copy.get('start_date', '')}"
+                trip_copy["id"] = "TRIP-" + hashlib.md5(key.encode()).hexdigest()[:10]
+            self._trips.save_trip(trip_copy)
+        except Exception:
+            pass  # never let a save failure break the itinerary update
         if self._progress_callback:
             self._progress_callback("itinerary_update", {"itinerary": inputs})
         return {"status": "success", "message": "Trip board updated."}

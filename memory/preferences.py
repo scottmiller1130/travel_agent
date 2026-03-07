@@ -1,16 +1,12 @@
 """
-User preference store — persists travel preferences to SQLite.
+User preference store — persists travel preferences to Supabase (PostgreSQL).
 The agent reads these before planning so it always personalizes recommendations.
 """
 
 import json
-import sqlite3
-from pathlib import Path
 from datetime import datetime
 
-from memory._data_dir import data_dir
-
-DB_PATH = data_dir() / "preferences.db"
+from memory.db import get_conn
 
 
 class PreferenceStore:
@@ -37,36 +33,43 @@ class PreferenceStore:
     }
 
     def __init__(self):
-        DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
         self._init_db()
 
     def _init_db(self):
-        self._conn.execute("""
-            CREATE TABLE IF NOT EXISTS preferences (
-                key TEXT PRIMARY KEY,
-                value TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            )
-        """)
-        self._conn.commit()
+        with get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS preferences (
+                    key        TEXT PRIMARY KEY,
+                    value      TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+            """)
 
     def get(self, key: str, default=None):
         """Get a preference value. Falls back to DEFAULTS then to `default`."""
-        row = self._conn.execute(
-            "SELECT value FROM preferences WHERE key = ?", (key,)
-        ).fetchone()
+        with get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT value FROM preferences WHERE key = %s", (key,))
+            row = cur.fetchone()
         if row:
             return json.loads(row[0])
         return self.DEFAULTS.get(key, default)
 
     def set(self, key: str, value) -> None:
         """Set a preference value."""
-        self._conn.execute(
-            "INSERT OR REPLACE INTO preferences (key, value, updated_at) VALUES (?, ?, ?)",
-            (key, json.dumps(value), datetime.now().isoformat()),
-        )
-        self._conn.commit()
+        with get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                INSERT INTO preferences (key, value, updated_at)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (key) DO UPDATE SET
+                    value      = EXCLUDED.value,
+                    updated_at = EXCLUDED.updated_at
+                """,
+                (key, json.dumps(value), datetime.now().isoformat()),
+            )
 
     def set_many(self, updates: dict) -> None:
         """Set multiple preferences at once."""
@@ -76,7 +79,10 @@ class PreferenceStore:
     def get_all(self) -> dict:
         """Return all preferences merged with defaults."""
         prefs = dict(self.DEFAULTS)
-        rows = self._conn.execute("SELECT key, value FROM preferences").fetchall()
+        with get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT key, value FROM preferences")
+            rows = cur.fetchall()
         for key, value in rows:
             prefs[key] = json.loads(value)
         return prefs
@@ -94,4 +100,4 @@ class PreferenceStore:
         return "\n".join(lines)
 
     def close(self):
-        self._conn.close()
+        pass  # Connection pool is managed globally

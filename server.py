@@ -237,6 +237,14 @@ async def root():
     return HTMLResponse(index.read_text())
 
 
+@app.get("/help", response_class=HTMLResponse)
+async def user_guide():
+    guide = Path(__file__).parent / "docs" / "user-guide.html"
+    if not guide.exists():
+        return HTMLResponse("<h1>User guide not found</h1>", status_code=404)
+    return HTMLResponse(guide.read_text())
+
+
 # ---------------------------------------------------------------------------
 # Chat endpoint — SSE stream
 # ---------------------------------------------------------------------------
