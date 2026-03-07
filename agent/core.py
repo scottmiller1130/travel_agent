@@ -10,9 +10,12 @@ before payment_confirmed is set to True.
 
 import json
 import os
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from typing import Callable
 
 import anthropic
+
+TOOL_TIMEOUT_SECONDS = 30
 
 
 def _sanitize_conversation(conversation: list[dict]) -> list[dict]:
@@ -91,6 +94,10 @@ from agent.tools_schema import TOOLS
 # Actions that require a human confirmation step before proceeding
 CONFIRMATION_REQUIRED = {"book_flight", "book_hotel"}
 
+MAX_CONVERSATION_MESSAGES = 30  # Summarize when conversation exceeds this length
+KEEP_RECENT_MESSAGES = 16       # Always keep the most recent N messages
+KEEP_INITIAL_MESSAGES = 2       # Always keep the very first user/assistant exchange
+
 SYSTEM_PROMPT = """You are a personal travel agent with full authority to plan, research, and book travel on behalf of the user.
 
 Your capabilities:
@@ -137,6 +144,30 @@ class TravelAgent:
         self._current_trip: dict = {}
         self._progress_callback = None
 
+    def _trim_conversation(self) -> None:
+        """Keep conversation within token budget using a sliding window.
+
+        Preserves the first KEEP_INITIAL_MESSAGES messages (original intent)
+        and the last KEEP_RECENT_MESSAGES messages (current context), dropping
+        the middle when total length exceeds MAX_CONVERSATION_MESSAGES.
+        """
+        if len(self._conversation) <= MAX_CONVERSATION_MESSAGES:
+            return
+
+        head = self._conversation[:KEEP_INITIAL_MESSAGES]
+        tail = self._conversation[-KEEP_RECENT_MESSAGES:]
+
+        dropped = len(self._conversation) - KEEP_INITIAL_MESSAGES - KEEP_RECENT_MESSAGES
+        bridge = {
+            "role": "user",
+            "content": (
+                f"[{dropped} earlier messages were trimmed to stay within context limits. "
+                "The conversation above captures the original request; the messages below "
+                "are the most recent exchanges.]"
+            ),
+        }
+        self._conversation = head + [bridge] + tail
+
     def chat(self, user_message: str, progress_callback: Callable | None = None) -> str:
         """Send a message and run the agentic loop until a final response is produced.
 
@@ -147,6 +178,7 @@ class TravelAgent:
         """
         self._progress_callback = progress_callback
         self._conversation.append({"role": "user", "content": user_message})
+        self._trim_conversation()
         system = self._build_system_prompt()
 
         while True:
@@ -176,7 +208,16 @@ class TravelAgent:
                         })
 
                     try:
-                        result = self._dispatch_tool(block.name, block.input)
+                        # Booking tools wait for user confirmation (up to 5 min).
+                        timeout = None if block.name in CONFIRMATION_REQUIRED else TOOL_TIMEOUT_SECONDS
+                        with ThreadPoolExecutor(max_workers=1) as pool:
+                            future = pool.submit(self._dispatch_tool, block.name, block.input)
+                            result = future.result(timeout=timeout)
+                    except FuturesTimeoutError:
+                        result = {
+                            "status": "error",
+                            "message": f"Tool '{block.name}' timed out after {TOOL_TIMEOUT_SECONDS}s.",
+                        }
                     except Exception as e:
                         result = {"status": "error", "message": str(e)}
 
@@ -232,13 +273,15 @@ class TravelAgent:
     def _dispatch_tool(self, name: str, inputs: dict) -> dict:
         """Route a tool call to the correct implementation."""
 
-        # --- Booking tools: require confirmation ---
-        if name in CONFIRMATION_REQUIRED:
-            if not inputs.get("payment_confirmed"):
-                # Claude will handle showing details and asking for confirmation
-                # We just execute — Claude controls payment_confirmed
-                pass
-            elif not self._confirm(f"Confirm {name} with inputs: {json.dumps(inputs, indent=2)}"):
+        # --- Booking tools: require explicit user confirmation ---
+        if name in CONFIRMATION_REQUIRED and inputs.get("payment_confirmed"):
+            # Notify the frontend so it can show a confirmation modal.
+            if self._progress_callback:
+                self._progress_callback("booking_confirm", {
+                    "tool": name,
+                    "inputs": inputs,
+                })
+            if not self._confirm(f"Confirm {name} with inputs: {json.dumps(inputs, indent=2)}"):
                 return {
                     "status": "cancelled",
                     "message": "User declined to confirm the booking. No charge was made.",

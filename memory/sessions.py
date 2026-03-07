@@ -37,6 +37,22 @@ class SessionStore:
         """)
         self._conn.commit()
 
+    def create(self, session_id: str) -> None:
+        """Create a new empty session row (server-generated IDs only)."""
+        now = datetime.now().isoformat()
+        self._conn.execute("""
+            INSERT OR IGNORE INTO sessions (id, conversation, itinerary, created_at, updated_at)
+            VALUES (?, '[]', NULL, ?, ?)
+        """, (session_id, now, now))
+        self._conn.commit()
+
+    def exists(self, session_id: str) -> bool:
+        """Return True if the session was created server-side."""
+        row = self._conn.execute(
+            "SELECT 1 FROM sessions WHERE id = ?", (session_id,)
+        ).fetchone()
+        return row is not None
+
     def load(self, session_id: str) -> dict | None:
         """Return saved session data or None if not found."""
         row = self._conn.execute(
