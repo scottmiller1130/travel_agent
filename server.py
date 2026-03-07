@@ -354,6 +354,39 @@ async def get_trips(session_id: str):
     return JSONResponse({"trips": trips})
 
 
+@app.post("/api/trips/{session_id}")
+async def save_trip(session_id: str, request: Request):
+    """Permanently save the current session itinerary to the trip store."""
+    if not _session_store.exists(session_id):
+        raise HTTPException(status_code=403, detail="Unknown session.")
+    data = _session_store.load(session_id)
+    itinerary = data and data.get("itinerary")
+    if not itinerary:
+        raise HTTPException(status_code=404, detail="No itinerary to save.")
+    body = {}
+    try:
+        body = await request.json()
+    except Exception:
+        pass
+    # Allow the client to supply a custom name; fall back to destination
+    name = (body.get("name") or "").strip() or itinerary.get("destination") or "My Trip"
+    itinerary["name"] = name
+    trip_id = TripStore().save_trip(itinerary)
+    return JSONResponse({"status": "ok", "trip_id": trip_id, "name": name})
+
+
+@app.delete("/api/trips/{session_id}/{trip_id}")
+async def delete_trip(session_id: str, trip_id: str):
+    """Delete a saved trip by ID."""
+    if not _session_store.exists(session_id):
+        raise HTTPException(status_code=403, detail="Unknown session.")
+    store = TripStore()
+    if not store.get_trip(trip_id):
+        raise HTTPException(status_code=404, detail="Trip not found.")
+    store.delete_trip(trip_id)
+    return JSONResponse({"status": "ok"})
+
+
 # ---------------------------------------------------------------------------
 # Preferences
 # ---------------------------------------------------------------------------
@@ -399,7 +432,10 @@ async def create_share_link(session_id: str, request: Request):
 
 @app.get("/s/{token}", response_class=HTMLResponse)
 async def shared_itinerary(token: str):
-    """Render a rich read-only itinerary view for a share token."""
+    """Render a rich, accordion read-only itinerary view for a share token."""
+    from datetime import date as _dt_date
+    import html as _html
+
     data = _session_store.get_session_for_token(token)
     if not data or not data.get("itinerary"):
         return HTMLResponse(
@@ -407,132 +443,185 @@ async def shared_itinerary(token: str):
             status_code=404,
         )
     it = data["itinerary"]
-    dest = it.get("destination") or (
-        " → ".join(it["destinations"]) if it.get("destinations") else "Trip"
-    )
-    date_range = " → ".join(filter(None, [it.get("start_date"), it.get("end_date")]))
 
-    # ── budget breakdown ──────────────────────────────────────────────────────
-    budget = it.get("budget") or {}
+    # ── destination & dates ───────────────────────────────────────────────────
+    dests = it.get("destinations") or []
+    dest = it.get("destination") or (" → ".join(dests) if dests else "Trip")
+    start = it.get("start_date", "")
+    end   = it.get("end_date", "")
+    try:
+        start_fmt = _dt_date.fromisoformat(start).strftime("%b %-d, %Y") if start else ""
+        end_fmt   = _dt_date.fromisoformat(end).strftime("%b %-d, %Y")   if end   else ""
+    except Exception:
+        start_fmt, end_fmt = start, end
+    date_range = f"{start_fmt} → {end_fmt}" if start_fmt or end_fmt else ""
+    travelers  = it.get("travelers") or 0
+
+    # ── budget — exclude synthetic "total" / "grand_total" keys to avoid double-counting ──
+    KNOWN_CATS = {"flights", "hotels", "activities", "food", "transport", "other"}
+    raw_budget = it.get("budget") or {}
+    budget = {k: v for k, v in raw_budget.items()
+              if k in KNOWN_CATS and isinstance(v, (int, float)) and v}
     budget_total = sum(budget.values())
+
     BUDGET_META = {
-        "flights":    ("✈", "#0ea5e9", "#e0f2fe"),
-        "hotels":     ("🏨", "#0d9488", "#ccfbf1"),
-        "activities": ("🗺", "#f97316", "#ffedd5"),
-        "food":       ("🍽", "#f59e0b", "#fef3c7"),
-        "transport":  ("🚗", "#6366f1", "#ede9fe"),
-        "other":      ("📦", "#64748b", "#f1f5f9"),
+        "flights":    ("✈",  "#0ea5e9", "#e0f2fe", "#bae6fd"),
+        "hotels":     ("🏨", "#0d9488", "#ccfbf1", "#99f6e4"),
+        "activities": ("🗺", "#f97316", "#ffedd5", "#fed7aa"),
+        "food":       ("🍽", "#f59e0b", "#fef3c7", "#fde68a"),
+        "transport":  ("🚗", "#6366f1", "#ede9fe", "#ddd6fe"),
+        "other":      ("📦", "#64748b", "#f1f5f9", "#e2e8f0"),
     }
+
     budget_cards_html = ""
-    if budget_total:
-        for cat, amt in budget.items():
-            if not amt:
-                continue
-            icon, color, bg = BUDGET_META.get(cat, ("💰", "#64748b", "#f1f5f9"))
-            pct = round(amt / budget_total * 100)
-            budget_cards_html += (
-                f"<div class='bcard' style='--c:{color};--bg:{bg}'>"
-                f"<span class='bicon'>{icon}</span>"
-                f"<span class='bcat'>{_safe(cat.title())}</span>"
-                f"<span class='bamt'>${amt:,.0f}</span>"
-                f"<div class='bbar-bg'><div class='bbar-fill' style='width:{pct}%'></div></div>"
-                f"<span class='bpct'>{pct}%</span>"
-                f"</div>"
-            )
+    for cat, amt in budget.items():
+        icon, color, bg, _ = BUDGET_META.get(cat, ("💰", "#64748b", "#f1f5f9", "#e2e8f0"))
+        pct = round(amt / budget_total * 100) if budget_total else 0
+        budget_cards_html += (
+            f"<div class='bcard' style='--c:{color};--bg:{bg}'>"
+            f"<span class='bicon'>{icon}</span>"
+            f"<span class='bcat'>{_safe(cat.title())}</span>"
+            f"<span class='bamt'>${amt:,.0f}</span>"
+            f"<div class='bbar-bg'><div class='bbar-fill' style='width:{pct}%'></div></div>"
+            f"<span class='bpct'>{pct}%</span>"
+            f"</div>"
+        )
 
     # ── trip stats ────────────────────────────────────────────────────────────
-    days_list = it.get("days", [])
-    num_days = len(days_list)
-    travelers = it.get("travelers", 0)
-    all_items = [item for day in days_list for item in day.get("items", [])]
-    flights_count   = sum(1 for i in all_items if i.get("type") == "flight")
-    hotels_count    = sum(1 for i in all_items if i.get("type") == "hotel")
-    activity_count  = sum(1 for i in all_items if i.get("type") not in ("flight", "hotel", ""))
-    stats_html = ""
-    stats = []
-    if num_days:      stats.append(("📅", str(num_days), "days"))
-    if travelers:     stats.append(("👤", str(travelers), "traveler(s)"))
-    if flights_count: stats.append(("✈", str(flights_count), "flight(s)"))
-    if hotels_count:  stats.append(("🏨", str(hotels_count), "hotel night(s)"))
-    if activity_count:stats.append(("🗺", str(activity_count), "activities"))
-    if budget_total:  stats.append(("💰", f"${budget_total:,.0f}", "est. total"))
-    for icon, val, label in stats:
-        stats_html += f"<div class='stat'><span class='sicon'>{icon}</span><strong>{_safe(val)}</strong><span>{_safe(label)}</span></div>"
+    days_list = it.get("days") or []
+    num_days  = len(days_list)
+    all_items = [item for day in days_list for item in (day.get("items") or [])]
+    flights_n  = sum(1 for i in all_items if i.get("type") == "flight")
+    hotels_n   = sum(1 for i in all_items if i.get("type") == "hotel")
+    acts_n     = sum(1 for i in all_items if i.get("type") == "activity")
 
-    # ── item type metadata ────────────────────────────────────────────────────
+    stats = []
+    if num_days:     stats.append(("📅", str(num_days),             "days"))
+    if travelers:    stats.append(("👤", str(travelers),            "traveler(s)"))
+    if flights_n:    stats.append(("✈",  str(flights_n),           "flight(s)"))
+    if hotels_n:     stats.append(("🏨", str(hotels_n),            "hotel night(s)"))
+    if acts_n:       stats.append(("🗺", str(acts_n),              "activities"))
+    if budget_total: stats.append(("💰", f"${budget_total:,.0f}",  "est. total"))
+    stats_html = "".join(
+        f"<div class='stat'><span class='sicon'>{ic}</span>"
+        f"<strong>{_safe(v)}</strong><span>{_safe(lbl)}</span></div>"
+        for ic, v, lbl in stats
+    )
+
+    # ── item type meta ────────────────────────────────────────────────────────
     ITEM_META = {
-        "flight":    ("✈",  "#0ea5e9", "#e0f2fe"),
-        "hotel":     ("🏨", "#0d9488", "#ccfbf1"),
-        "activity":  ("🗺", "#f97316", "#ffedd5"),
-        "food":      ("🍽", "#f59e0b", "#fef3c7"),
-        "restaurant":("🍽", "#f59e0b", "#fef3c7"),
-        "transport": ("🚗", "#6366f1", "#ede9fe"),
-        "transfer":  ("🚗", "#6366f1", "#ede9fe"),
+        "flight":     ("✈",  "#0ea5e9", "#e0f2fe"),
+        "hotel":      ("🏨", "#0d9488", "#ccfbf1"),
+        "activity":   ("🗺", "#f97316", "#ffedd5"),
+        "food":       ("🍽", "#f59e0b", "#fef3c7"),
+        "restaurant": ("🍽", "#f59e0b", "#fef3c7"),
+        "transport":  ("🚗", "#6366f1", "#ede9fe"),
+        "transfer":   ("🚗", "#6366f1", "#ede9fe"),
+        "free_time":  ("☀️", "#10b981", "#d1fae5"),
+    }
+    STATUS_COLORS = {
+        "confirmed":   "#10b981",
+        "suggested":   "#f59e0b",
+        "alternative": "#6366f1",
     }
 
     # ── days ──────────────────────────────────────────────────────────────────
     days_html = ""
     for i, day in enumerate(days_list):
+        # date label
+        date_str = day.get("date", "")
         try:
-            from datetime import date as dt_date
-            dlbl = dt_date.fromisoformat(day.get("date", "")).strftime("%A, %b %-d")
+            dlbl = _dt_date.fromisoformat(date_str).strftime("%A, %b %-d")
         except Exception:
             dlbl = f"Day {i + 1}"
-        if day.get("label"):
-            dlbl += f" — {day['label']}"
+        theme = day.get("label") or ""
+        # item count for collapsed preview
+        n_items = len(day.get("items") or [])
 
-        # weather strip
+        # weather — schema uses temp_high / temp_low (Celsius)
         weather_html = ""
         wx = day.get("weather") or {}
         if wx:
-            cond  = _safe(wx.get("condition", ""))
-            hi    = wx.get("high_c") or wx.get("high")
-            lo    = wx.get("low_c")  or wx.get("low")
+            cond  = wx.get("condition", "")
+            hi    = wx.get("temp_high") or wx.get("high_c") or wx.get("high")
+            lo    = wx.get("temp_low")  or wx.get("low_c")  or wx.get("low")
             emoji = wx.get("emoji", "🌤")
-            temp  = f"{hi}°/{lo}°C" if hi and lo else (f"{hi}°C" if hi else "")
-            weather_html = f"<div class='wx'>{emoji} {_safe(temp)} {cond}</div>"
+            parts = [emoji]
+            if hi and lo:
+                parts.append(f"{int(hi)}°/{int(lo)}°C")
+            elif hi:
+                parts.append(f"{int(hi)}°C")
+            if cond:
+                parts.append(cond)
+            weather_html = f"<span class='wx'>{'&nbsp;'.join(_safe(p) for p in parts)}</span>"
 
+        # items
         items_html = ""
-        for item in day.get("items", []):
+        for item in (day.get("items") or []):
             itype = (item.get("type") or "").lower()
             icon, color, bg = ITEM_META.get(itype, ("📌", "#64748b", "#f1f5f9"))
-            time_str  = _safe(item.get("time", ""))
-            title_str = _safe(item.get("title", ""))
-            price     = item.get("price_usd")
-            price_html = f"<span class='iprice'>${price:,.0f}</span>" if price else ""
-            notes     = item.get("notes") or item.get("description") or ""
-            notes_html = f"<div class='inotes'>{_safe(notes)}</div>" if notes else ""
-            airline   = item.get("airline") or item.get("carrier") or ""
-            airline_html = f"<span class='itag'>{_safe(airline)}</span>" if airline else ""
-            duration  = item.get("duration") or ""
-            dur_html   = f"<span class='itag'>{_safe(duration)}</span>" if duration else ""
-            status    = item.get("status") or ""
-            STATUS_COLORS = {"confirmed": "#10b981", "suggested": "#f59e0b", "alternative": "#6366f1"}
-            status_html = ""
-            if status:
-                sc = STATUS_COLORS.get(status.lower(), "#64748b")
-                status_html = f"<span class='istatus' style='background:{sc}20;color:{sc}'>{_safe(status.title())}</span>"
 
-            time_html  = f"<span class='itime'>{time_str}</span>" if time_str else ""
-            tags_html  = f"<div class='itags'>{airline_html}{dur_html}</div>" if (airline or duration) else ""
+            time_str   = _safe(item.get("time") or "")
+            end_time   = _safe(item.get("end_time") or "")
+            title_str  = _safe(item.get("title") or "Untitled")
+            subtitle   = _safe(item.get("subtitle") or "")  # airline, address, etc.
+            notes      = _safe(item.get("notes") or "")
+            dur_h      = item.get("duration_hours")
+            price      = item.get("price_usd")
+            status     = (item.get("status") or "").lower()
+
+            time_range = time_str
+            if time_str and end_time:
+                time_range = f"{time_str}–{end_time}"
+            time_html  = f"<span class='itime'>{time_range}</span>" if time_range else ""
+
+            dur_html   = (f"<span class='itag'>⏱ {dur_h:.0f}h</span>"
+                          if dur_h else "")
+            sub_html   = f"<span class='itag'>{subtitle}</span>" if subtitle else ""
+            tags_html  = f"<div class='itags'>{sub_html}{dur_html}</div>" if (subtitle or dur_h) else ""
+
+            price_html = (f"<span class='iprice'>${price:,.0f}</span>"
+                          if isinstance(price, (int, float)) and price else "")
+
+            sc = STATUS_COLORS.get(status, "")
+            status_html = (
+                f"<span class='istatus' style='background:{sc}20;color:{sc}'>{_safe(status.title())}</span>"
+                if sc else ""
+            )
+            notes_html = f"<div class='inotes'>{notes}</div>" if notes else ""
+
             items_html += (
                 f"<div class='icard' style='--ic:{color};--ibg:{bg}'>"
                 f"<span class='iicon'>{icon}</span>"
                 f"<div class='idetails'>"
-                f"<div class='itop'>{time_html}<span class='ititle'>{title_str}</span>{price_html}{status_html}</div>"
-                f"{tags_html}"
-                f"{notes_html}"
-                f"</div>"
-                f"</div>"
+                f"<div class='itop'>{time_html}<span class='ititle'>{title_str}</span>"
+                f"{price_html}{status_html}</div>"
+                f"{tags_html}{notes_html}"
+                f"</div></div>"
             )
 
+        # accordion — first day starts open
+        open_attr = " open" if i == 0 else ""
         days_html += (
-            f"<div class='day'>"
-            f"<div class='day-header'><span class='day-label'>{_safe(dlbl)}</span>{weather_html}</div>"
-            f"<div class='day-items'>{items_html}</div>"
+            f"<details class='day'{open_attr}>"
+            f"<summary class='day-header'>"
+            f"<div class='dh-left'>"
+            f"<span class='day-num'>Day {i+1}</span>"
+            f"<div class='dh-title'>"
+            f"<span class='day-label'>{_safe(dlbl)}</span>"
+            f"{('<span class=day-theme>' + _safe(theme) + '</span>') if theme else ''}"
+            f"</div></div>"
+            f"<div class='dh-right'>"
+            f"{weather_html}"
+            f"<span class='item-count'>{n_items} item{'s' if n_items != 1 else ''}</span>"
+            f"<span class='chevron'>›</span>"
             f"</div>"
+            f"</summary>"
+            f"<div class='day-items'>{items_html or '<p class=empty-day>No items planned yet.</p>'}</div>"
+            f"</details>"
         )
 
+    # ── render ────────────────────────────────────────────────────────────────
     return HTMLResponse(f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -546,77 +635,148 @@ async def shared_itinerary(token: str):
     --teal:#0d9488;--teal-l:#ccfbf1;
     --border:#e2e8f0;--bg:#f0f9ff;--surface:#fff;
     --text:#0f172a;--text-2:#334155;--text-3:#64748b;
+    --radius:14px;
   }}
   html{{scroll-behavior:smooth}}
-  body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);line-height:1.6}}
+  body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+        background:var(--bg);color:var(--text);line-height:1.6;min-height:100vh}}
 
-  /* hero */
-  .hero{{background:linear-gradient(135deg,#0ea5e9 0%,#0d9488 60%,#7c3aed 100%);color:#fff;padding:48px 24px 56px;position:relative;overflow:hidden;text-align:center}}
-  .hero::before{{content:'✈';position:absolute;font-size:260px;opacity:.07;top:50%;left:50%;transform:translate(-50%,-50%) rotate(15deg);line-height:1;pointer-events:none}}
-  .hero h1{{font-size:clamp(26px,5vw,44px);font-weight:900;letter-spacing:-1px;margin-bottom:8px;text-shadow:0 2px 12px rgba(0,0,0,.2)}}
-  .hero .dates{{font-size:15px;opacity:.85;margin-bottom:20px}}
-  .wave{{display:block;width:100%;height:48px;background:var(--bg);clip-path:ellipse(55% 100% at 50% 100%);margin-top:-1px}}
+  /* ── hero ── */
+  .hero{{background:linear-gradient(135deg,#0ea5e9 0%,#0d9488 55%,#7c3aed 100%);
+         color:#fff;padding:52px 24px 62px;text-align:center;position:relative;overflow:hidden}}
+  .hero::before{{content:'✈';position:absolute;font-size:280px;opacity:.06;top:50%;left:50%;
+                 transform:translate(-50%,-50%) rotate(15deg);line-height:1;pointer-events:none}}
+  .hero h1{{font-size:clamp(28px,5vw,48px);font-weight:900;letter-spacing:-1.5px;
+            margin-bottom:8px;text-shadow:0 2px 16px rgba(0,0,0,.22)}}
+  .hero .dates{{font-size:16px;opacity:.88;margin-bottom:6px;font-weight:500}}
+  .hero .travelers{{font-size:13px;opacity:.7;font-weight:500}}
+  .wave{{display:block;width:100%;height:50px;background:var(--bg);
+         clip-path:ellipse(55% 100% at 50% 100%);margin-top:-1px}}
 
-  /* stats bar */
-  .stats-bar{{display:flex;gap:12px;flex-wrap:wrap;justify-content:center;background:var(--surface);border-bottom:1px solid var(--border);padding:16px 24px}}
-  .stat{{display:flex;flex-direction:column;align-items:center;gap:2px;min-width:72px}}
-  .sicon{{font-size:18px}}
-  .stat strong{{font-size:16px;font-weight:800;color:var(--text)}}
-  .stat span{{font-size:11px;color:var(--text-3);font-weight:600;text-transform:uppercase;letter-spacing:.05em}}
+  /* ── stats bar ── */
+  .stats-bar{{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;
+              background:var(--surface);border-bottom:1px solid var(--border);
+              padding:14px 20px}}
+  .stat{{display:flex;flex-direction:column;align-items:center;gap:1px;
+         min-width:68px;padding:4px 10px;border-radius:10px}}
+  .stat:hover{{background:var(--bg)}}
+  .sicon{{font-size:17px;line-height:1}}
+  .stat strong{{font-size:15px;font-weight:800;color:var(--text)}}
+  .stat span{{font-size:10px;color:var(--text-3);font-weight:700;
+              text-transform:uppercase;letter-spacing:.06em}}
 
-  /* layout */
-  .page{{max-width:780px;margin:0 auto;padding:32px 16px}}
+  /* ── page ── */
+  .page{{max-width:800px;margin:0 auto;padding:28px 16px 60px}}
 
-  /* budget */
-  .budget-section{{background:var(--surface);border:1.5px solid var(--border);border-radius:16px;padding:24px;margin-bottom:28px;box-shadow:0 4px 12px rgba(0,0,0,.05)}}
-  .section-title{{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--text-3);margin-bottom:14px}}
-  .bcards{{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px}}
-  .bcard{{background:var(--bg);border:1.5px solid var(--border);border-radius:12px;padding:12px;position:relative;overflow:hidden}}
-  .bcard::before{{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--c)}}
-  .bicon{{font-size:18px;display:block;margin-bottom:4px}}
-  .bcat{{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3);display:block}}
-  .bamt{{font-size:18px;font-weight:900;color:var(--c);display:block;margin:2px 0}}
-  .bbar-bg{{height:4px;background:var(--border);border-radius:2px;margin:6px 0 4px}}
-  .bbar-fill{{height:4px;background:var(--c);border-radius:2px}}
-  .bpct{{font-size:10px;color:var(--text-3);font-weight:600}}
+  /* ── toolbar ── */
+  .toolbar{{display:flex;align-items:center;justify-content:space-between;
+            flex-wrap:wrap;gap:10px;margin-bottom:24px}}
+  .toolbar-title{{font-size:11px;font-weight:800;text-transform:uppercase;
+                  letter-spacing:.1em;color:var(--text-3)}}
+  .btn-row{{display:flex;gap:8px}}
+  .btn{{display:inline-flex;align-items:center;gap:5px;padding:7px 14px;
+        border-radius:9px;border:none;font-size:12px;font-weight:700;cursor:pointer;
+        transition:opacity .12s}}
+  .btn-print{{background:linear-gradient(135deg,var(--sky),var(--teal));color:#fff;
+               box-shadow:0 3px 10px rgba(14,165,233,.3)}}
+  .btn-print:hover{{opacity:.88}}
+  .btn-expand{{background:var(--surface);color:var(--text-2);border:1.5px solid var(--border)}}
+  .btn-expand:hover{{border-color:var(--sky);color:var(--sky-d)}}
 
-  /* days */
-  .day{{background:var(--surface);border:1.5px solid var(--border);border-radius:16px;margin-bottom:16px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.04)}}
-  .day-header{{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:linear-gradient(90deg,var(--sky-l),var(--teal-l));border-bottom:1px solid var(--border);gap:10px;flex-wrap:wrap}}
-  .day-label{{font-size:14px;font-weight:800;color:var(--sky-d)}}
-  .wx{{font-size:12px;color:var(--text-3);background:#fff;border:1px solid var(--border);border-radius:20px;padding:3px 10px;font-weight:600}}
+  /* ── budget section ── */
+  .card-section{{background:var(--surface);border:1.5px solid var(--border);
+                 border-radius:var(--radius);padding:20px 22px;margin-bottom:20px;
+                 box-shadow:0 2px 10px rgba(0,0,0,.05)}}
+  .sec-title{{font-size:11px;font-weight:800;text-transform:uppercase;
+              letter-spacing:.1em;color:var(--text-3);margin-bottom:14px;
+              display:flex;align-items:center;gap:6px}}
+  .bcards{{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px}}
+  .bcard{{background:var(--bg);border:1.5px solid var(--border);border-left:4px solid var(--c);
+          border-radius:10px;padding:12px 12px 10px;position:relative}}
+  .bicon{{font-size:20px;display:block;margin-bottom:6px;line-height:1}}
+  .bcat{{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;
+         color:var(--text-3);display:block;margin-bottom:3px}}
+  .bamt{{font-size:20px;font-weight:900;color:var(--c);display:block;margin-bottom:6px;
+         letter-spacing:-.5px}}
+  .bbar-bg{{height:4px;background:var(--border);border-radius:2px;margin-bottom:4px}}
+  .bbar-fill{{height:4px;border-radius:2px;background:var(--c)}}
+  .bpct{{font-size:10px;color:var(--text-3);font-weight:700}}
+  .btotal{{margin-top:14px;font-size:14px;color:var(--text-2);font-weight:600;
+           border-top:1px solid var(--border);padding-top:12px}}
+  .btotal strong{{color:var(--text);font-size:16px}}
+
+  /* ── accordion days ── */
+  details.day{{background:var(--surface);border:1.5px solid var(--border);
+               border-radius:var(--radius);margin-bottom:10px;
+               box-shadow:0 2px 8px rgba(0,0,0,.04);overflow:hidden}}
+  details.day[open]{{border-color:#bae6fd}}
+  summary.day-header{{list-style:none;display:flex;align-items:center;
+                       justify-content:space-between;padding:13px 16px;
+                       cursor:pointer;gap:10px;
+                       background:linear-gradient(90deg,var(--sky-l),var(--teal-l));
+                       transition:background .15s;user-select:none}}
+  summary.day-header::-webkit-details-marker{{display:none}}
+  summary.day-header:hover{{background:linear-gradient(90deg,#bae6fd,#99f6e4)}}
+  details[open] summary.day-header{{border-bottom:1px solid var(--border)}}
+  .dh-left{{display:flex;align-items:center;gap:10px;flex:1;min-width:0}}
+  .day-num{{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;
+            color:#fff;background:var(--sky-d);border-radius:6px;padding:3px 7px;
+            flex-shrink:0}}
+  .dh-title{{display:flex;flex-direction:column;min-width:0}}
+  .day-label{{font-size:14px;font-weight:800;color:var(--sky-d);
+              white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}
+  .day-theme{{font-size:11px;color:var(--text-3);font-weight:600;margin-top:1px}}
+  .dh-right{{display:flex;align-items:center;gap:8px;flex-shrink:0}}
+  .wx{{font-size:11px;color:var(--text-3);background:#fff;border:1px solid var(--border);
+       border-radius:20px;padding:3px 9px;font-weight:600;white-space:nowrap}}
+  .item-count{{font-size:11px;color:var(--text-3);font-weight:700;
+               background:#fff;border:1px solid var(--border);
+               border-radius:20px;padding:3px 9px;white-space:nowrap}}
+  .chevron{{font-size:18px;color:var(--sky-d);font-weight:700;
+            transition:transform .2s;display:block;line-height:1}}
+  details[open] .chevron{{transform:rotate(90deg)}}
   .day-items{{padding:12px;display:flex;flex-direction:column;gap:8px}}
+  .empty-day{{font-size:13px;color:var(--text-3);text-align:center;padding:16px}}
 
-  /* item cards */
-  .icard{{display:flex;gap:10px;background:var(--ibg);border:1.5px solid var(--border);border-left:4px solid var(--ic);border-radius:10px;padding:10px 12px;align-items:flex-start}}
-  .iicon{{font-size:18px;flex-shrink:0;margin-top:1px}}
+  /* ── item cards ── */
+  .icard{{display:flex;gap:10px;background:var(--ibg);
+          border:1.5px solid var(--border);border-left:4px solid var(--ic);
+          border-radius:10px;padding:10px 12px;align-items:flex-start}}
+  .iicon{{font-size:18px;flex-shrink:0;margin-top:1px;line-height:1}}
   .idetails{{flex:1;min-width:0}}
-  .itop{{display:flex;align-items:center;flex-wrap:wrap;gap:6px}}
-  .itime{{font-family:'SF Mono','Fira Code',monospace;font-size:11px;font-weight:700;color:var(--ic);background:#fff;border:1px solid var(--border);border-radius:5px;padding:1px 6px;flex-shrink:0}}
-  .ititle{{font-size:14px;font-weight:700;color:var(--text);flex:1}}
-  .iprice{{font-size:12px;font-weight:800;color:var(--teal);background:var(--teal-l);border-radius:5px;padding:1px 7px;flex-shrink:0}}
-  .istatus{{font-size:10px;font-weight:700;border-radius:5px;padding:1px 7px;flex-shrink:0;text-transform:uppercase;letter-spacing:.05em}}
+  .itop{{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:2px}}
+  .itime{{font-family:'SF Mono','Fira Code',monospace;font-size:11px;font-weight:700;
+          color:var(--ic);background:#fff;border:1px solid var(--border);
+          border-radius:5px;padding:1px 6px;flex-shrink:0;white-space:nowrap}}
+  .ititle{{font-size:14px;font-weight:700;color:var(--text);flex:1;min-width:0}}
+  .iprice{{font-size:12px;font-weight:800;color:var(--teal);background:var(--teal-l);
+           border-radius:6px;padding:2px 8px;flex-shrink:0;white-space:nowrap}}
+  .istatus{{font-size:10px;font-weight:700;border-radius:5px;padding:1px 7px;
+            flex-shrink:0;text-transform:uppercase;letter-spacing:.05em}}
   .itags{{display:flex;gap:5px;flex-wrap:wrap;margin-top:5px}}
-  .itag{{font-size:11px;color:var(--text-3);background:#fff;border:1px solid var(--border);border-radius:5px;padding:1px 7px;font-weight:600}}
-  .inotes{{margin-top:5px;font-size:12px;color:var(--text-3);line-height:1.5}}
+  .itag{{font-size:11px;color:var(--text-3);background:#fff;
+         border:1px solid var(--border);border-radius:5px;padding:1px 7px;font-weight:600}}
+  .inotes{{margin-top:5px;font-size:12px;color:var(--text-3);line-height:1.55}}
 
-  /* print btn */
-  .print-btn{{display:flex;align-items:center;gap:6px;background:linear-gradient(135deg,var(--sky),var(--teal));color:#fff;border:none;border-radius:10px;padding:10px 18px;font-size:13px;font-weight:700;cursor:pointer;margin:0 auto 28px;box-shadow:0 4px 12px rgba(14,165,233,.35)}}
-  .print-btn:hover{{opacity:.9}}
-
-  /* footer */
-  footer{{margin-top:40px;text-align:center;font-size:12px;color:var(--text-3);border-top:1px solid var(--border);padding-top:20px;padding-bottom:40px}}
+  /* ── footer ── */
+  footer{{text-align:center;font-size:12px;color:var(--text-3);
+          border-top:1px solid var(--border);padding:20px 16px 48px}}
   footer a{{color:var(--sky-d);text-decoration:none;font-weight:600}}
 
+  /* ── print ── */
   @media print{{
-    .print-btn,.stats-bar,.wave{{display:none}}
+    .toolbar,.stats-bar,.wave{{display:none}}
     .hero{{print-color-adjust:exact;-webkit-print-color-adjust:exact}}
     body{{background:#fff}}
-    .day,.budget-section{{box-shadow:none;border:1px solid #ddd}}
+    .day,.card-section{{box-shadow:none;border:1px solid #ddd}}
+    details.day{{display:block}}
+    details.day .day-items{{display:flex}}
+    summary.day-header{{pointer-events:none}}
   }}
-  @media(max-width:500px){{
-    .hero{{padding:36px 16px 44px}}
+  @media(max-width:520px){{
+    .hero{{padding:36px 16px 46px}}
     .bcards{{grid-template-columns:1fr 1fr}}
+    .dh-right .item-count{{display:none}}
   }}
 </style>
 </head>
@@ -624,7 +784,8 @@ async def shared_itinerary(token: str):
 
 <div class="hero">
   <h1>✈ {_safe(dest)}</h1>
-  <div class="dates">{_safe(date_range)}</div>
+  {f'<div class="dates">{_safe(date_range)}</div>' if date_range else ''}
+  {f'<div class="travelers">👤 {travelers} traveler{"s" if travelers != 1 else ""}</div>' if travelers else ''}
 </div>
 <div class="wave"></div>
 
@@ -632,18 +793,26 @@ async def shared_itinerary(token: str):
 
 <div class="page">
 
-  <button class="print-btn" onclick="window.print()">🖨 Print / Save as PDF</button>
+  <div class="toolbar">
+    <span class="toolbar-title">📋 Trip Summary</span>
+    <div class="btn-row">
+      <button class="btn btn-expand" onclick="toggleAll()">⊞ Expand all</button>
+      <button class="btn btn-print"  onclick="window.print()">🖨 Print / PDF</button>
+    </div>
+  </div>
 
-  {f'''<div class="budget-section">
-    <div class="section-title">💰 Budget Breakdown</div>
-    <div class="bcards">{budget_cards_html}</div>
-    <p style="margin-top:14px;font-size:13px;color:var(--text-3)">
-      <strong style="color:var(--text)">Estimated total: ${budget_total:,.0f}</strong>
-      {"&nbsp;·&nbsp;" + _safe(str(travelers)) + " traveler(s)" if travelers else ""}
-    </p>
-  </div>''' if budget_cards_html else ""}
+  {''.join([
+    '<div class="card-section">',
+    '<div class="sec-title">💰 Budget Breakdown</div>',
+    '<div class="bcards">', budget_cards_html, '</div>',
+    f'<div class="btotal">Estimated total:&nbsp;<strong>${budget_total:,.0f}</strong>',
+    f'{"&nbsp;·&nbsp;" + _safe(str(travelers)) + " traveler(s)" if travelers else ""}',
+    '</div></div>',
+  ]) if budget_cards_html else ''}
 
-  <div class="section-title" style="margin-bottom:12px">📅 Day-by-Day Itinerary</div>
+  <div class="toolbar" style="margin-top:4px">
+    <span class="toolbar-title">📅 Day-by-Day Itinerary</span>
+  </div>
   {days_html}
 
 </div>
@@ -652,6 +821,14 @@ async def shared_itinerary(token: str):
   Shared via <a href="/">Travel Agent</a> &nbsp;·&nbsp; Read-only view
 </footer>
 
+<script>
+  function toggleAll() {{
+    const all = document.querySelectorAll('details.day');
+    const anyOpen = [...all].some(d => d.open);
+    all.forEach(d => d.open = !anyOpen);
+    document.querySelector('.btn-expand').textContent = anyOpen ? '⊞ Expand all' : '⊟ Collapse all';
+  }}
+</script>
 </body></html>""")
 
 
