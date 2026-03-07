@@ -1,40 +1,35 @@
 """
-Trip history store — saves completed and planned trips to SQLite.
+Trip history store — saves completed and planned trips to Supabase (PostgreSQL).
 Allows the agent to reference past trips and learn from patterns.
 """
 
 import json
-import sqlite3
-from pathlib import Path
 from datetime import datetime
 
-from memory._data_dir import data_dir
-
-DB_PATH = data_dir() / "trips.db"
+from memory.db import get_conn
 
 
 class TripStore:
     """Persistent store for planned and completed trips."""
 
     def __init__(self):
-        DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
         self._init_db()
 
     def _init_db(self):
-        self._conn.execute("""
-            CREATE TABLE IF NOT EXISTS trips (
-                id TEXT PRIMARY KEY,
-                destination TEXT NOT NULL,
-                start_date TEXT,
-                end_date TEXT,
-                status TEXT NOT NULL DEFAULT 'planned',
-                data TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            )
-        """)
-        self._conn.commit()
+        with get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS trips (
+                    id          TEXT PRIMARY KEY,
+                    destination TEXT NOT NULL,
+                    start_date  TEXT,
+                    end_date    TEXT,
+                    status      TEXT NOT NULL DEFAULT 'planned',
+                    data        TEXT NOT NULL,
+                    created_at  TEXT NOT NULL,
+                    updated_at  TEXT NOT NULL
+                )
+            """)
 
     def save_trip(self, trip: dict) -> str:
         """Save or update a trip. Returns the trip ID."""
@@ -42,50 +37,68 @@ class TripStore:
         trip["id"] = trip_id
         now = datetime.now().isoformat()
 
-        self._conn.execute("""
-            INSERT OR REPLACE INTO trips
-                (id, destination, start_date, end_date, status, data, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, COALESCE(
-                (SELECT created_at FROM trips WHERE id = ?), ?
-            ), ?)
-        """, (
-            trip_id,
-            trip.get("destination", ""),
-            trip.get("start_date"),
-            trip.get("end_date"),
-            trip.get("status", "planned"),
-            json.dumps(trip),
-            trip_id, now,  # for COALESCE fallback
-            now,
-        ))
-        self._conn.commit()
+        with get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("""
+                INSERT INTO trips
+                    (id, destination, start_date, end_date, status, data, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (id) DO UPDATE SET
+                    destination = EXCLUDED.destination,
+                    start_date  = EXCLUDED.start_date,
+                    end_date    = EXCLUDED.end_date,
+                    status      = EXCLUDED.status,
+                    data        = EXCLUDED.data,
+                    created_at  = COALESCE(trips.created_at, EXCLUDED.created_at),
+                    updated_at  = EXCLUDED.updated_at
+            """, (
+                trip_id,
+                trip.get("destination", ""),
+                trip.get("start_date"),
+                trip.get("end_date"),
+                trip.get("status", "planned"),
+                json.dumps(trip),
+                now,
+                now,
+            ))
         return trip_id
 
     def get_trip(self, trip_id: str) -> dict | None:
         """Load a trip by ID."""
-        row = self._conn.execute(
-            "SELECT data FROM trips WHERE id = ?", (trip_id,)
-        ).fetchone()
+        with get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT data FROM trips WHERE id = %s", (trip_id,))
+            row = cur.fetchone()
         return json.loads(row[0]) if row else None
 
     def get_all_trips(self, status: str | None = None) -> list[dict]:
         """Return all trips, optionally filtered by status."""
-        if status:
-            rows = self._conn.execute(
-                "SELECT data FROM trips WHERE status = ? ORDER BY start_date DESC", (status,)
-            ).fetchall()
-        else:
-            rows = self._conn.execute(
-                "SELECT data FROM trips ORDER BY start_date DESC"
-            ).fetchall()
+        with get_conn() as conn:
+            cur = conn.cursor()
+            if status:
+                cur.execute(
+                    "SELECT data FROM trips WHERE status = %s ORDER BY start_date DESC",
+                    (status,),
+                )
+            else:
+                cur.execute("SELECT data FROM trips ORDER BY start_date DESC")
+            rows = cur.fetchall()
         return [json.loads(row[0]) for row in rows]
 
     def get_recent_destinations(self, limit: int = 5) -> list[str]:
         """Return recently visited destinations."""
-        rows = self._conn.execute(
-            "SELECT DISTINCT destination FROM trips WHERE status = 'completed' ORDER BY end_date DESC LIMIT ?",
-            (limit,)
-        ).fetchall()
+        with get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT DISTINCT destination FROM trips
+                WHERE status = 'completed'
+                ORDER BY end_date DESC
+                LIMIT %s
+                """,
+                (limit,),
+            )
+            rows = cur.fetchall()
         return [row[0] for row in rows]
 
     def as_context_string(self) -> str:
@@ -103,8 +116,9 @@ class TripStore:
 
     def delete_trip(self, trip_id: str) -> None:
         """Delete a trip by ID."""
-        self._conn.execute("DELETE FROM trips WHERE id = ?", (trip_id,))
-        self._conn.commit()
+        with get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("DELETE FROM trips WHERE id = %s", (trip_id,))
 
     def close(self):
-        self._conn.close()
+        pass  # Connection pool is managed globally
