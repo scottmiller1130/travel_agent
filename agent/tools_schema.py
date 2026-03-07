@@ -24,6 +24,7 @@ TOOLS: list[dict] = [
                     "default": "economy",
                 },
                 "max_results": {"type": "integer", "description": "Max number of results to return", "default": 5},
+                "max_price_usd": {"type": "integer", "description": "Maximum total price in USD (optional). Pass the user's budget when known."},
             },
             "required": ["origin", "destination", "departure_date"],
         },
@@ -309,7 +310,12 @@ TOOLS: list[dict] = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "destination": {"type": "string", "description": "Primary trip destination"},
+                "destination": {"type": "string", "description": "Primary trip destination (first city for multi-city trips)"},
+                "destinations": {
+                    "type": "array",
+                    "description": "For multi-city trips, ordered list of all destination cities (e.g. ['Paris', 'Rome', 'Barcelona']). Include when planning a trip with 2+ cities.",
+                    "items": {"type": "string"},
+                },
                 "start_date": {"type": "string", "description": "YYYY-MM-DD"},
                 "end_date": {"type": "string", "description": "YYYY-MM-DD"},
                 "days": {

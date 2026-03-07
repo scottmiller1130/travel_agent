@@ -10,6 +10,8 @@ import os
 import random
 from datetime import datetime, timedelta
 
+from tools.cache import ttl_cache
+
 try:
     import httpx as _httpx
     _HTTPX = True
@@ -141,6 +143,7 @@ def _mock_forecast(destination: str, start_date: str, end_date: str) -> dict:
     }
 
 
+@ttl_cache(ttl=3600)  # Cache for 1 hour — forecasts don't change minute-to-minute
 def get_weather(destination: str, start_date: str, end_date: str) -> dict:
     """
     Get weather forecast for a destination and date range.
