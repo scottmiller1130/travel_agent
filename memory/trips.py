@@ -13,7 +13,18 @@ class TripStore:
     """Persistent store for planned and completed trips."""
 
     def __init__(self):
-        self._init_db()
+        self._ready = False
+        try:
+            self._init_db()
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).error(
+                "DB unavailable at startup — will retry on first request. Error: %s", exc
+            )
+
+    def _ensure_db(self):
+        if not self._ready:
+            self._init_db()
 
     def _init_db(self):
         with get_conn() as conn:
@@ -30,8 +41,10 @@ class TripStore:
                     updated_at  TEXT NOT NULL
                 )
             """)
+            self._ready = True
 
     def save_trip(self, trip: dict) -> str:
+        self._ensure_db()
         """Save or update a trip. Returns the trip ID."""
         trip_id = trip.get("id") or f"TRIP{int(datetime.now().timestamp())}"
         trip["id"] = trip_id
@@ -64,6 +77,7 @@ class TripStore:
         return trip_id
 
     def get_trip(self, trip_id: str) -> dict | None:
+        self._ensure_db()
         """Load a trip by ID."""
         with get_conn() as conn:
             cur = conn.cursor()
@@ -72,6 +86,7 @@ class TripStore:
         return json.loads(row[0]) if row else None
 
     def get_all_trips(self, status: str | None = None) -> list[dict]:
+        self._ensure_db()
         """Return all trips, optionally filtered by status."""
         with get_conn() as conn:
             cur = conn.cursor()
@@ -86,6 +101,7 @@ class TripStore:
         return [json.loads(row[0]) for row in rows]
 
     def get_recent_destinations(self, limit: int = 5) -> list[str]:
+        self._ensure_db()
         """Return recently visited destinations."""
         with get_conn() as conn:
             cur = conn.cursor()
@@ -115,6 +131,7 @@ class TripStore:
         return "\n".join(lines)
 
     def delete_trip(self, trip_id: str) -> None:
+        self._ensure_db()
         """Delete a trip by ID."""
         with get_conn() as conn:
             cur = conn.cursor()
