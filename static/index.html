@@ -281,6 +281,8 @@
     #board-title:hover::after { content: ' ✏'; font-size: 11px; -webkit-text-fill-color: var(--text-4); }
     #board-title-input { font-size: 16px; font-weight: 800; color: var(--sky-d); border: 1.5px solid var(--sky); border-radius: 7px; padding: 1px 8px; outline: none; background: rgba(255,255,255,.85); width: 100%; max-width: 240px; }
     #board-subtitle { font-size: 11px; color: var(--text-3); margin-top: 2px; }
+    #board-clear { background: rgba(255,255,255,.7); border: 1.5px solid var(--border); color: var(--text-3); font-size: 11px; font-weight: 700; cursor: pointer; padding: 4px 10px; border-radius: 8px; transition: all .15s; }
+    #board-clear:hover { color: var(--rose); border-color: var(--rose); background: #fff5f5; }
     #board-close { background: rgba(255,255,255,.7); border: 1.5px solid var(--border); color: var(--text-3); font-size: 18px; cursor: pointer; padding: 3px 8px; border-radius: 8px; line-height: 1; transition: all .15s; }
     #board-close:hover { color: var(--text); background: #fff; }
     #budget-section { padding: 11px 16px; border-bottom: 1px solid var(--border); flex-shrink: 0; background: var(--surface2); }
@@ -534,6 +536,7 @@
         <div id="board-title" onclick="startBoardRename()" title="Click to rename">Trip Board</div>
         <div id="board-subtitle">Plan a trip to see your itinerary here</div>
       </div>
+      <button id="board-clear" onclick="clearBoard()" title="Clear itinerary">Clear</button>
       <button id="board-close" onclick="closeBoard()">×</button>
     </div>
     <div id="budget-section" style="display:none"></div>
@@ -720,6 +723,25 @@
     el.innerHTML = '<div style="font-weight:600;margin-bottom:10px">' + escapeHtml(msg) + '</div><div style="display:flex;gap:8px;justify-content:flex-end"><button onclick="document.getElementById(\'confirm-modal\').remove()" style="padding:6px 14px;border-radius:8px;border:1.5px solid #e2e8f0;background:transparent;color:#64748b;cursor:pointer;font-size:12px;font-weight:600">Cancel</button><button id="confirm-yes-btn" style="padding:6px 14px;border-radius:8px;border:none;background:#f43f5e;color:#fff;cursor:pointer;font-size:12px;font-weight:700">Reset</button></div>';
     document.body.appendChild(el);
     document.getElementById('confirm-yes-btn').onclick = () => { el.remove(); onConfirm(); };
+  }
+  async function clearBoard() {
+    if (!currentItinerary) return;
+    showConfirmModal('Clear the trip board? This cannot be undone.', async () => {
+      try {
+        await fetch('/api/itinerary/' + sessionId, { method: 'DELETE' });
+        currentItinerary = null;
+        localStorage.removeItem('itin_' + sessionId);
+        document.getElementById('board-title').textContent = 'Trip Board';
+        document.getElementById('board-subtitle').textContent = 'Plan a trip to see your itinerary here';
+        document.getElementById('budget-section').style.display = 'none';
+        document.getElementById('issues-section').style.display = 'none';
+        document.getElementById('day-tabs').style.display = 'none';
+        document.getElementById('board-page-nav').style.display = 'none';
+        document.getElementById('board-days').innerHTML = '<div id="board-empty"><div class="empty-icon">🗺</div><p>Your itinerary will appear here once a trip is planned.</p></div>';
+        document.getElementById('issue-badge').classList.remove('show');
+        showToast('Board cleared.');
+      } catch (err) { showToast('Clear failed: ' + err.message); }
+    });
   }
   function newTrip() { inputEl.value = ''; inputEl.focus(); showToast('Start typing to plan your next trip!'); }
   function fillHint(el) { inputEl.value = el.textContent; autoResize(inputEl); inputEl.focus(); }

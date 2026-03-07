@@ -342,6 +342,18 @@ class ItineraryUpdate(BaseModel):
     itinerary: dict
 
 
+@app.delete("/api/itinerary/{session_id}")
+async def clear_itinerary(session_id: str):
+    """Clear the current itinerary for a session."""
+    if not _session_store.exists(session_id):
+        raise HTTPException(status_code=403, detail="Unknown session.")
+    _session_store.clear_itinerary(session_id)
+    with _cache_lock:
+        if session_id in _agent_cache:
+            _agent_cache[session_id].load_itinerary(None)
+    return JSONResponse({"status": "ok"})
+
+
 @app.post("/api/itinerary/{session_id}")
 async def save_itinerary(session_id: str, body: ItineraryUpdate):
     """Persist an itinerary from the frontend (drag-and-drop reorder, import)."""
