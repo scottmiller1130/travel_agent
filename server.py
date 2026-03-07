@@ -497,11 +497,16 @@ async def shared_itinerary(token: str):
     for cat, amt in budget.items():
         icon, color, bg, _ = BUDGET_META.get(cat, ("💰", "#64748b", "#f1f5f9", "#e2e8f0"))
         pct = round(amt / budget_total * 100) if budget_total else 0
+        per_person_html = ""
+        if travelers and travelers > 1:
+            per_amt = round(amt / travelers)
+            per_person_html = f"<span class='bper'>${per_amt:,} / person</span>"
         budget_cards_html += (
             f"<div class='bcard' style='--c:{color};--bg:{bg}'>"
             f"<span class='bicon'>{icon}</span>"
             f"<span class='bcat'>{_safe(cat.title())}</span>"
             f"<span class='bamt'>${amt:,.0f}</span>"
+            f"{per_person_html}"
             f"<div class='bbar-bg'><div class='bbar-fill' style='width:{pct}%'></div></div>"
             f"<span class='bpct'>{pct}%</span>"
             f"</div>"
@@ -517,11 +522,14 @@ async def shared_itinerary(token: str):
 
     stats = []
     if num_days:     stats.append(("📅", str(num_days),             "days"))
-    if travelers:    stats.append(("👤", str(travelers),            "traveler(s)"))
+    if travelers:    stats.append(("👥", str(travelers),            "traveler(s)"))
     if flights_n:    stats.append(("✈",  str(flights_n),           "flight(s)"))
     if hotels_n:     stats.append(("🏨", str(hotels_n),            "hotel night(s)"))
     if acts_n:       stats.append(("🗺", str(acts_n),              "activities"))
     if budget_total: stats.append(("💰", f"${budget_total:,.0f}",  "est. total"))
+    if budget_total and travelers and travelers > 1:
+        per_person_total = round(budget_total / travelers)
+        stats.append(("👤", f"${per_person_total:,.0f}", "per person"))
     stats_html = "".join(
         f"<div class='stat'><span class='sicon'>{ic}</span>"
         f"<strong>{_safe(v)}</strong><span>{_safe(lbl)}</span></div>"
@@ -721,6 +729,7 @@ async def shared_itinerary(token: str):
   .bbar-bg{{height:4px;background:var(--border);border-radius:2px;margin-bottom:4px}}
   .bbar-fill{{height:4px;border-radius:2px;background:var(--c)}}
   .bpct{{font-size:10px;color:var(--text-3);font-weight:700}}
+  .bper{{font-size:10px;font-weight:600;color:var(--c);opacity:.75;display:block;margin-bottom:4px}}
   .btotal{{margin-top:14px;font-size:14px;color:var(--text-2);font-weight:600;
            border-top:1px solid var(--border);padding-top:12px}}
   .btotal strong{{color:var(--text);font-size:16px}}

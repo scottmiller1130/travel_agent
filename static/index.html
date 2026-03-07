@@ -299,10 +299,18 @@
     #budget-section { padding: 11px 16px; border-bottom: 1px solid var(--border); flex-shrink: 0; background: var(--surface2); }
     .budget-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
     .budget-total { font-size: 14px; font-weight: 800; color: var(--text); letter-spacing: -.2px; }
+    .budget-per { font-size: 11px; font-weight: 600; color: var(--teal-d); }
     .budget-bar-outer { height: 5px; background: var(--border); border-radius: 4px; margin-bottom: 8px; overflow: hidden; }
     .budget-bar-inner { height: 5px; background: linear-gradient(90deg, var(--sky), var(--teal)); border-radius: 4px; transition: width .6s var(--ease); }
-    .budget-chips { display: flex; gap: 5px; flex-wrap: wrap; }
+    .budget-chips { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 8px; }
     .budget-chip { font-size: 11px; font-weight: 600; color: var(--text-3); padding: 3px 9px; background: var(--surface); border-radius: 20px; border: 1px solid var(--border); }
+    .budget-chip .chip-per { color: var(--teal-d); font-weight: 500; margin-left: 4px; opacity: .85; }
+    .travelers-row { display: flex; align-items: center; justify-content: space-between; margin-top: 6px; }
+    .travelers-label { font-size: 11px; font-weight: 600; color: var(--text-3); }
+    .travelers-ctrl { display: flex; align-items: center; gap: 0; border: 1.5px solid var(--border); border-radius: 20px; overflow: hidden; background: var(--surface); }
+    .travelers-ctrl button { background: none; border: none; cursor: pointer; font-size: 15px; font-weight: 700; color: var(--text-2); padding: 2px 9px; line-height: 1; font-family: inherit; transition: background .15s; }
+    .travelers-ctrl button:hover { background: var(--border); color: var(--text); }
+    .travelers-ctrl span { font-size: 12px; font-weight: 700; color: var(--text); padding: 0 4px; min-width: 24px; text-align: center; }
     #issues-section { flex-shrink: 0; border-bottom: 1px solid var(--border); max-height: 130px; overflow-y: auto; }
     .issue-item { display: flex; align-items: flex-start; gap: 8px; padding: 8px 16px; font-size: 12px; border-bottom: 1px solid var(--border); }
     .issue-item:last-child { border-bottom: none; }
@@ -760,16 +768,18 @@
     }
   }
 
+  let _savedTrips = [];
   async function loadTrips() { try { const r = await fetch('/api/trips/' + sessionId); const d = await r.json(); renderTrips(d.trips || []); } catch (_) {} }
   function renderTrips(trips) {
+    _savedTrips = trips;
     const el = document.getElementById('trips-list');
-    if (!trips.length) { el.innerHTML = '<p class="empty-state">No saved trips yet.<br>Plan one, then hit <strong>Export → Save Trip</strong>.</p>'; return; }
-    el.innerHTML = trips.map(t => {
+    if (!trips.length) { el.innerHTML = '<p class="empty-state">No saved trips yet.<br>Plan one, then hit <strong>Export / Import → Save Trip</strong>.</p>'; return; }
+    el.innerHTML = trips.map((t, i) => {
       const name  = escapeHtml(t.name || t.destination || 'Unknown');
       const dates = escapeHtml((t.start_date || '?') + ' → ' + (t.end_date || '?'));
       const badge = t.status === 'completed' ? 'completed' : '';
       const tid   = escapeHtml(t.id || '');
-      return `<div class="trip-card" title="Click to load this trip" onclick="loadSavedTrip(${JSON.stringify(t)})">
+      return `<div class="trip-card" title="Click to load this trip onto the board" onclick="loadSavedTrip(_savedTrips[${i}])">
         <div class="dest">📍 ${name}</div>
         <div class="dates">${dates}</div>
         <div style="display:flex;align-items:center;justify-content:space-between;margin-top:4px">
@@ -945,21 +955,50 @@
     const ds = [it.start_date,it.end_date].filter(Boolean).map(d=>fmtDate(d)).join(' → ');
     const seasonHtml = renderSeasonBadge(it.season);
     document.getElementById('board-subtitle').innerHTML = escapeHtml(ds) + (seasonHtml ? '&nbsp;&nbsp;' + seasonHtml : '');
-    renderBudget(it.budget); renderIssues(it.allIssues||[]); renderDayTabs(it.days); renderDays(it.days);
+    renderBudget(it.budget, it.travelers, it.max_budget_usd); renderIssues(it.allIssues||[]); renderDayTabs(it.days); renderDays(it.days);
     const errs = (it.allIssues||[]).filter(i=>i.severity!=='info').length;
     const badge = document.getElementById('issue-badge');
     if (errs>0){badge.textContent=errs;badge.classList.add('show');}else badge.classList.remove('show');
   }
-  function renderBudget(budget) {
+  function renderBudget(budget, travelers, maxBudget) {
     const el = document.getElementById('budget-section');
     if (!budget||!Object.values(budget).some(v=>v>0)){el.style.display='none';return;}
     el.style.display='block';
+    const n = Math.max(1, travelers||1);
     const total=Object.values(budget).reduce((s,v)=>s+(v||0),0);
-    const chips=Object.entries(budget).filter(([,v])=>v>0).map(([k,v])=>'<span class="budget-chip">'+(BEMOJI[k]||'•')+' $'+v.toLocaleString()+'</span>').join('');
-    const max=(currentItinerary&&currentItinerary.max_budget_usd)||total*1.3;
+    const perPerson = n > 1 ? Math.round(total/n) : 0;
+    const max=maxBudget||total*1.3;
     const pct=max>0?Math.min(100,Math.round((total/max)*100)):0;
     const bar=pct>90?'var(--rose)':pct>70?'var(--gold)':'linear-gradient(90deg,var(--sky),var(--teal))';
-    el.innerHTML='<div class="budget-row"><span class="budget-total">Est. $'+total.toLocaleString()+'</span><span style="font-size:11px;font-weight:600;color:var(--text-3)">'+pct+'% of budget</span></div><div class="budget-bar-outer"><div class="budget-bar-inner" style="width:'+pct+'%;background:'+bar+'"></div></div><div class="budget-chips">'+chips+'</div>';
+    const chips=Object.entries(budget).filter(([,v])=>v>0).map(([k,v])=>{
+      const perChip = n>1 ? '<span class="chip-per">/ $'+Math.round(v/n).toLocaleString()+'pp</span>' : '';
+      return '<span class="budget-chip">'+(BEMOJI[k]||'•')+' $'+v.toLocaleString()+perChip+'</span>';
+    }).join('');
+    const perLine = perPerson>0 ? '<span class="budget-per">$'+perPerson.toLocaleString()+' / person</span>' : '';
+    const pctLabel = maxBudget ? '<span style="font-size:11px;font-weight:600;color:var(--text-3)">'+pct+'% of budget</span>' : '';
+    el.innerHTML=
+      '<div class="budget-row"><span class="budget-total">Est. $'+total.toLocaleString()+'</span>'+perLine+'</div>'+
+      (maxBudget?'<div class="budget-bar-outer"><div class="budget-bar-inner" style="width:'+pct+'%;background:'+bar+'"></div></div>':'')+
+      '<div class="budget-chips">'+chips+'</div>'+
+      '<div class="travelers-row"><span class="travelers-label">👥 Travelers</span>'+
+      '<div class="travelers-ctrl">'+
+        '<button onclick="changeTravelers(-1)" title="Remove traveler">−</button>'+
+        '<span>'+n+'</span>'+
+        '<button onclick="changeTravelers(1)" title="Add traveler">+</button>'+
+      '</div></div>';
+  }
+  function changeTravelers(delta) {
+    if (!currentItinerary) return;
+    const cur = Math.max(1, (currentItinerary.travelers||1) + delta);
+    currentItinerary.travelers = cur;
+    renderBudget(currentItinerary.budget, cur, currentItinerary.max_budget_usd);
+    // Persist the updated travelers count to the session
+    localStorage.setItem('itin_' + sessionId, JSON.stringify(currentItinerary));
+    fetch('/api/itinerary/' + sessionId, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({itinerary: currentItinerary})
+    }).catch(()=>{});
   }
   function renderIssues(issues) {
     const el=document.getElementById('issues-section');
