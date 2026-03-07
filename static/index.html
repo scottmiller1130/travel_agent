@@ -359,7 +359,6 @@
 
 <script>
   let sessionId = localStorage.getItem('travel_agent_session');
-  if (!sessionId) { sessionId = crypto.randomUUID(); localStorage.setItem('travel_agent_session', sessionId); }
   let isThinking = false;
   marked.setOptions({ breaks: true, gfm: true });
   const messagesEl = document.getElementById('messages');
@@ -374,6 +373,59 @@
 
   function onToolStart(tool, label) { const el = document.getElementById('thinking-label'); if (el) el.textContent = label; }
   function onToolDone(tool) { const el = document.getElementById('thinking-label'); if (el) el.textContent = 'Thinking…'; }
+
+  function onBookingConfirm(tool, inputs) {
+    const ex = document.getElementById('booking-confirm-modal');
+    if (ex) ex.remove();
+
+    const isFlight = tool === 'book_flight';
+    const title = isFlight ? 'Confirm Flight Booking' : 'Confirm Hotel Booking';
+    const icon  = isFlight ? '✈' : '🏨';
+
+    // Build a human-readable summary of what's being booked
+    const lines = [];
+    if (isFlight) {
+      if (inputs.flight_id)   lines.push('<b>Flight:</b> ' + escapeHtml(inputs.flight_id));
+      if (inputs.origin && inputs.destination) lines.push('<b>Route:</b> ' + escapeHtml(inputs.origin) + ' → ' + escapeHtml(inputs.destination));
+      if (inputs.departure_date) lines.push('<b>Date:</b> ' + escapeHtml(inputs.departure_date));
+      if (inputs.cabin_class)    lines.push('<b>Class:</b> ' + escapeHtml(inputs.cabin_class));
+      if (inputs.price_usd)      lines.push('<b>Price:</b> $' + Number(inputs.price_usd).toLocaleString());
+    } else {
+      if (inputs.hotel_id)  lines.push('<b>Hotel:</b> ' + escapeHtml(inputs.hotel_id));
+      if (inputs.city)      lines.push('<b>City:</b> ' + escapeHtml(inputs.city));
+      if (inputs.check_in && inputs.check_out) lines.push('<b>Dates:</b> ' + escapeHtml(inputs.check_in) + ' → ' + escapeHtml(inputs.check_out));
+      if (inputs.price_usd) lines.push('<b>Total:</b> $' + Number(inputs.price_usd).toLocaleString());
+    }
+    const detailHtml = lines.length
+      ? '<ul style="margin:8px 0 0 0;padding:0 0 0 18px;font-size:13px;line-height:1.7;color:#334155">' + lines.map(l=>'<li>'+l+'</li>').join('') + '</ul>'
+      : '';
+
+    const el = document.createElement('div');
+    el.id = 'booking-confirm-modal';
+    el.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:1000';
+    el.innerHTML = `
+      <div style="background:#fff;border-radius:18px;padding:28px 28px 22px;max-width:400px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,.25)">
+        <div style="font-size:28px;margin-bottom:10px">${icon}</div>
+        <div style="font-size:17px;font-weight:800;color:#0f172a;margin-bottom:6px">${escapeHtml(title)}</div>
+        <div style="font-size:13px;color:#64748b;margin-bottom:4px">The agent is ready to complete this booking:</div>
+        ${detailHtml}
+        <div style="font-size:12px;color:#f43f5e;margin-top:12px;font-weight:600">⚠ This action may result in a real charge. Please review before confirming.</div>
+        <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:18px">
+          <button id="booking-cancel-btn" style="padding:9px 18px;border-radius:9px;border:1.5px solid #e2e8f0;background:transparent;color:#64748b;cursor:pointer;font-size:13px;font-weight:700">Cancel</button>
+          <button id="booking-confirm-btn" style="padding:9px 20px;border-radius:9px;border:none;background:linear-gradient(135deg,#0ea5e9,#0d9488);color:#fff;cursor:pointer;font-size:13px;font-weight:700;box-shadow:0 3px 10px rgba(14,165,233,.35)">Confirm Booking</button>
+        </div>
+      </div>`;
+    document.body.appendChild(el);
+
+    async function respond(approved) {
+      el.remove();
+      const endpoint = approved ? 'confirm' : 'cancel';
+      try { await fetch('/api/booking/' + endpoint + '/' + sessionId, { method: 'POST' }); } catch(_) {}
+    }
+
+    document.getElementById('booking-confirm-btn').onclick = () => respond(true);
+    document.getElementById('booking-cancel-btn').onclick  = () => respond(false);
+  }
 
   const messageQueue = [];
   async function sendMessage() {
@@ -392,6 +444,7 @@
           let data; try { data = JSON.parse(line.slice(6)); } catch { continue; }
           if      (data.type === 'tool_start')       onToolStart(data.tool, data.label);
           else if (data.type === 'tool_done')        onToolDone(data.tool);
+          else if (data.type === 'booking_confirm')  onBookingConfirm(data.tool, data.inputs || {});
           else if (data.type === 'itinerary_update') updateItinerary(data.itinerary);
           else if (data.type === 'deal_result')      onDealResult(data.deal);
           else if (data.type === 'month_result')     onMonthResult(data.month_data);
@@ -850,9 +903,22 @@
     showToast('Ready — press Enter to search!');
   }
 
-  loadTrips();
-  inputEl.focus();
-  (async()=>{
+  (async () => {
+    // Ensure we have a server-generated session ID for new visitors.
+    if (!sessionId) {
+      try {
+        const r = await fetch('/api/session/new', { method: 'POST' });
+        const d = await r.json();
+        sessionId = d.session_id;
+      } catch (_) {
+        sessionId = crypto.randomUUID();
+      }
+      localStorage.setItem('travel_agent_session', sessionId);
+    }
+
+    loadTrips();
+    inputEl.focus();
+
     // Prefer localStorage (may include unsaved drag-and-drop changes),
     // fall back to the server copy if localStorage is empty.
     const local = localStorage.getItem('itin_' + sessionId);

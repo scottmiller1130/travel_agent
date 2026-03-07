@@ -18,6 +18,8 @@ Run with:
 import asyncio
 import json
 import os
+import secrets
+import shutil
 import sys
 import threading
 import time
@@ -30,7 +32,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from dotenv import load_dotenv
 load_dotenv()
 
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, Response, HTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 from fastapi.responses import StreamingResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -42,6 +44,38 @@ from memory.trips import TripStore
 from memory.sessions import SessionStore
 
 app = FastAPI(title="Travel Agent API")
+
+# ---------------------------------------------------------------------------
+# Startup validation — fail fast if required environment variables are missing
+# ---------------------------------------------------------------------------
+_ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+if not _ANTHROPIC_API_KEY:
+    print(
+        "FATAL: ANTHROPIC_API_KEY is not set. "
+        "Add it to your environment or .env file before starting the server.",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+# ---------------------------------------------------------------------------
+# Booking confirmation — agents pause here until the user approves/cancels
+# ---------------------------------------------------------------------------
+_pending_confirmations: dict[str, dict] = {}  # session_id -> {event, approved}
+_conf_lock = threading.Lock()
+
+
+def _make_confirm_callback(session_id: str):
+    """Return a confirm_callback that blocks until the frontend responds."""
+    def confirm(_msg: str) -> bool:
+        event = threading.Event()
+        with _conf_lock:
+            _pending_confirmations[session_id] = {"event": event, "approved": False}
+        # Block up to 5 minutes for user to interact with the confirmation modal
+        event.wait(timeout=300)
+        with _conf_lock:
+            result = _pending_confirmations.pop(session_id, {}).get("approved", False)
+        return result
+    return confirm
 
 # ---------------------------------------------------------------------------
 # Security headers middleware
@@ -101,9 +135,7 @@ def _get_agent(session_id: str) -> TravelAgent:
         if session_id in _agent_cache:
             return _agent_cache[session_id]
 
-        # Booking confirmation for web: Claude manages the user-facing
-        # confirmation dialogue through chat. We trust it and always allow.
-        agent = TravelAgent(confirm_callback=lambda _msg: True)
+        agent = TravelAgent(confirm_callback=_make_confirm_callback(session_id))
 
         # Restore persisted state if available
         saved = _session_store.load(session_id)
@@ -290,6 +322,16 @@ async def set_preference(session_id: str, body: PrefUpdate):
 
 
 # ---------------------------------------------------------------------------
+# Session management — server-generated IDs prevent client forgery
+# ---------------------------------------------------------------------------
+@app.post("/api/session/new")
+async def new_session():
+    session_id = secrets.token_urlsafe(32)
+    _session_store.create(session_id)
+    return JSONResponse({"session_id": session_id})
+
+
+# ---------------------------------------------------------------------------
 # Reset conversation (keeps trips and preferences)
 # ---------------------------------------------------------------------------
 @app.post("/api/reset/{session_id}")
@@ -302,6 +344,29 @@ async def reset(session_id: str):
 
 
 # ---------------------------------------------------------------------------
+# Booking confirmation endpoints (called by the frontend modal)
+# ---------------------------------------------------------------------------
+@app.post("/api/booking/confirm/{session_id}")
+async def booking_confirm(session_id: str):
+    with _conf_lock:
+        pending = _pending_confirmations.get(session_id)
+    if pending:
+        pending["approved"] = True
+        pending["event"].set()
+    return JSONResponse({"status": "ok"})
+
+
+@app.post("/api/booking/cancel/{session_id}")
+async def booking_cancel(session_id: str):
+    with _conf_lock:
+        pending = _pending_confirmations.get(session_id)
+    if pending:
+        pending["approved"] = False
+        pending["event"].set()
+    return JSONResponse({"status": "ok"})
+
+
+# ---------------------------------------------------------------------------
 # Health check
 # ---------------------------------------------------------------------------
 @app.get("/api/health")
@@ -311,6 +376,33 @@ async def health():
         "api_key_set": bool(os.getenv("ANTHROPIC_API_KEY")),
         "amadeus_set": bool(os.getenv("AMADEUS_CLIENT_ID")),
     }
+
+
+# ---------------------------------------------------------------------------
+# Automated DB backup — copies sessions.db daily, keeps last 7 snapshots
+# ---------------------------------------------------------------------------
+def _backup_db() -> None:
+    """Copy sessions.db to a timestamped backup. Runs in a background thread."""
+    from memory.sessions import DB_PATH
+    backup_dir = DB_PATH.parent / "backups"
+    backup_dir.mkdir(parents=True, exist_ok=True)
+
+    while True:
+        time.sleep(86400)  # sleep 24 hours
+        try:
+            if DB_PATH.exists():
+                stamp = time.strftime("%Y%m%d_%H%M%S")
+                dest = backup_dir / f"sessions_{stamp}.db"
+                shutil.copy2(DB_PATH, dest)
+                # Prune to keep only the 7 most recent backups
+                backups = sorted(backup_dir.glob("sessions_*.db"))
+                for old in backups[:-7]:
+                    old.unlink(missing_ok=True)
+        except Exception as exc:
+            print(f"[backup] DB backup failed: {exc}", file=sys.stderr)
+
+
+threading.Thread(target=_backup_db, daemon=True, name="db-backup").start()
 
 
 if __name__ == "__main__":
