@@ -399,7 +399,7 @@ async def create_share_link(session_id: str, request: Request):
 
 @app.get("/s/{token}", response_class=HTMLResponse)
 async def shared_itinerary(token: str):
-    """Render a read-only itinerary view for a share token."""
+    """Render a rich read-only itinerary view for a share token."""
     data = _session_store.get_session_for_token(token)
     if not data or not data.get("itinerary"):
         return HTMLResponse(
@@ -412,53 +412,246 @@ async def shared_itinerary(token: str):
     )
     date_range = " → ".join(filter(None, [it.get("start_date"), it.get("end_date")]))
 
-    budget_total = sum((it.get("budget") or {}).values())
-    budget_line = f"<p><strong>Estimated cost:</strong> ${budget_total:,.0f}</p>" if budget_total else ""
+    # ── budget breakdown ──────────────────────────────────────────────────────
+    budget = it.get("budget") or {}
+    budget_total = sum(budget.values())
+    BUDGET_META = {
+        "flights":    ("✈", "#0ea5e9", "#e0f2fe"),
+        "hotels":     ("🏨", "#0d9488", "#ccfbf1"),
+        "activities": ("🗺", "#f97316", "#ffedd5"),
+        "food":       ("🍽", "#f59e0b", "#fef3c7"),
+        "transport":  ("🚗", "#6366f1", "#ede9fe"),
+        "other":      ("📦", "#64748b", "#f1f5f9"),
+    }
+    budget_cards_html = ""
+    if budget_total:
+        for cat, amt in budget.items():
+            if not amt:
+                continue
+            icon, color, bg = BUDGET_META.get(cat, ("💰", "#64748b", "#f1f5f9"))
+            pct = round(amt / budget_total * 100)
+            budget_cards_html += (
+                f"<div class='bcard' style='--c:{color};--bg:{bg}'>"
+                f"<span class='bicon'>{icon}</span>"
+                f"<span class='bcat'>{_safe(cat.title())}</span>"
+                f"<span class='bamt'>${amt:,.0f}</span>"
+                f"<div class='bbar-bg'><div class='bbar-fill' style='width:{pct}%'></div></div>"
+                f"<span class='bpct'>{pct}%</span>"
+                f"</div>"
+            )
 
+    # ── trip stats ────────────────────────────────────────────────────────────
+    days_list = it.get("days", [])
+    num_days = len(days_list)
+    travelers = it.get("travelers", 0)
+    all_items = [item for day in days_list for item in day.get("items", [])]
+    flights_count   = sum(1 for i in all_items if i.get("type") == "flight")
+    hotels_count    = sum(1 for i in all_items if i.get("type") == "hotel")
+    activity_count  = sum(1 for i in all_items if i.get("type") not in ("flight", "hotel", ""))
+    stats_html = ""
+    stats = []
+    if num_days:      stats.append(("📅", str(num_days), "days"))
+    if travelers:     stats.append(("👤", str(travelers), "traveler(s)"))
+    if flights_count: stats.append(("✈", str(flights_count), "flight(s)"))
+    if hotels_count:  stats.append(("🏨", str(hotels_count), "hotel night(s)"))
+    if activity_count:stats.append(("🗺", str(activity_count), "activities"))
+    if budget_total:  stats.append(("💰", f"${budget_total:,.0f}", "est. total"))
+    for icon, val, label in stats:
+        stats_html += f"<div class='stat'><span class='sicon'>{icon}</span><strong>{_safe(val)}</strong><span>{_safe(label)}</span></div>"
+
+    # ── item type metadata ────────────────────────────────────────────────────
+    ITEM_META = {
+        "flight":    ("✈",  "#0ea5e9", "#e0f2fe"),
+        "hotel":     ("🏨", "#0d9488", "#ccfbf1"),
+        "activity":  ("🗺", "#f97316", "#ffedd5"),
+        "food":      ("🍽", "#f59e0b", "#fef3c7"),
+        "restaurant":("🍽", "#f59e0b", "#fef3c7"),
+        "transport": ("🚗", "#6366f1", "#ede9fe"),
+        "transfer":  ("🚗", "#6366f1", "#ede9fe"),
+    }
+
+    # ── days ──────────────────────────────────────────────────────────────────
     days_html = ""
-    for i, day in enumerate(it.get("days", [])):
+    for i, day in enumerate(days_list):
         try:
             from datetime import date as dt_date
             dlbl = dt_date.fromisoformat(day.get("date", "")).strftime("%A, %b %-d")
         except Exception:
-            dlbl = f"Day {i+1}"
+            dlbl = f"Day {i + 1}"
         if day.get("label"):
             dlbl += f" — {day['label']}"
-        items_html = "".join(
-            f"<li><strong>{_safe(item.get('time',''))}</strong> {_safe(item.get('title',''))}"
-            f"{'  <em>$' + str(item['price_usd']) + '</em>' if item.get('price_usd') else ''}"
-            f"{'<br><small>' + _safe(item['notes']) + '</small>' if item.get('notes') else ''}"
-            f"</li>"
-            for item in day.get("items", [])
+
+        # weather strip
+        weather_html = ""
+        wx = day.get("weather") or {}
+        if wx:
+            cond  = _safe(wx.get("condition", ""))
+            hi    = wx.get("high_c") or wx.get("high")
+            lo    = wx.get("low_c")  or wx.get("low")
+            emoji = wx.get("emoji", "🌤")
+            temp  = f"{hi}°/{lo}°C" if hi and lo else (f"{hi}°C" if hi else "")
+            weather_html = f"<div class='wx'>{emoji} {_safe(temp)} {cond}</div>"
+
+        items_html = ""
+        for item in day.get("items", []):
+            itype = (item.get("type") or "").lower()
+            icon, color, bg = ITEM_META.get(itype, ("📌", "#64748b", "#f1f5f9"))
+            time_str  = _safe(item.get("time", ""))
+            title_str = _safe(item.get("title", ""))
+            price     = item.get("price_usd")
+            price_html = f"<span class='iprice'>${price:,.0f}</span>" if price else ""
+            notes     = item.get("notes") or item.get("description") or ""
+            notes_html = f"<div class='inotes'>{_safe(notes)}</div>" if notes else ""
+            airline   = item.get("airline") or item.get("carrier") or ""
+            airline_html = f"<span class='itag'>{_safe(airline)}</span>" if airline else ""
+            duration  = item.get("duration") or ""
+            dur_html   = f"<span class='itag'>{_safe(duration)}</span>" if duration else ""
+            status    = item.get("status") or ""
+            STATUS_COLORS = {"confirmed": "#10b981", "suggested": "#f59e0b", "alternative": "#6366f1"}
+            status_html = ""
+            if status:
+                sc = STATUS_COLORS.get(status.lower(), "#64748b")
+                status_html = f"<span class='istatus' style='background:{sc}20;color:{sc}'>{_safe(status.title())}</span>"
+
+            time_html  = f"<span class='itime'>{time_str}</span>" if time_str else ""
+            tags_html  = f"<div class='itags'>{airline_html}{dur_html}</div>" if (airline or duration) else ""
+            items_html += (
+                f"<div class='icard' style='--ic:{color};--ibg:{bg}'>"
+                f"<span class='iicon'>{icon}</span>"
+                f"<div class='idetails'>"
+                f"<div class='itop'>{time_html}<span class='ititle'>{title_str}</span>{price_html}{status_html}</div>"
+                f"{tags_html}"
+                f"{notes_html}"
+                f"</div>"
+                f"</div>"
+            )
+
+        days_html += (
+            f"<div class='day'>"
+            f"<div class='day-header'><span class='day-label'>{_safe(dlbl)}</span>{weather_html}</div>"
+            f"<div class='day-items'>{items_html}</div>"
+            f"</div>"
         )
-        days_html += f"<section><h2>{_safe(dlbl)}</h2><ul>{items_html}</ul></section>"
 
     return HTMLResponse(f"""<!DOCTYPE html>
-<html lang="en"><head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>✈ {_safe(dest)} — Travel Itinerary</title>
 <style>
-  body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:680px;margin:0 auto;padding:24px 16px;color:#0f172a;line-height:1.6}}
-  h1{{font-size:26px;margin-bottom:4px}}
-  .meta{{color:#64748b;font-size:14px;margin-bottom:20px}}
-  section{{margin-bottom:28px;border-left:3px solid #0ea5e9;padding-left:16px}}
-  h2{{font-size:15px;font-weight:700;color:#0284c7;margin:0 0 8px}}
-  ul{{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:6px}}
-  li{{font-size:14px;padding:6px 10px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0}}
-  li strong{{color:#0ea5e9;min-width:44px;display:inline-block}}
-  small{{color:#64748b}}
-  em{{color:#0d9488;font-style:normal}}
-  .banner{{background:linear-gradient(135deg,#0ea5e9,#0d9488);color:#fff;padding:20px 24px;border-radius:12px;margin-bottom:24px}}
-  .banner h1{{color:#fff;margin:0}}
-  .banner .meta{{color:rgba(255,255,255,.8);margin:4px 0 0}}
-  footer{{margin-top:40px;font-size:12px;color:#94a3b8;border-top:1px solid #e2e8f0;padding-top:16px}}
-</style></head><body>
-<div class="banner"><h1>✈ {_safe(dest)}</h1>
-<div class="meta">{_safe(date_range)}{" &nbsp;·&nbsp; " + _safe(str(it.get("travelers",""))) + " traveler(s)" if it.get("travelers") else ""}</div>
+  *,*::before,*::after{{box-sizing:border-box;margin:0;padding:0}}
+  :root{{
+    --sky:#0ea5e9;--sky-d:#0284c7;--sky-l:#e0f2fe;
+    --teal:#0d9488;--teal-l:#ccfbf1;
+    --border:#e2e8f0;--bg:#f0f9ff;--surface:#fff;
+    --text:#0f172a;--text-2:#334155;--text-3:#64748b;
+  }}
+  html{{scroll-behavior:smooth}}
+  body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);line-height:1.6}}
+
+  /* hero */
+  .hero{{background:linear-gradient(135deg,#0ea5e9 0%,#0d9488 60%,#7c3aed 100%);color:#fff;padding:48px 24px 56px;position:relative;overflow:hidden;text-align:center}}
+  .hero::before{{content:'✈';position:absolute;font-size:260px;opacity:.07;top:50%;left:50%;transform:translate(-50%,-50%) rotate(15deg);line-height:1;pointer-events:none}}
+  .hero h1{{font-size:clamp(26px,5vw,44px);font-weight:900;letter-spacing:-1px;margin-bottom:8px;text-shadow:0 2px 12px rgba(0,0,0,.2)}}
+  .hero .dates{{font-size:15px;opacity:.85;margin-bottom:20px}}
+  .wave{{display:block;width:100%;height:48px;background:var(--bg);clip-path:ellipse(55% 100% at 50% 100%);margin-top:-1px}}
+
+  /* stats bar */
+  .stats-bar{{display:flex;gap:12px;flex-wrap:wrap;justify-content:center;background:var(--surface);border-bottom:1px solid var(--border);padding:16px 24px}}
+  .stat{{display:flex;flex-direction:column;align-items:center;gap:2px;min-width:72px}}
+  .sicon{{font-size:18px}}
+  .stat strong{{font-size:16px;font-weight:800;color:var(--text)}}
+  .stat span{{font-size:11px;color:var(--text-3);font-weight:600;text-transform:uppercase;letter-spacing:.05em}}
+
+  /* layout */
+  .page{{max-width:780px;margin:0 auto;padding:32px 16px}}
+
+  /* budget */
+  .budget-section{{background:var(--surface);border:1.5px solid var(--border);border-radius:16px;padding:24px;margin-bottom:28px;box-shadow:0 4px 12px rgba(0,0,0,.05)}}
+  .section-title{{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--text-3);margin-bottom:14px}}
+  .bcards{{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px}}
+  .bcard{{background:var(--bg);border:1.5px solid var(--border);border-radius:12px;padding:12px;position:relative;overflow:hidden}}
+  .bcard::before{{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--c)}}
+  .bicon{{font-size:18px;display:block;margin-bottom:4px}}
+  .bcat{{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3);display:block}}
+  .bamt{{font-size:18px;font-weight:900;color:var(--c);display:block;margin:2px 0}}
+  .bbar-bg{{height:4px;background:var(--border);border-radius:2px;margin:6px 0 4px}}
+  .bbar-fill{{height:4px;background:var(--c);border-radius:2px}}
+  .bpct{{font-size:10px;color:var(--text-3);font-weight:600}}
+
+  /* days */
+  .day{{background:var(--surface);border:1.5px solid var(--border);border-radius:16px;margin-bottom:16px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.04)}}
+  .day-header{{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:linear-gradient(90deg,var(--sky-l),var(--teal-l));border-bottom:1px solid var(--border);gap:10px;flex-wrap:wrap}}
+  .day-label{{font-size:14px;font-weight:800;color:var(--sky-d)}}
+  .wx{{font-size:12px;color:var(--text-3);background:#fff;border:1px solid var(--border);border-radius:20px;padding:3px 10px;font-weight:600}}
+  .day-items{{padding:12px;display:flex;flex-direction:column;gap:8px}}
+
+  /* item cards */
+  .icard{{display:flex;gap:10px;background:var(--ibg);border:1.5px solid var(--border);border-left:4px solid var(--ic);border-radius:10px;padding:10px 12px;align-items:flex-start}}
+  .iicon{{font-size:18px;flex-shrink:0;margin-top:1px}}
+  .idetails{{flex:1;min-width:0}}
+  .itop{{display:flex;align-items:center;flex-wrap:wrap;gap:6px}}
+  .itime{{font-family:'SF Mono','Fira Code',monospace;font-size:11px;font-weight:700;color:var(--ic);background:#fff;border:1px solid var(--border);border-radius:5px;padding:1px 6px;flex-shrink:0}}
+  .ititle{{font-size:14px;font-weight:700;color:var(--text);flex:1}}
+  .iprice{{font-size:12px;font-weight:800;color:var(--teal);background:var(--teal-l);border-radius:5px;padding:1px 7px;flex-shrink:0}}
+  .istatus{{font-size:10px;font-weight:700;border-radius:5px;padding:1px 7px;flex-shrink:0;text-transform:uppercase;letter-spacing:.05em}}
+  .itags{{display:flex;gap:5px;flex-wrap:wrap;margin-top:5px}}
+  .itag{{font-size:11px;color:var(--text-3);background:#fff;border:1px solid var(--border);border-radius:5px;padding:1px 7px;font-weight:600}}
+  .inotes{{margin-top:5px;font-size:12px;color:var(--text-3);line-height:1.5}}
+
+  /* print btn */
+  .print-btn{{display:flex;align-items:center;gap:6px;background:linear-gradient(135deg,var(--sky),var(--teal));color:#fff;border:none;border-radius:10px;padding:10px 18px;font-size:13px;font-weight:700;cursor:pointer;margin:0 auto 28px;box-shadow:0 4px 12px rgba(14,165,233,.35)}}
+  .print-btn:hover{{opacity:.9}}
+
+  /* footer */
+  footer{{margin-top:40px;text-align:center;font-size:12px;color:var(--text-3);border-top:1px solid var(--border);padding-top:20px;padding-bottom:40px}}
+  footer a{{color:var(--sky-d);text-decoration:none;font-weight:600}}
+
+  @media print{{
+    .print-btn,.stats-bar,.wave{{display:none}}
+    .hero{{print-color-adjust:exact;-webkit-print-color-adjust:exact}}
+    body{{background:#fff}}
+    .day,.budget-section{{box-shadow:none;border:1px solid #ddd}}
+  }}
+  @media(max-width:500px){{
+    .hero{{padding:36px 16px 44px}}
+    .bcards{{grid-template-columns:1fr 1fr}}
+  }}
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <h1>✈ {_safe(dest)}</h1>
+  <div class="dates">{_safe(date_range)}</div>
 </div>
-{budget_line}
-{days_html}
-<footer>Shared via Travel Agent &nbsp;·&nbsp; Read-only view</footer>
+<div class="wave"></div>
+
+<div class="stats-bar">{stats_html}</div>
+
+<div class="page">
+
+  <button class="print-btn" onclick="window.print()">🖨 Print / Save as PDF</button>
+
+  {f'''<div class="budget-section">
+    <div class="section-title">💰 Budget Breakdown</div>
+    <div class="bcards">{budget_cards_html}</div>
+    <p style="margin-top:14px;font-size:13px;color:var(--text-3)">
+      <strong style="color:var(--text)">Estimated total: ${budget_total:,.0f}</strong>
+      {"&nbsp;·&nbsp;" + _safe(str(travelers)) + " traveler(s)" if travelers else ""}
+    </p>
+  </div>''' if budget_cards_html else ""}
+
+  <div class="section-title" style="margin-bottom:12px">📅 Day-by-Day Itinerary</div>
+  {days_html}
+
+</div>
+
+<footer>
+  Shared via <a href="/">Travel Agent</a> &nbsp;·&nbsp; Read-only view
+</footer>
+
 </body></html>""")
 
 
