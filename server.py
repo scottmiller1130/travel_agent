@@ -354,6 +354,39 @@ async def get_trips(session_id: str):
     return JSONResponse({"trips": trips})
 
 
+@app.post("/api/trips/{session_id}")
+async def save_trip(session_id: str, request: Request):
+    """Permanently save the current session itinerary to the trip store."""
+    if not _session_store.exists(session_id):
+        raise HTTPException(status_code=403, detail="Unknown session.")
+    data = _session_store.load(session_id)
+    itinerary = data and data.get("itinerary")
+    if not itinerary:
+        raise HTTPException(status_code=404, detail="No itinerary to save.")
+    body = {}
+    try:
+        body = await request.json()
+    except Exception:
+        pass
+    # Allow the client to supply a custom name; fall back to destination
+    name = (body.get("name") or "").strip() or itinerary.get("destination") or "My Trip"
+    itinerary["name"] = name
+    trip_id = TripStore().save_trip(itinerary)
+    return JSONResponse({"status": "ok", "trip_id": trip_id, "name": name})
+
+
+@app.delete("/api/trips/{session_id}/{trip_id}")
+async def delete_trip(session_id: str, trip_id: str):
+    """Delete a saved trip by ID."""
+    if not _session_store.exists(session_id):
+        raise HTTPException(status_code=403, detail="Unknown session.")
+    store = TripStore()
+    if not store.get_trip(trip_id):
+        raise HTTPException(status_code=404, detail="Trip not found.")
+    store.delete_trip(trip_id)
+    return JSONResponse({"status": "ok"})
+
+
 # ---------------------------------------------------------------------------
 # Preferences
 # ---------------------------------------------------------------------------

@@ -101,5 +101,10 @@ class TripStore:
             lines.append(f"  - {dest} ({dates}) [{status}]")
         return "\n".join(lines)
 
+    def delete_trip(self, trip_id: str) -> None:
+        """Delete a trip by ID."""
+        self._conn.execute("DELETE FROM trips WHERE id = ?", (trip_id,))
+        self._conn.commit()
+
     def close(self):
         self._conn.close()

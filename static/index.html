@@ -190,6 +190,8 @@
     .trip-card:hover { border-color: var(--sky); box-shadow: var(--shadow); transform: translateY(-1px); }
     .trip-card .dest { font-weight: 700; font-size: 13px; color: var(--text); display: flex; align-items: center; gap: 5px; }
     .trip-card .dates { font-size: 11px; color: var(--text-3); margin-top: 3px; }
+    .trip-del-btn { background: none; border: none; cursor: pointer; font-size: 13px; padding: 2px 4px; border-radius: 5px; opacity: .45; transition: opacity .12s; }
+    .trip-del-btn:hover { opacity: 1; background: #fee2e2; }
     .trip-badge { display: inline-flex; align-items: center; gap: 3px; margin-top: 5px; padding: 2px 7px; border-radius: 5px; font-size: 10px; font-weight: 700; background: var(--sky-l); color: var(--sky-d); }
     .trip-badge.completed { background: var(--green-l); color: var(--teal); }
     .empty-state { font-size: 12px; color: var(--text-4); padding: 10px 4px; line-height: 1.6; }
@@ -486,6 +488,8 @@
           <div class="export-sep"></div>
           <button class="export-item" onclick="exportPrint()"><span class="eicon">🖨</span> Print / Save PDF</button>
           <div class="export-sep"></div>
+          <button class="export-item" onclick="saveTrip()"><span class="eicon">💾</span> Save Trip</button>
+          <div class="export-sep"></div>
           <button class="export-item" onclick="shareItinerary()"><span class="eicon">🔗</span> Share link</button>
           <button class="export-item" onclick="triggerImport()"><span class="eicon">📂</span> Import JSON</button>
           <input type="file" id="import-file-input" accept=".json,application/json" style="display:none" onchange="handleImportFile(event)">
@@ -658,8 +662,46 @@
   async function loadTrips() { try { const r = await fetch('/api/trips/' + sessionId); const d = await r.json(); renderTrips(d.trips || []); } catch (_) {} }
   function renderTrips(trips) {
     const el = document.getElementById('trips-list');
-    if (!trips.length) { el.innerHTML = '<p class="empty-state">No trips yet.<br>Ask me to plan one!</p>'; return; }
-    el.innerHTML = trips.map(t => '<div class="trip-card"><div class="dest">📍 ' + escapeHtml(t.destination || 'Unknown') + '</div><div class="dates">' + (t.start_date||'?') + ' → ' + (t.end_date||'?') + '</div><span class="trip-badge ' + (t.status==='completed'?'completed':'') + '">' + (t.status||'planned') + '</span></div>').join('');
+    if (!trips.length) { el.innerHTML = '<p class="empty-state">No saved trips yet.<br>Plan one, then hit <strong>Export → Save Trip</strong>.</p>'; return; }
+    el.innerHTML = trips.map(t => {
+      const name  = escapeHtml(t.name || t.destination || 'Unknown');
+      const dates = escapeHtml((t.start_date || '?') + ' → ' + (t.end_date || '?'));
+      const badge = t.status === 'completed' ? 'completed' : '';
+      const tid   = escapeHtml(t.id || '');
+      return `<div class="trip-card" title="Click to load this trip" onclick="loadSavedTrip(${JSON.stringify(t)})">
+        <div class="dest">📍 ${name}</div>
+        <div class="dates">${dates}</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-top:4px">
+          <span class="trip-badge ${badge}">${escapeHtml(t.status || 'planned')}</span>
+          <button class="trip-del-btn" title="Delete this saved trip" onclick="event.stopPropagation();deleteSavedTrip('${tid}')">🗑</button>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  function loadSavedTrip(t) {
+    if (!t) return;
+    currentItinerary = t;
+    localStorage.setItem('itin_' + sessionId, JSON.stringify(t));
+    fetch('/api/itinerary/' + sessionId, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ itinerary: t }),
+    }).catch(() => {});
+    renderBoard(t);
+    openBoard();
+    showToast('📅 Loaded: ' + (t.name || t.destination || 'trip'));
+  }
+
+  async function deleteSavedTrip(tripId) {
+    if (!tripId) return;
+    if (!confirm('Delete this saved trip?')) return;
+    try {
+      const r = await fetch('/api/trips/' + sessionId + '/' + tripId, { method: 'DELETE' });
+      if (!r.ok) { showToast('Could not delete trip.'); return; }
+      showToast('Trip deleted.');
+      loadTrips();
+    } catch (err) { showToast('Delete failed: ' + err.message); }
   }
 
   async function resetConversation() {
@@ -1029,6 +1071,24 @@
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({itinerary: currentItinerary}),
     }).catch(() => {}); // fire-and-forget; localStorage is the fallback
+  }
+
+  async function saveTrip() {
+    document.getElementById('export-menu').classList.remove('open');
+    if (!currentItinerary) { showToast('Plan a trip first before saving.'); return; }
+    const dest = currentItinerary.destination || 'My Trip';
+    const name = prompt('Name this trip:', dest);
+    if (name === null) return; // cancelled
+    try {
+      const r = await fetch('/api/trips/' + sessionId, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name.trim() || dest }),
+      });
+      if (!r.ok) { showToast('Could not save trip — try again.'); return; }
+      showToast('✅ Trip saved: ' + (name.trim() || dest));
+      loadTrips();
+    } catch (err) { showToast('Save failed: ' + err.message); }
   }
 
   async function shareItinerary() {
