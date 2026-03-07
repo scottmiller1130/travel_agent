@@ -129,6 +129,16 @@ class SessionStore:
                     updated_at = EXCLUDED.updated_at
             """, (session_id, json.dumps(itinerary), now, now))
 
+    def clear_itinerary(self, session_id: str) -> None:
+        """Clear only the itinerary for a session, leaving conversation intact."""
+        self._ensure_db()
+        now = datetime.now().isoformat()
+        with get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("""
+                UPDATE sessions SET itinerary = NULL, updated_at = %s WHERE id = %s
+            """, (now, session_id))
+
     def delete(self, session_id: str) -> None:
         """Delete a session (used on conversation reset)."""
         self._ensure_db()
