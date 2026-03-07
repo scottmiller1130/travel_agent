@@ -9,11 +9,15 @@ before payment_confirmed is set to True.
 """
 
 import json
+import logging
 import os
+import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from typing import Callable
 
 import anthropic
+
+log = logging.getLogger("travel_agent.agent")
 
 TOOL_TIMEOUT_SECONDS = 30
 
@@ -62,6 +66,8 @@ def _blocks_to_dicts(content) -> list[dict] | str:
     return result
 
 TOOL_LABELS = {
+    "search_ground_transport": "Checking trains, buses & car rental...",
+    "get_exchange_rate": "Looking up exchange rates...",
     "search_flights": "Searching flights...",
     "book_flight": "Booking flight...",
     "search_hotels": "Searching hotels...",
@@ -89,6 +95,8 @@ from tools.weather import get_weather
 from tools.maps import search_places, get_distance
 from tools.calendar import check_availability, add_to_calendar
 from tools.search import web_search
+from tools.transport import search_ground_transport
+from tools.currency import get_exchange_rate
 from agent.tools_schema import TOOLS
 
 # Actions that require a human confirmation step before proceeding
@@ -109,6 +117,8 @@ Your capabilities:
 - Book flights and hotels (with explicit user confirmation before payment)
 - Save trips and preferences to memory for future personalization
 - Plan multi-city trips (e.g. Paris → Rome → Barcelona)
+- Search ground transportation: trains, buses, car rental via search_ground_transport
+- Look up live currency exchange rates via get_exchange_rate
 
 How you work:
 1. If destination or dates are unclear, ask one focused clarifying question before searching. Don't ask multiple questions at once.
@@ -123,6 +133,8 @@ How you work:
 10. Note that flight prices are estimated unless Amadeus API credentials are configured. Be transparent about this when relevant.
 11. Multi-city trips: when planning a route with 2+ cities, populate the `destinations` array in update_itinerary (e.g. ["Paris", "Rome", "Barcelona"]) and set `destination` to the first city. Group itinerary days by city — label each day section with the city name so the trip board is clear. Search connecting flights between each city pair.
 12. Budget enforcement: if the user's preferences include max_budget_per_day_usd, pass it as max_price_per_night to search_hotels and as max_price_usd to search_flights to filter out results that exceed the budget. Proactively warn when options are limited within budget.
+13. Ground transport: use search_ground_transport for city-to-city routes under ~1200 km where a train or bus may be better than flying (Paris→Amsterdam, NYC→Boston, London→Edinburgh). Always offer it for airport transfers. Include in update_itinerary as type="transfer".
+14. Currency: when the user's preferred currency is not USD, call get_exchange_rate and include converted amounts in your responses. When showing budgets, note both USD and home currency.
 
 Tone: Concise, knowledgeable, personalized. Prefer short bullet answers over long paragraphs. Let the UI cards do the heavy lifting.
 """
@@ -210,18 +222,23 @@ class TravelAgent:
                             "label": TOOL_LABELS.get(block.name, f"Using {block.name}..."),
                         })
 
+                    t_start = time.monotonic()
                     try:
                         # Booking tools wait for user confirmation (up to 5 min).
                         timeout = None if block.name in CONFIRMATION_REQUIRED else TOOL_TIMEOUT_SECONDS
                         with ThreadPoolExecutor(max_workers=1) as pool:
                             future = pool.submit(self._dispatch_tool, block.name, block.input)
                             result = future.result(timeout=timeout)
+                        elapsed = int((time.monotonic() - t_start) * 1000)
+                        log.info("tool %s OK %dms", block.name, elapsed)
                     except FuturesTimeoutError:
+                        log.warning("tool %s timed out after %ds", block.name, TOOL_TIMEOUT_SECONDS)
                         result = {
                             "status": "error",
                             "message": f"Tool '{block.name}' timed out after {TOOL_TIMEOUT_SECONDS}s.",
                         }
                     except Exception as e:
+                        log.error("tool %s error: %s", block.name, e)
                         result = {"status": "error", "message": str(e)}
 
                     if progress_callback:
@@ -298,6 +315,8 @@ class TravelAgent:
             "get_weather": lambda i: get_weather(**i),
             "search_places": lambda i: search_places(**i),
             "get_distance": lambda i: get_distance(**i),
+            "search_ground_transport": lambda i: search_ground_transport(**i),
+            "get_exchange_rate": lambda i: get_exchange_rate(**i),
             "check_availability": lambda i: check_availability(**i),
             "add_to_calendar": lambda i: add_to_calendar(**i),
             "web_search": lambda i: web_search(**i),

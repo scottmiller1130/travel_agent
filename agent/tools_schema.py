@@ -191,6 +191,59 @@ TOOLS: list[dict] = [
         },
     },
     {
+        "name": "get_exchange_rate",
+        "description": (
+            "Get live currency exchange rates and convert amounts between currencies. "
+            "Use this when the user asks about costs in their local currency, when showing "
+            "budgets for international trips, or when they ask 'how much is X in EUR/GBP/etc'. "
+            "to_currency can be a comma-separated list to convert to multiple currencies at once."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "from_currency": {
+                    "type":        "string",
+                    "description": "Source currency code (e.g. 'USD', 'EUR', 'GBP')",
+                    "default":     "USD",
+                },
+                "to_currency": {
+                    "type":        "string",
+                    "description": "Target currency code or comma-separated list (e.g. 'EUR' or 'EUR,GBP,JPY')",
+                },
+                "amount": {
+                    "type":        "number",
+                    "description": "Amount to convert (default 1.0)",
+                    "default":     1.0,
+                },
+            },
+            "required": ["to_currency"],
+        },
+    },
+    {
+        "name": "search_ground_transport",
+        "description": (
+            "Search ground transportation options (car rental, train, bus) between two cities. "
+            "Use this for short-to-medium distance city pairs where flying is impractical, "
+            "for airport-to-city transfers, or when the user asks about trains, buses, or car rental. "
+            "Returns ranked options with prices, travel times, and provider details."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "origin":      {"type": "string", "description": "Origin city or airport code"},
+                "destination": {"type": "string", "description": "Destination city or airport code"},
+                "date":        {"type": "string", "description": "Travel date in YYYY-MM-DD format"},
+                "passengers":  {"type": "integer", "description": "Number of passengers", "default": 1},
+                "transport_types": {
+                    "type":  "array",
+                    "items": {"type": "string", "enum": ["car", "train", "bus"]},
+                    "description": "Which transport types to include. Omit for all.",
+                },
+            },
+            "required": ["origin", "destination", "date"],
+        },
+    },
+    {
         "name": "check_availability",
         "description": (
             "Check if the user is available (no calendar conflicts) for a date range. "

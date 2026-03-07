@@ -7,6 +7,7 @@ history and the latest itinerary snapshot.
 """
 
 import json
+import secrets
 import sqlite3
 from datetime import datetime
 from pathlib import Path
@@ -33,6 +34,13 @@ class SessionStore:
                 itinerary   TEXT,
                 created_at  TEXT NOT NULL,
                 updated_at  TEXT NOT NULL
+            )
+        """)
+        self._conn.execute("""
+            CREATE TABLE IF NOT EXISTS share_tokens (
+                token       TEXT PRIMARY KEY,
+                session_id  TEXT NOT NULL,
+                created_at  TEXT NOT NULL
             )
         """)
         self._conn.commit()
@@ -101,6 +109,27 @@ class SessionStore:
         """Delete a session (used on conversation reset)."""
         self._conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
         self._conn.commit()
+
+    def create_share_token(self, session_id: str) -> str:
+        """Generate a share token for a session and return it."""
+        token = secrets.token_urlsafe(16)
+        now = datetime.now().isoformat()
+        self._conn.execute(
+            "INSERT OR REPLACE INTO share_tokens (token, session_id, created_at) VALUES (?, ?, ?)",
+            (token, session_id, now),
+        )
+        self._conn.commit()
+        return token
+
+    def get_session_for_token(self, token: str) -> dict | None:
+        """Return the itinerary for a share token, or None if invalid."""
+        row = self._conn.execute(
+            "SELECT s.itinerary FROM share_tokens t JOIN sessions s ON t.session_id = s.id WHERE t.token = ?",
+            (token,),
+        ).fetchone()
+        if not row:
+            return None
+        return {"itinerary": json.loads(row[0]) if row[0] else None}
 
     def list_sessions(self) -> list[dict]:
         """Return metadata for all sessions (for admin/debugging)."""
