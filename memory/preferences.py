@@ -33,7 +33,18 @@ class PreferenceStore:
     }
 
     def __init__(self):
-        self._init_db()
+        self._ready = False
+        try:
+            self._init_db()
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).error(
+                "DB unavailable at startup — will retry on first request. Error: %s", exc
+            )
+
+    def _ensure_db(self):
+        if not self._ready:
+            self._init_db()
 
     def _init_db(self):
         with get_conn() as conn:
@@ -45,9 +56,11 @@ class PreferenceStore:
                     updated_at TEXT NOT NULL
                 )
             """)
+            self._ready = True
 
     def get(self, key: str, default=None):
         """Get a preference value. Falls back to DEFAULTS then to `default`."""
+        self._ensure_db()
         with get_conn() as conn:
             cur = conn.cursor()
             cur.execute("SELECT value FROM preferences WHERE key = %s", (key,))
@@ -58,6 +71,7 @@ class PreferenceStore:
 
     def set(self, key: str, value) -> None:
         """Set a preference value."""
+        self._ensure_db()
         with get_conn() as conn:
             cur = conn.cursor()
             cur.execute(
@@ -78,6 +92,7 @@ class PreferenceStore:
 
     def get_all(self) -> dict:
         """Return all preferences merged with defaults."""
+        self._ensure_db()
         prefs = dict(self.DEFAULTS)
         with get_conn() as conn:
             cur = conn.cursor()

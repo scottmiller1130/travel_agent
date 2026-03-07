@@ -17,7 +17,18 @@ class SessionStore:
     """Persistent store for per-session conversation history and itinerary."""
 
     def __init__(self):
-        self._init_db()
+        self._ready = False
+        try:
+            self._init_db()
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).error(
+                "DB unavailable at startup — will retry on first request. Error: %s", exc
+            )
+
+    def _ensure_db(self):
+        if not self._ready:
+            self._init_db()
 
     def _init_db(self):
         with get_conn() as conn:
@@ -44,9 +55,11 @@ class SessionStore:
             cur.execute(
                 "CREATE INDEX IF NOT EXISTS idx_share_tokens_session ON share_tokens(session_id)"
             )
+            self._ready = True
 
     def create(self, session_id: str) -> None:
         """Create a new empty session row (server-generated IDs only)."""
+        self._ensure_db()
         now = datetime.now().isoformat()
         with get_conn() as conn:
             cur = conn.cursor()
@@ -58,6 +71,7 @@ class SessionStore:
 
     def exists(self, session_id: str) -> bool:
         """Return True if the session was created server-side."""
+        self._ensure_db()
         with get_conn() as conn:
             cur = conn.cursor()
             cur.execute("SELECT 1 FROM sessions WHERE id = %s", (session_id,))
@@ -65,6 +79,7 @@ class SessionStore:
 
     def load(self, session_id: str) -> dict | None:
         """Return saved session data or None if not found."""
+        self._ensure_db()
         with get_conn() as conn:
             cur = conn.cursor()
             cur.execute(
@@ -81,6 +96,7 @@ class SessionStore:
 
     def save(self, session_id: str, conversation: list, itinerary=None) -> None:
         """Upsert session data."""
+        self._ensure_db()
         now = datetime.now().isoformat()
         with get_conn() as conn:
             cur = conn.cursor()
@@ -101,6 +117,7 @@ class SessionStore:
 
     def save_itinerary(self, session_id: str, itinerary: dict) -> None:
         """Update only the itinerary for an existing session (e.g. drag-and-drop or import)."""
+        self._ensure_db()
         now = datetime.now().isoformat()
         with get_conn() as conn:
             cur = conn.cursor()
@@ -114,12 +131,14 @@ class SessionStore:
 
     def delete(self, session_id: str) -> None:
         """Delete a session (used on conversation reset)."""
+        self._ensure_db()
         with get_conn() as conn:
             cur = conn.cursor()
             cur.execute("DELETE FROM sessions WHERE id = %s", (session_id,))
 
     def create_share_token(self, session_id: str) -> str:
         """Generate a share token for a session and return it."""
+        self._ensure_db()
         token = secrets.token_urlsafe(16)
         now = datetime.now().isoformat()
         with get_conn() as conn:
@@ -148,6 +167,7 @@ class SessionStore:
 
     def get_session_for_token(self, token: str) -> dict | None:
         """Return the itinerary for a share token, or None if invalid."""
+        self._ensure_db()
         with get_conn() as conn:
             cur = conn.cursor()
             cur.execute(
