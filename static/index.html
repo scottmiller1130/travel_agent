@@ -760,16 +760,18 @@
     }
   }
 
+  let _savedTrips = [];
   async function loadTrips() { try { const r = await fetch('/api/trips/' + sessionId); const d = await r.json(); renderTrips(d.trips || []); } catch (_) {} }
   function renderTrips(trips) {
+    _savedTrips = trips;
     const el = document.getElementById('trips-list');
-    if (!trips.length) { el.innerHTML = '<p class="empty-state">No saved trips yet.<br>Plan one, then hit <strong>Export → Save Trip</strong>.</p>'; return; }
-    el.innerHTML = trips.map(t => {
+    if (!trips.length) { el.innerHTML = '<p class="empty-state">No saved trips yet.<br>Plan one, then hit <strong>Export / Import → Save Trip</strong>.</p>'; return; }
+    el.innerHTML = trips.map((t, i) => {
       const name  = escapeHtml(t.name || t.destination || 'Unknown');
       const dates = escapeHtml((t.start_date || '?') + ' → ' + (t.end_date || '?'));
       const badge = t.status === 'completed' ? 'completed' : '';
       const tid   = escapeHtml(t.id || '');
-      return `<div class="trip-card" title="Click to load this trip" onclick="loadSavedTrip(${JSON.stringify(t)})">
+      return `<div class="trip-card" title="Click to load this trip onto the board" onclick="loadSavedTrip(_savedTrips[${i}])">
         <div class="dest">📍 ${name}</div>
         <div class="dates">${dates}</div>
         <div style="display:flex;align-items:center;justify-content:space-between;margin-top:4px">
