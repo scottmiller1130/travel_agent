@@ -291,8 +291,10 @@ def _deal_reason(d, dest_lat: float = 0.0) -> str:
 
 # ── Amadeus integration (optional) ───────────────────────────────────────────
 
-_amadeus_token   = None
+import threading as _threading
+_amadeus_token    = None
 _amadeus_token_ts = 0.0
+_amadeus_token_lock = _threading.Lock()
 
 def _get_amadeus_token() -> str | None:
     global _amadeus_token, _amadeus_token_ts
@@ -301,17 +303,18 @@ def _get_amadeus_token() -> str | None:
     if not cid or not csec:
         return None
     now = time.time()
-    if _amadeus_token and now - _amadeus_token_ts < 1700:
+    with _amadeus_token_lock:
+        if _amadeus_token and now - _amadeus_token_ts < 1700:
+            return _amadeus_token
+        host = os.getenv("AMADEUS_HOST", "https://test.api.amadeus.com")
+        r = _httpx.post(f"{host}/v1/security/oauth2/token",
+                        data={"grant_type": "client_credentials",
+                              "client_id": cid, "client_secret": csec},
+                        timeout=10)
+        r.raise_for_status()
+        _amadeus_token    = r.json()["access_token"]
+        _amadeus_token_ts = now
         return _amadeus_token
-    host = os.getenv("AMADEUS_HOST", "https://test.api.amadeus.com")
-    r = _httpx.post(f"{host}/v1/security/oauth2/token",
-                    data={"grant_type": "client_credentials",
-                          "client_id": cid, "client_secret": csec},
-                    timeout=10)
-    r.raise_for_status()
-    _amadeus_token    = r.json()["access_token"]
-    _amadeus_token_ts = now
-    return _amadeus_token
 
 
 def _amadeus_flights(origin, destination, departure_date,

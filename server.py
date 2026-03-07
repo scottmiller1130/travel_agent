@@ -144,7 +144,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+            "script-src 'self' 'unsafe-inline'; "
             "style-src 'self' 'unsafe-inline'; "
             "connect-src 'self'; "
             "img-src 'self' data:; "
@@ -160,13 +160,20 @@ app.add_middleware(SecurityHeadersMiddleware)
 _rate_limit_store: dict[str, list[float]] = defaultdict(list)
 _rate_lock = threading.Lock()
 RATE_LIMIT = 20
-RATE_WINDOW = 60  # seconds
+RATE_WINDOW = 60        # seconds
+_MAX_RATE_IPS = 10_000  # evict stale IPs before the dict grows beyond this
 
 
 def _check_rate_limit(ip: str) -> bool:
     """Return True if allowed, False if rate limit exceeded."""
     now = time.monotonic()
     with _rate_lock:
+        # Evict IPs whose last request is older than 2× the window to bound memory.
+        if len(_rate_limit_store) > _MAX_RATE_IPS:
+            cutoff = now - RATE_WINDOW * 2
+            stale = [k for k, v in _rate_limit_store.items() if not v or max(v) < cutoff]
+            for k in stale:
+                del _rate_limit_store[k]
         timestamps = _rate_limit_store[ip]
         _rate_limit_store[ip] = [t for t in timestamps if now - t < RATE_WINDOW]
         if len(_rate_limit_store[ip]) >= RATE_LIMIT:
@@ -507,28 +514,31 @@ async def booking_cancel(session_id: str):
 
 
 # ---------------------------------------------------------------------------
-# Health check
+# Health check — returns minimal info to avoid leaking configuration
 # ---------------------------------------------------------------------------
 @app.get("/api/health")
 async def health():
-    return {
-        "status": "ok",
-        "api_key_set": bool(os.getenv("ANTHROPIC_API_KEY")),
-        "amadeus_set": bool(os.getenv("AMADEUS_CLIENT_ID")),
-    }
+    return {"status": "ok"}
 
 
 # ---------------------------------------------------------------------------
 # Automated DB backup — copies sessions.db daily, keeps last 7 snapshots
 # ---------------------------------------------------------------------------
 def _backup_db() -> None:
-    """Copy sessions.db to a timestamped backup. Runs in a background thread."""
+    """Copy sessions.db to a timestamped backup and expire old sessions. Runs daily."""
     from memory.sessions import DB_PATH
     backup_dir = DB_PATH.parent / "backups"
     backup_dir.mkdir(parents=True, exist_ok=True)
 
     while True:
         time.sleep(86400)  # sleep 24 hours
+        try:
+            # Expire sessions idle for more than 30 days
+            deleted = _session_store.expire_old_sessions(days=30)
+            if deleted:
+                log.info("Expired %d stale sessions (>30 days idle)", deleted)
+        except Exception as exc:
+            log.error("Session expiry failed: %s", exc)
         try:
             if DB_PATH.exists():
                 stamp = time.strftime("%Y%m%d_%H%M%S")
