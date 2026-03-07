@@ -7,5 +7,11 @@
     "startCommand": "uvicorn server:app --host 0.0.0.0 --port $PORT",
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 10
-  }
+  },
+  "_note_persistent_storage": [
+    "Trip, session, and preference data are stored in SQLite under TRAVEL_AGENT_DATA_DIR.",
+    "To keep data across deploys, add a Railway Volume mounted at /data and set:",
+    "  TRAVEL_AGENT_DATA_DIR=/data",
+    "Without a volume, all saved trips are lost on every redeploy."
+  ]
 }
