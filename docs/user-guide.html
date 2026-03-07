@@ -1,0 +1,1139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Travel Agent — User Guide ✈</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --sky:    #0ea5e9;
+      --sky-d:  #0284c7;
+      --sky-l:  #e0f2fe;
+      --teal:   #0d9488;
+      --teal-l: #ccfbf1;
+      --coral:  #f97316;
+      --gold:   #f59e0b;
+      --rose:   #f43f5e;
+      --green:  #10b981;
+      --purple: #7c3aed;
+      --bg:     #f0f9ff;
+      --surface:#ffffff;
+      --border: #e2e8f0;
+      --text:   #0f172a;
+      --text-2: #334155;
+      --text-3: #64748b;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+    }
+
+    /* ── Hero ── */
+    .hero {
+      background: linear-gradient(135deg, #0ea5e9 0%, #0d9488 60%, #7c3aed 100%);
+      color: #fff;
+      text-align: center;
+      padding: 80px 24px 100px;
+      position: relative;
+      overflow: hidden;
+    }
+    .hero::before {
+      content: '✈';
+      position: absolute;
+      font-size: 320px;
+      opacity: .06;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%) rotate(15deg);
+      line-height: 1;
+    }
+    .hero h1 {
+      font-size: clamp(32px, 6vw, 60px);
+      font-weight: 900;
+      letter-spacing: -1.5px;
+      margin-bottom: 16px;
+      text-shadow: 0 2px 20px rgba(0,0,0,.2);
+    }
+    .hero p {
+      font-size: 18px;
+      opacity: .9;
+      max-width: 560px;
+      margin: 0 auto 32px;
+    }
+    .badge-row {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    .badge {
+      background: rgba(255,255,255,.2);
+      border: 1px solid rgba(255,255,255,.35);
+      border-radius: 20px;
+      padding: 6px 16px;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    /* ── Wave divider ── */
+    .wave {
+      display: block;
+      width: 100%;
+      height: 60px;
+      background: var(--bg);
+      clip-path: ellipse(55% 100% at 50% 100%);
+      margin-top: -1px;
+    }
+
+    /* ── Layout ── */
+    .toc-sidebar {
+      position: sticky;
+      top: 24px;
+      align-self: flex-start;
+      background: var(--surface);
+      border: 1.5px solid var(--border);
+      border-radius: 16px;
+      padding: 20px;
+      width: 220px;
+      flex-shrink: 0;
+      box-shadow: 0 4px 12px rgba(0,0,0,.06);
+    }
+    .toc-sidebar h3 {
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: .1em;
+      color: var(--text-3);
+      margin-bottom: 12px;
+    }
+    .toc-sidebar a {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-2);
+      text-decoration: none;
+      padding: 5px 8px;
+      border-radius: 7px;
+      transition: all .12s;
+      margin-bottom: 2px;
+    }
+    .toc-sidebar a:hover { background: var(--sky-l); color: var(--sky-d); }
+    .toc-sidebar .toc-sub {
+      font-size: 12px;
+      font-weight: 500;
+      padding-left: 20px;
+      color: var(--text-3);
+    }
+
+    .page-wrap {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 48px 24px;
+      display: flex;
+      gap: 40px;
+      align-items: flex-start;
+    }
+    .content { flex: 1; min-width: 0; }
+
+    /* ── Section ── */
+    .section {
+      background: var(--surface);
+      border: 1.5px solid var(--border);
+      border-radius: 20px;
+      padding: 36px;
+      margin-bottom: 32px;
+      box-shadow: 0 4px 16px rgba(0,0,0,.05);
+      scroll-margin-top: 24px;
+    }
+    .section-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: .1em;
+      padding: 4px 12px;
+      border-radius: 20px;
+      margin-bottom: 14px;
+    }
+    .tag-blue  { background: var(--sky-l);  color: var(--sky-d);  }
+    .tag-teal  { background: var(--teal-l); color: var(--teal);   }
+    .tag-coral { background: #ffedd5;       color: #c2410c;       }
+    .tag-gold  { background: #fef3c7;       color: #92400e;       }
+    .tag-rose  { background: #ffe4e6;       color: #be123c;       }
+    .tag-purple{ background: #ede9fe;       color: #6d28d9;       }
+    .tag-green { background: #d1fae5;       color: #065f46;       }
+
+    .section h2 {
+      font-size: 26px;
+      font-weight: 900;
+      letter-spacing: -.5px;
+      margin-bottom: 10px;
+      color: var(--text);
+    }
+    .section .lead {
+      font-size: 15px;
+      color: var(--text-3);
+      margin-bottom: 28px;
+    }
+    .section h3 {
+      font-size: 16px;
+      font-weight: 800;
+      color: var(--text);
+      margin: 28px 0 10px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .section p { color: var(--text-2); margin-bottom: 12px; }
+
+    /* ── Chat mock ── */
+    .chat-demo {
+      background: #f0f9ff;
+      border: 1.5px solid var(--border);
+      border-radius: 14px;
+      padding: 20px;
+      margin: 20px 0;
+    }
+    .msg {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 14px;
+      animation: none;
+    }
+    .msg.user { flex-direction: row-reverse; }
+    .msg-av {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      flex-shrink: 0;
+    }
+    .msg.user .msg-av { background: linear-gradient(135deg, #0ea5e9, #0d9488); }
+    .msg.agent .msg-av { background: #fff; border: 1.5px solid var(--border); }
+    .msg-bub {
+      padding: 10px 14px;
+      border-radius: 12px;
+      font-size: 13px;
+      line-height: 1.55;
+      max-width: 380px;
+    }
+    .msg.user .msg-bub {
+      background: linear-gradient(135deg, #0ea5e9, #0284c7);
+      color: #fff;
+      border-radius: 12px 12px 4px 12px;
+    }
+    .msg.agent .msg-bub {
+      background: #fff;
+      border: 1.5px solid var(--border);
+      border-radius: 12px 12px 12px 4px;
+      color: var(--text-2);
+    }
+    .msg-bub strong { font-weight: 700; }
+    .msg-bub ul { padding-left: 16px; margin-top: 4px; }
+    .msg-bub li { margin-bottom: 2px; }
+
+    /* ── Hint chips ── */
+    .hints { display: flex; gap: 7px; flex-wrap: wrap; margin: 16px 0; }
+    .hint-chip {
+      padding: 6px 14px;
+      background: var(--surface);
+      border: 1.5px solid var(--border);
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--text-3);
+      cursor: default;
+    }
+    .hint-chip:hover { border-color: var(--sky); color: var(--sky-d); background: var(--sky-l); }
+
+    /* ── Feature grid ── */
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 16px;
+      margin-top: 20px;
+    }
+    .feature-card {
+      background: var(--bg);
+      border: 1.5px solid var(--border);
+      border-radius: 14px;
+      padding: 18px;
+      transition: transform .15s, box-shadow .15s;
+    }
+    .feature-card:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(0,0,0,.08); }
+    .feature-card .fc-icon {
+      font-size: 28px;
+      margin-bottom: 10px;
+      display: block;
+    }
+    .feature-card h4 {
+      font-size: 14px;
+      font-weight: 800;
+      margin-bottom: 6px;
+      color: var(--text);
+    }
+    .feature-card p {
+      font-size: 12px;
+      color: var(--text-3);
+      line-height: 1.5;
+      margin: 0;
+    }
+
+    /* ── Step list ── */
+    .steps { counter-reset: step; list-style: none; padding: 0; margin: 16px 0; }
+    .steps li {
+      counter-increment: step;
+      display: flex;
+      gap: 14px;
+      margin-bottom: 16px;
+      align-items: flex-start;
+    }
+    .steps li::before {
+      content: counter(step);
+      flex-shrink: 0;
+      width: 28px;
+      height: 28px;
+      background: linear-gradient(135deg, var(--sky), var(--teal));
+      color: #fff;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 800;
+      margin-top: 1px;
+    }
+    .steps li p { margin: 0; color: var(--text-2); font-size: 14px; }
+    .steps li strong { color: var(--text); }
+
+    /* ── Board mock ── */
+    .board-mock {
+      background: var(--bg);
+      border: 1.5px solid var(--border);
+      border-radius: 14px;
+      overflow: hidden;
+      margin: 20px 0;
+    }
+    .board-header-mock {
+      background: linear-gradient(135deg, #e0f2fe, #ccfbf1);
+      padding: 12px 16px;
+      font-weight: 800;
+      font-size: 14px;
+      color: var(--sky-d);
+      border-bottom: 1px solid var(--border);
+    }
+    .board-day {
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    .board-day-label {
+      font-size: 10px;
+      font-weight: 800;
+      color: var(--text-3);
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      margin-bottom: 6px;
+    }
+    .itin-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 10px;
+      background: #fff;
+      border: 1.5px solid var(--border);
+      border-radius: 8px;
+      margin-bottom: 5px;
+      font-size: 12px;
+    }
+    .itin-row .ir-icon { font-size: 14px; }
+    .itin-row .ir-title { font-weight: 700; flex: 1; color: var(--text); }
+    .itin-row .ir-time { color: var(--sky-d); font-weight: 700; font-family: monospace; font-size: 11px; }
+    .itin-row .ir-price { color: var(--teal); font-weight: 700; font-size: 11px; }
+    .lborder-flight   { border-left: 4px solid var(--sky); }
+    .lborder-hotel    { border-left: 4px solid var(--teal); }
+    .lborder-activity { border-left: 4px solid var(--coral); }
+    .lborder-food     { border-left: 4px solid var(--gold); }
+
+    /* ── Budget bar ── */
+    .budget-demo {
+      background: #fff;
+      border: 1.5px solid var(--border);
+      border-radius: 12px;
+      padding: 14px 16px;
+      margin: 16px 0;
+    }
+    .budget-bar-bg {
+      height: 6px;
+      background: var(--border);
+      border-radius: 4px;
+      margin: 8px 0 10px;
+      overflow: hidden;
+    }
+    .budget-bar-fill {
+      height: 6px;
+      border-radius: 4px;
+      background: linear-gradient(90deg, var(--sky), var(--teal));
+    }
+    .budget-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+    .budget-chip {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-3);
+      padding: 3px 9px;
+      background: var(--bg);
+      border-radius: 6px;
+      border: 1px solid var(--border);
+    }
+
+    /* ── Tip box ── */
+    .tip {
+      display: flex;
+      gap: 12px;
+      background: linear-gradient(135deg, #fef3c7, #fef9c3);
+      border: 1.5px solid #fde68a;
+      border-radius: 12px;
+      padding: 14px 16px;
+      margin: 16px 0;
+      font-size: 13px;
+      color: #78350f;
+    }
+    .tip-icon { font-size: 20px; flex-shrink: 0; }
+    .tip strong { font-weight: 800; color: #92400e; }
+
+    .info {
+      display: flex;
+      gap: 12px;
+      background: var(--sky-l);
+      border: 1.5px solid #bae6fd;
+      border-radius: 12px;
+      padding: 14px 16px;
+      margin: 16px 0;
+      font-size: 13px;
+      color: var(--sky-d);
+    }
+    .info-icon { font-size: 20px; flex-shrink: 0; }
+
+    /* ── Command table ── */
+    .cmd-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      margin: 16px 0;
+    }
+    .cmd-table th {
+      background: var(--sky-l);
+      color: var(--sky-d);
+      padding: 9px 14px;
+      text-align: left;
+      font-weight: 800;
+      border: 1px solid var(--border);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+    }
+    .cmd-table td {
+      padding: 9px 14px;
+      border: 1px solid var(--border);
+      color: var(--text-2);
+      vertical-align: top;
+    }
+    .cmd-table tr:nth-child(even) td { background: var(--bg); }
+    .cmd-table .cmd { font-family: 'SF Mono', 'Fira Code', monospace; color: var(--sky-d); font-size: 12px; }
+    .cmd-table .result { color: var(--teal); font-weight: 600; }
+
+    /* ── Keyboard shortcut ── */
+    kbd {
+      display: inline-block;
+      padding: 2px 8px;
+      background: #fff;
+      border: 1.5px solid var(--border);
+      border-bottom: 3px solid #cbd5e1;
+      border-radius: 6px;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text-2);
+    }
+
+    /* ── Emoji icon headers ── */
+    .emoji-h { font-size: 22px; }
+
+    /* ── Divider ── */
+    hr.soft { border: none; border-top: 1px solid var(--border); margin: 24px 0; }
+
+    /* ── Footer ── */
+    footer {
+      background: linear-gradient(135deg, #0f172a, #1e293b);
+      color: rgba(255,255,255,.7);
+      text-align: center;
+      padding: 40px 24px;
+      font-size: 13px;
+    }
+    footer strong { color: #fff; }
+
+    /* ── Responsive ── */
+    @media (max-width: 800px) {
+      .toc-sidebar { display: none; }
+      .page-wrap { padding: 24px 16px; }
+      .section { padding: 24px 18px; }
+      .feature-grid { grid-template-columns: 1fr 1fr; }
+    }
+    @media (max-width: 480px) {
+      .feature-grid { grid-template-columns: 1fr; }
+    }
+
+    /* ── Scroll smooth ── */
+    html { scroll-behavior: smooth; }
+
+    /* ── Callout strip ── */
+    .strip {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 14px;
+      margin: 20px 0;
+    }
+    .strip-card {
+      text-align: center;
+      padding: 20px 14px;
+      border-radius: 14px;
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .strip-card .big { font-size: 32px; margin-bottom: 8px; display: block; }
+    .sc-blue   { background: var(--sky-l);  color: var(--sky-d);  }
+    .sc-teal   { background: var(--teal-l); color: var(--teal);   }
+    .sc-coral  { background: #ffedd5;       color: #c2410c;       }
+    .sc-purple { background: #ede9fe;       color: #6d28d9;       }
+  </style>
+</head>
+<body>
+
+<!-- ═══════════════════════════ HERO ═══════════════════════════ -->
+<div class="hero">
+  <h1>✈ Travel Agent<br>User Guide</h1>
+  <p>Your AI-powered personal travel planner. Plan trips, hunt for deals, build itineraries — all in plain English.</p>
+  <div class="badge-row">
+    <span class="badge">✈ Flights</span>
+    <span class="badge">🏨 Hotels</span>
+    <span class="badge">🌤 Weather</span>
+    <span class="badge">💰 Budgets</span>
+    <span class="badge">📅 Itineraries</span>
+    <span class="badge">💱 Currency</span>
+  </div>
+</div>
+<div class="wave"></div>
+
+<!-- ═══════════════════════════ PAGE ═══════════════════════════ -->
+<div class="page-wrap">
+
+  <!-- TOC Sidebar -->
+  <nav class="toc-sidebar" aria-label="Table of contents">
+    <h3>On this page</h3>
+    <a href="#getting-started">🚀 Getting Started</a>
+    <a href="#chat">💬 Talking to the Agent</a>
+    <a href="#flights">✈ Searching Flights</a>
+    <a href="#hotels">🏨 Finding Hotels</a>
+    <a href="#deals">🎯 Deal Hunting</a>
+    <a href="#board">🗺 Trip Board</a>
+    <a href="#budget">💰 Budget Tracking</a>
+    <a href="#multi">🗺 Multi-Destination</a>
+    <a href="#currency">💱 Currency</a>
+    <a href="#weather">🌤 Weather</a>
+    <a href="#export">📤 Export &amp; Share</a>
+    <a href="#preferences">⚙️ Preferences</a>
+    <a href="#tips">💡 Tips &amp; Tricks</a>
+  </nav>
+
+  <!-- Main Content -->
+  <main class="content">
+
+    <!-- ── What can it do? ── -->
+    <div class="strip">
+      <div class="strip-card sc-blue"><span class="big">✈</span>Search real flights &amp; find the cheapest dates</div>
+      <div class="strip-card sc-teal"><span class="big">📅</span>Build a day-by-day itinerary automatically</div>
+      <div class="strip-card sc-coral"><span class="big">💰</span>Track your budget across flights, hotels &amp; activities</div>
+      <div class="strip-card sc-purple"><span class="big">🔗</span>Share your itinerary with a single link</div>
+    </div>
+
+    <!-- ── GETTING STARTED ── -->
+    <section class="section" id="getting-started">
+      <span class="section-tag tag-blue">🚀 Start Here</span>
+      <h2>Getting Started</h2>
+      <p class="lead">No account needed. Open the app, say where you want to go, and the agent takes it from there.</p>
+
+      <ol class="steps">
+        <li><p><strong>Open the app</strong> in your browser. Your session is created automatically — your trip data is saved so you can pick up where you left off.</p></li>
+        <li><p><strong>Type your destination</strong> in the chat box at the bottom. Be as vague or specific as you like — <em>"I want to go somewhere warm in January"</em> works just as well as <em>"Flights from JFK to Bali on March 15"</em>.</p></li>
+        <li><p><strong>The agent will ask follow-up questions</strong> if it needs more info — number of travelers, budget, departure city, dates, etc.</p></li>
+        <li><p><strong>Watch the Trip Board</strong> (🗺 button, top right) fill in as the agent builds your itinerary.</p></li>
+        <li><p><strong>Keep chatting</strong> to refine, change dates, swap hotels, or add activities.</p></li>
+      </ol>
+
+      <div class="tip">
+        <span class="tip-icon">💡</span>
+        <div><strong>First time?</strong> Try one of the quick-start hints below the chat box. Clicking any hint fills it into the message field for you.</div>
+      </div>
+
+      <p>Quick-start examples you can click right in the app:</p>
+      <div class="hints">
+        <span class="hint-chip">Plan a trip to Bali</span>
+        <span class="hint-chip">Flights NYC → Tokyo in July</span>
+        <span class="hint-chip">Best month to visit Lisbon?</span>
+        <span class="hint-chip">Remember I prefer window seats</span>
+      </div>
+    </section>
+
+    <!-- ── TALKING TO THE AGENT ── -->
+    <section class="section" id="chat">
+      <span class="section-tag tag-teal">💬 The Chat</span>
+      <h2>Talking to the Agent</h2>
+      <p class="lead">Plain English, plain questions. The agent understands natural language — no special commands required.</p>
+
+      <h3><span class="emoji-h">📝</span> How to phrase requests</h3>
+      <p>You can be completely natural. Here are real examples of things the agent handles well:</p>
+
+      <table class="cmd-table">
+        <thead>
+          <tr><th>You say…</th><th>Agent does…</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="cmd">"Plan a 10-day trip to Japan in April for 2 people, budget $4,000"</td>
+            <td class="result">Builds a full day-by-day itinerary, searches flights, finds hotels, checks weather</td>
+          </tr>
+          <tr>
+            <td class="cmd">"What's the cheapest month to fly from London to Bali?"</td>
+            <td class="result">Shows a 12-month price comparison chart with season ratings</td>
+          </tr>
+          <tr>
+            <td class="cmd">"Find me a business class flight under $3,000"</td>
+            <td class="result">Searches flights, filters by cabin class and your price cap</td>
+          </tr>
+          <tr>
+            <td class="cmd">"Swap the hotel on Day 3 for something with a pool"</td>
+            <td class="result">Searches alternatives, updates the itinerary on the board</td>
+          </tr>
+          <tr>
+            <td class="cmd">"How much is €200 in USD right now?"</td>
+            <td class="result">Converts currency using live exchange rates</td>
+          </tr>
+          <tr>
+            <td class="cmd">"Remember I'm vegetarian and hate early morning flights"</td>
+            <td class="result">Saves these to your permanent preferences for all future trips</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3><span class="emoji-h">⌨️</span> Keyboard shortcuts</h3>
+      <p>
+        Press <kbd>Enter</kbd> to send a message.<br>
+        Press <kbd>Shift</kbd> + <kbd>Enter</kbd> to add a line break inside your message.
+      </p>
+
+      <h3><span class="emoji-h">🔄</span> Message queue</h3>
+      <p>If the agent is still thinking and you type another message, it's automatically queued — you'll see a toast notification. Your messages are never lost.</p>
+
+      <div class="chat-demo">
+        <div class="msg user">
+          <div class="msg-av">👤</div>
+          <div class="msg-bub">Plan a 7-day trip to Lisbon for 2 people in May, around $3,000 total</div>
+        </div>
+        <div class="msg agent">
+          <div class="msg-av">✈</div>
+          <div class="msg-bub">
+            <strong>Great choice!</strong> Let me search flights and build your Lisbon itinerary. 🇵🇹<br><br>
+            Searching flights from your home airport…<br>
+            Finding hotels in Lisbon for 7 nights…<br>
+            Checking May weather…<br><br>
+            <strong>Here's your plan:</strong>
+            <ul>
+              <li>✈ Round-trip flights: $820/person</li>
+              <li>🏨 4-star hotel, 7 nights: $980</li>
+              <li>🗺 Activities &amp; food budget: $640</li>
+              <li><strong>Total: $2,620 — $380 under budget!</strong></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── FLIGHTS ── -->
+    <section class="section" id="flights">
+      <span class="section-tag tag-blue">✈ Flights</span>
+      <h2>Searching Flights</h2>
+      <p class="lead">The agent searches real routes using actual airport and airline data. If you've set up an Amadeus API key, it pulls live pricing.</p>
+
+      <h3><span class="emoji-h">🔍</span> What you can search for</h3>
+      <div class="feature-grid">
+        <div class="feature-card">
+          <span class="fc-icon">🛫</span>
+          <h4>One-way &amp; round-trip</h4>
+          <p>Just mention whether you need a return flight. The agent figures out the rest.</p>
+        </div>
+        <div class="feature-card">
+          <span class="fc-icon">💺</span>
+          <h4>Cabin class</h4>
+          <p>Economy, premium economy, business, or first class — just say which you want.</p>
+        </div>
+        <div class="feature-card">
+          <span class="fc-icon">👨‍👩‍👧</span>
+          <h4>Multiple passengers</h4>
+          <p>Tell the agent how many people are traveling and it prices for all of them.</p>
+        </div>
+        <div class="feature-card">
+          <span class="fc-icon">💰</span>
+          <h4>Price cap</h4>
+          <p>"Under $500" or "budget flights only" — the agent filters results to your limit.</p>
+        </div>
+        <div class="feature-card">
+          <span class="fc-icon">🏙</span>
+          <h4>City or airport code</h4>
+          <p>Say "New York" or "JFK" — both work. The agent resolves city names to the right airport.</p>
+        </div>
+        <div class="feature-card">
+          <span class="fc-icon">🔄</span>
+          <h4>Flexible dates</h4>
+          <p>Ask for the cheapest flights in a date range — the agent compares multiple days.</p>
+        </div>
+      </div>
+
+      <div class="info">
+        <span class="info-icon">ℹ️</span>
+        <div>Flight results show airline, flight number, departure/arrival times, duration, number of stops, and price per person. Up to 5 results are shown by default — ask for more if you need them.</div>
+      </div>
+
+      <h3><span class="emoji-h">✈</span> Booking a flight</h3>
+      <p>When the agent finds a flight you like, say <strong>"Book it"</strong> or <strong>"Book the Delta flight"</strong>. A confirmation modal will pop up showing all the details. You must click <strong>Confirm Booking</strong> before any action is taken — nothing is booked without your explicit approval.</p>
+    </section>
+
+    <!-- ── HOTELS ── -->
+    <section class="section" id="hotels">
+      <span class="section-tag tag-teal">🏨 Hotels</span>
+      <h2>Finding Hotels</h2>
+      <p class="lead">Hotels are searched by city, dates, star rating, and budget. The agent automatically adds hotels to your itinerary.</p>
+
+      <table class="cmd-table">
+        <thead>
+          <tr><th>Example request</th><th>What it does</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="cmd">"Find a 4-star hotel in Lisbon under $150/night"</td>
+            <td>Searches hotels, filters by rating and price, shows top 3 options</td>
+          </tr>
+          <tr>
+            <td class="cmd">"I need somewhere with a pool and free breakfast"</td>
+            <td>Filters amenities in the search, prioritises matching properties</td>
+          </tr>
+          <tr>
+            <td class="cmd">"Book the Bairro Alto Hotel"</td>
+            <td>Triggers a booking confirmation modal before proceeding</td>
+          </tr>
+          <tr>
+            <td class="cmd">"Find me a cheaper option for night 3"</td>
+            <td>Searches alternatives for a specific night and updates the board</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="tip">
+        <span class="tip-icon">💡</span>
+        <div><strong>Tip:</strong> Set your hotel star preference once (<em>"Remember I prefer 4-star hotels"</em>) and the agent will always default to it for future searches.</div>
+      </div>
+    </section>
+
+    <!-- ── DEAL HUNTING ── -->
+    <section class="section" id="deals">
+      <span class="section-tag tag-coral">🎯 Deal Hunting</span>
+      <h2>Finding the Best Prices</h2>
+      <p class="lead">Two powerful tools let you find the cheapest time to fly — by date or by month — with a visual price calendar.</p>
+
+      <h3><span class="emoji-h">📅</span> Cheapest date finder</h3>
+      <p>Ask: <strong>"Find the cheapest dates to fly from New York to Tokyo around March 15"</strong></p>
+      <p>The agent searches ±7 days around your target date and shows a <strong>colour-coded price calendar</strong>:</p>
+      <ul style="padding-left:20px;color:var(--text-2);margin-bottom:12px">
+        <li style="margin-bottom:4px">🟢 <strong>Green</strong> = cheapest dates</li>
+        <li style="margin-bottom:4px">🟡 <strong>Yellow</strong> = mid-range</li>
+        <li style="margin-bottom:4px">🔴 <strong>Red</strong> = most expensive</li>
+      </ul>
+      <p>You can click any date in the calendar to instantly search flights for that day.</p>
+
+      <h3><span class="emoji-h">📊</span> Best month finder</h3>
+      <p>Ask: <strong>"When is the cheapest month to fly from London to Bali?"</strong></p>
+      <p>The agent analyses 12 months of pricing and shows a bar chart with:</p>
+      <ul style="padding-left:20px;color:var(--text-2);margin-bottom:12px">
+        <li style="margin-bottom:4px">Average price per person each month</li>
+        <li style="margin-bottom:4px">Season rating (Peak 🔴 / Shoulder 🟡 / Off-peak 🟢)</li>
+        <li style="margin-bottom:4px">The single best-value month highlighted with a ★ Best badge</li>
+        <li style="margin-bottom:4px">How much you save vs. the most expensive month</li>
+      </ul>
+      <p>Click any month bar to search flights for that period.</p>
+
+      <div class="info">
+        <span class="info-icon">💡</span>
+        <div>The deal hunter also tells you the <strong>cheapest day of the week</strong> to fly (e.g. "Tuesdays average $180 less than Fridays on this route").</div>
+      </div>
+    </section>
+
+    <!-- ── TRIP BOARD ── -->
+    <section class="section" id="board">
+      <span class="section-tag tag-purple">🗺 Trip Board</span>
+      <h2>The Trip Board</h2>
+      <p class="lead">A visual day-by-day itinerary that updates live as you chat. Click the <strong>🗺 Trip Board</strong> button in the top-right to open it.</p>
+
+      <div class="board-mock">
+        <div class="board-header-mock">✈ Lisbon, Portugal &nbsp;·&nbsp; May 10 → May 17 &nbsp;&nbsp;<span style="background:#bbf7d0;color:#14532d;border-radius:6px;padding:2px 8px;font-size:11px">🟢 Off-peak</span></div>
+        <div class="board-day">
+          <div class="board-day-label">SAT, MAY 10</div>
+          <div class="itin-row lborder-flight">
+            <span class="ir-icon">✈</span>
+            <span class="ir-title">JFK → LIS — United Airlines</span>
+            <span class="ir-time">09:00</span>
+            <span class="ir-price">$820</span>
+          </div>
+          <div class="itin-row lborder-hotel">
+            <span class="ir-icon">🏨</span>
+            <span class="ir-title">Bairro Alto Hotel — Check-in</span>
+            <span class="ir-time">15:00</span>
+            <span class="ir-price">$140/n</span>
+          </div>
+          <div class="itin-row lborder-activity">
+            <span class="ir-icon">🗺</span>
+            <span class="ir-title">Explore Alfama district</span>
+            <span class="ir-time">18:00</span>
+            <span class="ir-price">Free</span>
+          </div>
+        </div>
+        <div class="board-day">
+          <div class="board-day-label">SUN, MAY 11 — Culture Day</div>
+          <div class="itin-row lborder-activity">
+            <span class="ir-icon">🏛</span>
+            <span class="ir-title">Jerónimos Monastery</span>
+            <span class="ir-time">09:30</span>
+            <span class="ir-price">$12</span>
+          </div>
+          <div class="itin-row lborder-food">
+            <span class="ir-icon">🍽</span>
+            <span class="ir-title">Lunch at Time Out Market</span>
+            <span class="ir-time">13:00</span>
+            <span class="ir-price">$25</span>
+          </div>
+        </div>
+      </div>
+
+      <h3><span class="emoji-h">🖱️</span> Drag and drop</h3>
+      <p>Cards on the board are <strong>fully draggable</strong> — on desktop and mobile. Drag a hotel, activity, or flight card to a different day to reorder your trip. Changes are saved automatically.</p>
+
+      <h3><span class="emoji-h">📄</span> What each card shows</h3>
+      <ul style="padding-left:20px;color:var(--text-2);margin-bottom:12px">
+        <li style="margin-bottom:6px"><strong>Colour-coded left border</strong>: ✈ blue=flight, 🏨 teal=hotel, 🗺 orange=activity, 🍽 gold=restaurant, 🚗 grey=transfer</li>
+        <li style="margin-bottom:6px"><strong>Time</strong> — departure or activity start time</li>
+        <li style="margin-bottom:6px"><strong>Price</strong> — individual item cost in your chosen currency</li>
+        <li style="margin-bottom:6px"><strong>Status badge</strong> — Confirmed / Suggested / Alternative</li>
+        <li style="margin-bottom:6px"><strong>Notes</strong> — any details the agent added (e.g. "Window seat requested")</li>
+      </ul>
+
+      <h3><span class="emoji-h">🔒</span> Locking cards</h3>
+      <p>Hover over any card to see action buttons. Click <strong>🔒 Lock</strong> to lock a card in place — it won't move when you drag other items. Click again to unlock.</p>
+
+      <h3><span class="emoji-h">⚡</span> Conflict detection</h3>
+      <p>The board automatically detects scheduling issues and shows them in a banner:</p>
+      <ul style="padding-left:20px;color:var(--text-2);margin-bottom:12px">
+        <li style="margin-bottom:4px">🔴 <strong>Overlap</strong> — two events at the same time</li>
+        <li style="margin-bottom:4px">🟡 <strong>Tight gap</strong> — less than 20 minutes between events</li>
+        <li style="margin-bottom:4px">🔵 <strong>Free time</strong> — a 3+ hour gap with nothing planned (click "Ask agent →" to fill it)</li>
+      </ul>
+
+      <h3><span class="emoji-h">📄</span> Week-by-week navigation</h3>
+      <p>For trips longer than 7 days, the board shows <strong>one week at a time</strong> with Prev / Next buttons to keep it fast and readable.</p>
+
+      <h3><span class="emoji-h">↔</span> Alternatives</h3>
+      <p>Hover any card and click <strong>↔ Alternative</strong> to ask the agent to suggest 2–3 swaps for that specific item.</p>
+    </section>
+
+    <!-- ── BUDGET ── -->
+    <section class="section" id="budget">
+      <span class="section-tag tag-green">💰 Budget</span>
+      <h2>Budget Tracking</h2>
+      <p class="lead">Tell the agent your total budget and it enforces it — warning you when flights or hotels would go over.</p>
+
+      <div class="budget-demo">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <strong>Est. $2,620</strong>
+          <span style="font-size:12px;color:var(--text-3)">87% of $3,000 budget</span>
+        </div>
+        <div class="budget-bar-bg">
+          <div class="budget-bar-fill" style="width:87%"></div>
+        </div>
+        <div class="budget-chips">
+          <span class="budget-chip">✈ $1,640</span>
+          <span class="budget-chip">🏨 $980</span>
+          <span class="budget-chip">🗺 $400</span>
+          <span class="budget-chip">🍽 $240</span>
+        </div>
+      </div>
+
+      <h3><span class="emoji-h">🔢</span> How it works</h3>
+      <ol class="steps">
+        <li><p>Tell the agent your budget: <strong>"Plan a trip to Bali for $5,000 total"</strong></p></li>
+        <li><p>As it searches flights and hotels, it tracks the running total in the board's budget bar.</p></li>
+        <li><p>If a result would bust the budget, the agent warns you and suggests cheaper alternatives.</p></li>
+        <li><p>The bar turns <span style="color:var(--gold);font-weight:700">amber at 70%</span> and <span style="color:var(--rose);font-weight:700">red at 90%</span> of budget.</p></li>
+      </ol>
+
+      <div class="tip">
+        <span class="tip-icon">💡</span>
+        <div><strong>Tip:</strong> You can set a permanent daily budget in preferences: <em>"Remember my max budget is $300/day"</em>. The agent will always search within this limit.</div>
+      </div>
+    </section>
+
+    <!-- ── MULTI-DESTINATION ── -->
+    <section class="section" id="multi">
+      <span class="section-tag tag-coral">🌍 Multi-Destination</span>
+      <h2>Multi-Destination Trips</h2>
+      <p class="lead">Planning a Europe interrail or an Asian city-hop? The agent handles multi-stop itineraries automatically.</p>
+
+      <div class="chat-demo">
+        <div class="msg user">
+          <div class="msg-av">👤</div>
+          <div class="msg-bub">Plan a 3-week Europe trip visiting Paris, Rome, and Barcelona</div>
+        </div>
+        <div class="msg agent">
+          <div class="msg-av">✈</div>
+          <div class="msg-bub">
+            <strong>Love it — a classic European triangle! 🗺</strong><br><br>
+            I'll build it as:<br>
+            JFK → Paris (7 days) → Rome (7 days) → Barcelona (7 days) → JFK<br><br>
+            Searching connecting flights between each city and building your itinerary now…
+          </div>
+        </div>
+      </div>
+
+      <p>The Trip Board shows each city as a section. Flights between cities appear automatically as cards on the departure day. You can ask the agent to spend more or fewer days in any city at any time.</p>
+
+      <h3><span class="emoji-h">🚗</span> Ground transport</h3>
+      <p>For nearby cities (like Paris → Brussels, or Rome → Naples), the agent can suggest trains or bus routes as an alternative to flying. Just ask: <strong>"How do I get from Paris to Amsterdam?"</strong></p>
+    </section>
+
+    <!-- ── CURRENCY ── -->
+    <section class="section" id="currency">
+      <span class="section-tag tag-gold">💱 Currency</span>
+      <h2>Currency Conversion</h2>
+      <p class="lead">Convert any amount between any two currencies using up-to-date exchange rates.</p>
+
+      <table class="cmd-table">
+        <thead>
+          <tr><th>Example</th><th>Result</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="cmd">"How much is €500 in USD?"</td>
+            <td>Converts EUR → USD at the current rate</td>
+          </tr>
+          <tr>
+            <td class="cmd">"What's 10,000 Japanese yen in British pounds?"</td>
+            <td>Converts JPY → GBP</td>
+          </tr>
+          <tr>
+            <td class="cmd">"Convert $3,000 to Euros and Thai Baht"</td>
+            <td>Shows both conversions at once</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <p>You can also set your preferred currency in preferences (e.g. <em>"Remember I want prices in Euros"</em>) and all future trip costs will be displayed in EUR.</p>
+    </section>
+
+    <!-- ── WEATHER ── -->
+    <section class="section" id="weather">
+      <span class="section-tag tag-blue">🌤 Weather</span>
+      <h2>Weather &amp; Seasons</h2>
+      <p class="lead">Get weather forecasts for your trip dates and learn the best times of year to visit any destination.</p>
+
+      <h3><span class="emoji-h">📆</span> Trip forecast</h3>
+      <p>When you plan a trip, weather is automatically fetched for each day and shown on the board card:</p>
+      <p style="font-size:13px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-family:monospace;color:var(--text-2)">☀️ 24/16°C · ⛅ 21/14°C · 🌧 18/12°C · ☀️ 25/15°C</p>
+
+      <h3><span class="emoji-h">🌍</span> Season badges</h3>
+      <p>Each destination shows a season rating for your travel dates:</p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin:12px 0">
+        <span style="background:#fca5a5;color:#7f1d1d;border:1px solid #f87171;border-radius:20px;padding:4px 12px;font-size:12px;font-weight:700">🔴 Peak season — busy &amp; pricier</span>
+        <span style="background:#fde68a;color:#78350f;border:1px solid #fbbf24;border-radius:20px;padding:4px 12px;font-size:12px;font-weight:700">🟡 Shoulder — great balance</span>
+        <span style="background:#bbf7d0;color:#14532d;border:1px solid #6ee7b7;border-radius:20px;padding:4px 12px;font-size:12px;font-weight:700">🟢 Off-peak — best value</span>
+      </div>
+
+      <p>Ask the agent <strong>"Is June a good time to visit Santorini?"</strong> for a full breakdown including crowd levels, weather, and typical prices.</p>
+    </section>
+
+    <!-- ── EXPORT & SHARE ── -->
+    <section class="section" id="export">
+      <span class="section-tag tag-teal">📤 Export &amp; Share</span>
+      <h2>Exporting &amp; Sharing Your Itinerary</h2>
+      <p class="lead">Once your itinerary is built, click the <strong>⬇ Export</strong> button (top-right, next to the Trip Board toggle).</p>
+
+      <div class="feature-grid">
+        <div class="feature-card">
+          <span class="fc-icon">📄</span>
+          <h4>Download JSON</h4>
+          <p>Full machine-readable itinerary. You can import this back in at any time to restore or share a trip.</p>
+        </div>
+        <div class="feature-card">
+          <span class="fc-icon">📝</span>
+          <h4>Download Markdown</h4>
+          <p>Clean text version of your itinerary — paste into Notion, Obsidian, or any notes app.</p>
+        </div>
+        <div class="feature-card">
+          <span class="fc-icon">🖨</span>
+          <h4>Print / Save PDF</h4>
+          <p>Opens a clean, print-friendly view. Use your browser's print dialog to save as PDF.</p>
+        </div>
+        <div class="feature-card">
+          <span class="fc-icon">🔗</span>
+          <h4>Share link</h4>
+          <p>Generates a read-only share URL and copies it to your clipboard. Send to travel companions!</p>
+        </div>
+        <div class="feature-card">
+          <span class="fc-icon">📂</span>
+          <h4>Import JSON</h4>
+          <p>Load a previously exported itinerary — yours or someone else's — to continue editing.</p>
+        </div>
+      </div>
+
+      <div class="info">
+        <span class="info-icon">🔗</span>
+        <div>Share links are <strong>read-only</strong> — recipients can view your itinerary but can't edit it. Share links never expire unless you reset your session.</div>
+      </div>
+    </section>
+
+    <!-- ── PREFERENCES ── -->
+    <section class="section" id="preferences">
+      <span class="section-tag tag-gold">⚙️ Preferences</span>
+      <h2>Saving Your Preferences</h2>
+      <p class="lead">Teach the agent your travel style once and it remembers forever — across all your future trips.</p>
+
+      <h3><span class="emoji-h">💬</span> Just say it in chat</h3>
+      <p>Use phrases like <em>"Remember…"</em> or <em>"Always…"</em> and the agent saves it for you:</p>
+
+      <div class="chat-demo">
+        <div class="msg user">
+          <div class="msg-av">👤</div>
+          <div class="msg-bub">Remember I always fly economy, prefer window seats, and my home airport is LAX</div>
+        </div>
+        <div class="msg agent">
+          <div class="msg-av">✈</div>
+          <div class="msg-bub">✅ Got it! I've saved your preferences:<br>• Cabin class: Economy<br>• Seat preference: Window<br>• Home airport: LAX (Los Angeles)<br><br>I'll use these for all future flight searches.</div>
+        </div>
+      </div>
+
+      <h3><span class="emoji-h">📋</span> What can be saved</h3>
+      <table class="cmd-table">
+        <thead>
+          <tr><th>Preference</th><th>Example phrase</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Home airport</td><td class="cmd">"My home airport is ORD"</td></tr>
+          <tr><td>Home city</td><td class="cmd">"I live in Chicago"</td></tr>
+          <tr><td>Cabin class</td><td class="cmd">"I always fly business class"</td></tr>
+          <tr><td>Seat preference</td><td class="cmd">"I prefer window seats"</td></tr>
+          <tr><td>Hotel stars</td><td class="cmd">"I only stay at 4-star hotels or above"</td></tr>
+          <tr><td>Daily budget</td><td class="cmd">"My max daily budget is $250"</td></tr>
+          <tr><td>Dietary needs</td><td class="cmd">"I'm vegan"</td></tr>
+          <tr><td>Accessibility</td><td class="cmd">"I need wheelchair-accessible rooms"</td></tr>
+          <tr><td>Preferred airlines</td><td class="cmd">"I prefer Delta or United"</td></tr>
+          <tr><td>Avoided airlines</td><td class="cmd">"Avoid Spirit Airlines"</td></tr>
+          <tr><td>Travel pace</td><td class="cmd">"I prefer a relaxed pace, not too many activities"</td></tr>
+          <tr><td>Currency</td><td class="cmd">"Show prices in Euros"</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- ── TIPS ── -->
+    <section class="section" id="tips">
+      <span class="section-tag tag-purple">💡 Pro Tips</span>
+      <h2>Tips &amp; Tricks</h2>
+      <p class="lead">Get the most out of your travel agent with these power-user moves.</p>
+
+      <h3><span class="emoji-h">1️⃣</span> Start broad, then refine</h3>
+      <div class="tip">
+        <span class="tip-icon">✅</span>
+        <div>Start with <em>"Plan a week in Portugal in June"</em> and let the agent build a complete itinerary. Then say <em>"Move Day 3 to the Algarve instead of Porto"</em> or <em>"Replace the hotel with something in the old town"</em> to tweak.</div>
+      </div>
+
+      <h3><span class="emoji-h">2️⃣</span> Use the deal hunter first</h3>
+      <div class="tip">
+        <span class="tip-icon">📅</span>
+        <div>Before committing to dates, ask <em>"What's the cheapest month to fly to Tokyo?"</em> — you might find flying two weeks earlier saves $400 per person.</div>
+      </div>
+
+      <h3><span class="emoji-h">3️⃣</span> Lock flights and hotels, flex activities</h3>
+      <div class="tip">
+        <span class="tip-icon">🔒</span>
+        <div>Once you're happy with a flight or hotel, lock the card on the board. Then ask the agent to <em>"Suggest more activities for Day 4"</em> without risk of your booked items being moved.</div>
+      </div>
+
+      <h3><span class="emoji-h">4️⃣</span> Import itineraries from friends</h3>
+      <div class="tip">
+        <span class="tip-icon">📂</span>
+        <div>If a friend shares their trip JSON with you, use <em>Export → Import JSON</em> to load it. Then ask the agent to <em>"Adapt this itinerary for a solo traveler"</em> or <em>"What would this cost in May instead of August?"</em></div>
+      </div>
+
+      <h3><span class="emoji-h">5️⃣</span> Ask for alternatives by the card</h3>
+      <div class="tip">
+        <span class="tip-icon">↔</span>
+        <div>Hover any board card and click <strong>↔ Alternative</strong> to get 2–3 options for just that one item — without rebuilding your whole trip.</div>
+      </div>
+
+      <h3><span class="emoji-h">6️⃣</span> Use your travel history</h3>
+      <div class="tip">
+        <span class="tip-icon">📚</span>
+        <div>The agent remembers everything in your current conversation. Ask <em>"Based on the Lisbon trip we just planned, how does it compare to doing Greece instead?"</em> for instant side-by-side analysis.</div>
+      </div>
+
+      <h3><span class="emoji-h">7️⃣</span> Reset vs. New Session</h3>
+      <div class="info">
+        <span class="info-icon">ℹ️</span>
+        <div><strong>↺ Reset conversation</strong> (bottom of the sidebar) clears the chat history but keeps your saved preferences and trips intact. Use it to start planning a new trip without losing your settings.</div>
+      </div>
+
+      <hr class="soft">
+
+      <h3><span class="emoji-h">🔢</span> Quick reference — useful phrases</h3>
+      <table class="cmd-table">
+        <thead>
+          <tr><th>Goal</th><th>What to say</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Change trip dates</td><td class="cmd">"Move the trip to the first week of October"</td></tr>
+          <tr><td>Add a day</td><td class="cmd">"Add an extra day in Barcelona"</td></tr>
+          <tr><td>Reduce the budget</td><td class="cmd">"Find cheaper options — I want to keep it under $2,500"</td></tr>
+          <tr><td>Check visa info</td><td class="cmd">"Do I need a visa for Bali as a US citizen?"</td></tr>
+          <tr><td>Get packing advice</td><td class="cmd">"What should I pack for a May trip to Iceland?"</td></tr>
+          <tr><td>Compare destinations</td><td class="cmd">"Compare costs: Lisbon vs. Porto for 5 days"</td></tr>
+          <tr><td>Plan a day trip</td><td class="cmd">"Add a day trip to Sintra on Day 4"</td></tr>
+          <tr><td>Find restaurants</td><td class="cmd">"Add some good seafood restaurants to the Lisbon days"</td></tr>
+          <tr><td>Check flight status</td><td class="cmd">"Is there a morning flight option instead?"</td></tr>
+          <tr><td>Adjust pace</td><td class="cmd">"This itinerary looks too packed — add more free time"</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+  </main>
+</div>
+
+<!-- ── Footer ── -->
+<footer>
+  <div style="font-size:36px;margin-bottom:16px">✈</div>
+  <strong>Travel Agent</strong> — AI-powered personal travel planner<br>
+  <span style="margin-top:8px;display:block;opacity:.6">Your conversations and itineraries are saved automatically. Sessions idle for more than 30 days are cleared to keep things tidy.</span>
+</footer>
+
+</body>
+</html>
