@@ -13,6 +13,8 @@ import string
 import time
 from datetime import datetime, timedelta
 
+from tools.cache import ttl_cache
+
 try:
     import httpx as _httpx
     _HTTPX = True
@@ -376,6 +378,7 @@ def _amadeus_flights(origin, destination, departure_date,
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
+@ttl_cache(ttl=1800)  # Cache for 30 minutes — prices are estimated anyway
 def search_flights(
     origin: str,
     destination: str,
@@ -384,6 +387,7 @@ def search_flights(
     passengers: int = 1,
     cabin_class: str = "economy",
     max_results: int = 5,
+    max_price_usd: int | None = None,
 ) -> dict:
     """
     Search flights. Uses Amadeus live pricing if AMADEUS_CLIENT_ID is set;
@@ -400,6 +404,8 @@ def search_flights(
             result = _amadeus_flights(origin_iata, dest_iata, departure_date,
                                       return_date, passengers, cabin_class, max_results)
             if result:
+                if max_price_usd is not None:
+                    result["results"] = [r for r in result["results"] if r["price_usd"] <= max_price_usd]
                 result["query"] = {
                     "origin": origin_iata, "destination": dest_iata,
                     "departure_date": departure_date, "return_date": return_date,
@@ -457,7 +463,9 @@ def search_flights(
         })
 
     results.sort(key=lambda x: x["price_usd"])
-    return {
+    if max_price_usd is not None:
+        results = [r for r in results if r["price_usd"] <= max_price_usd]
+    payload = {
         "status": "success",
         "query": {
             "origin": origin_iata, "origin_city": o_city,
@@ -470,6 +478,9 @@ def search_flights(
         "currency": "USD",
         "source":   "Real airport database + distance-calculated pricing (set AMADEUS_CLIENT_ID for live fares)",
     }
+    if max_price_usd is not None and not results:
+        payload["budget_note"] = f"No flights found under ${max_price_usd:,}. Consider relaxing the budget or choosing different dates."
+    return payload
 
 
 def find_cheapest_dates(

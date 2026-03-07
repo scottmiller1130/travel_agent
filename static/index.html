@@ -265,11 +265,56 @@
     .month-best-tag { font-size: 9px; font-weight: 800; background: var(--green-l); color: #065f46; border-radius: 5px; padding: 2px 6px; flex-shrink: 0; }
     .month-footer { padding: 8px 14px 12px; border-top: 1px solid var(--border); background: var(--surface2); font-size: 11px; color: var(--text-3); line-height: 1.55; }
     .month-footer strong { color: var(--teal); }
+
+    /* ── Accessibility: focus ring ── */
+    :focus-visible { outline: 2px solid var(--sky); outline-offset: 2px; border-radius: 4px; }
+    button:focus-visible, textarea:focus-visible { outline: 2px solid var(--sky); outline-offset: 2px; }
+
+    /* ── Season badge: improved contrast ── */
+    .season-badge { font-size: 12px; }
+    .season-badge.season-peak     { background: #fca5a5; color: #7f1d1d; border: 1px solid #f87171; }
+    .season-badge.season-shoulder { background: #fde68a; color: #78350f; border: 1px solid #fbbf24; }
+    .season-badge.season-off      { background: #bbf7d0; color: #14532d; border: 1px solid #6ee7b7; }
+
+    /* ── Hamburger / sidebar toggle (mobile only) ── */
+    #sidebar-toggle { display: none; background: none; border: 1.5px solid var(--border); border-radius: 8px; padding: 6px 10px; cursor: pointer; font-size: 18px; line-height: 1; color: var(--text-2); margin-right: 6px; }
+
+    /* ── Mobile responsive ── */
+    @media (max-width: 768px) {
+      body { overflow: visible; }
+      #sidebar {
+        position: fixed; left: 0; top: 0; bottom: 0; z-index: 300;
+        transform: translateX(-100%); transition: transform .22s ease;
+        box-shadow: 4px 0 20px rgba(0,0,0,.18);
+      }
+      #sidebar.open { transform: translateX(0); }
+      #sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 299; }
+      #sidebar-overlay.visible { display: block; }
+      #sidebar-toggle { display: flex; align-items: center; }
+      #main { width: 100%; min-width: 0; }
+      #messages { padding: 16px 12px 8px; }
+      #input-area { padding: 8px 10px 10px; }
+      #header-right { gap: 6px; }
+      #board-toggle-btn { font-size: 11px; padding: 6px 10px; }
+      #export-btn { font-size: 11px; padding: 6px 10px; }
+      #board-panel { width: 100% !important; }
+      /* Deal calendar: tighter on mobile */
+      .price-cal-grid { gap: 4px; }
+      .price-cell { min-width: 54px; padding: 5px 4px; }
+    }
+
+    /* ── Skip-to-content link for screen readers ── */
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+    .skip-link { position: absolute; top: -40px; left: 8px; background: var(--sky); color: #fff; padding: 6px 12px; border-radius: 0 0 8px 8px; font-size: 13px; font-weight: 700; z-index: 9999; transition: top .15s; }
+    .skip-link:focus { top: 0; }
   </style>
 </head>
 <body>
 
-<div id="sidebar">
+<a class="skip-link" href="#messages">Skip to conversation</a>
+<div id="sidebar-overlay" onclick="closeSidebar()"></div>
+
+<div id="sidebar" role="navigation" aria-label="Saved trips and actions">
   <div class="sidebar-logo">
     <h1>Travel Agent</h1>
     <p>AI-powered personal travel planner</p>
@@ -287,7 +332,8 @@
 <div id="main">
   <div id="chat-header">
     <div class="header-left">
-      <div class="header-avatar">✈</div>
+      <button id="sidebar-toggle" onclick="toggleSidebar()" aria-label="Toggle navigation sidebar" aria-expanded="false" aria-controls="sidebar">☰</button>
+      <div class="header-avatar" aria-hidden="true">✈</div>
       <div class="header-info">
         <div class="title">Your Travel Agent</div>
         <div class="subtitle"><span class="status-dot"></span> Ready to plan your next adventure</div>
@@ -295,7 +341,7 @@
     </div>
     <div id="header-right">
       <div id="export-wrap">
-        <button id="export-btn" onclick="toggleExportMenu(event)">⬇ Export</button>
+        <button id="export-btn" onclick="toggleExportMenu(event)" aria-label="Export or import itinerary" aria-haspopup="true" aria-expanded="false">⬇ Export</button>
         <div id="export-menu">
           <button class="export-item" onclick="exportJSON()"><span class="eicon">📄</span> Download JSON</button>
           <button class="export-item" onclick="exportMarkdown()"><span class="eicon">📝</span> Download Markdown</button>
@@ -306,11 +352,11 @@
           <input type="file" id="import-file-input" accept=".json,application/json" style="display:none" onchange="handleImportFile(event)">
         </div>
       </div>
-      <button id="board-toggle-btn" onclick="toggleBoard()">🗺 Trip Board <span id="issue-badge"></span></button>
+      <button id="board-toggle-btn" onclick="toggleBoard()" aria-label="Toggle trip planning board" aria-expanded="false" aria-controls="board-panel">🗺 Trip Board <span id="issue-badge" aria-live="polite"></span></button>
     </div>
   </div>
 
-  <div id="messages">
+  <div id="messages" role="log" aria-label="Conversation" aria-live="polite">
     <div class="message agent">
       <div class="avatar">✈</div>
       <div class="bubble">
@@ -321,9 +367,10 @@
 
   <div id="input-area">
     <div id="input-row">
+      <label for="input" class="sr-only">Message to travel agent</label>
       <textarea id="input" rows="1" placeholder="Ask me to plan a trip, search flights, check weather..."
-        onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
-      <button id="send-btn" onclick="sendMessage()" title="Send (Enter)">➤</button>
+        onkeydown="handleKey(event)" oninput="autoResize(this)" aria-label="Message to travel agent"></textarea>
+      <button id="send-btn" onclick="sendMessage()" aria-label="Send message (Enter)">➤</button>
     </div>
     <div class="hints">
       <span class="hint" onclick="fillHint(this)">Plan a trip to Bali</span>
@@ -402,11 +449,14 @@
 
     const el = document.createElement('div');
     el.id = 'booking-confirm-modal';
+    el.setAttribute('role', 'alertdialog');
+    el.setAttribute('aria-modal', 'true');
+    el.setAttribute('aria-labelledby', 'booking-modal-title');
     el.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:1000';
     el.innerHTML = `
       <div style="background:#fff;border-radius:18px;padding:28px 28px 22px;max-width:400px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,.25)">
         <div style="font-size:28px;margin-bottom:10px">${icon}</div>
-        <div style="font-size:17px;font-weight:800;color:#0f172a;margin-bottom:6px">${escapeHtml(title)}</div>
+        <div id="booking-modal-title" style="font-size:17px;font-weight:800;color:#0f172a;margin-bottom:6px">${escapeHtml(title)}</div>
         <div style="font-size:13px;color:#64748b;margin-bottom:4px">The agent is ready to complete this booking:</div>
         ${detailHtml}
         <div style="font-size:12px;color:#f43f5e;margin-top:12px;font-weight:600">⚠ This action may result in a real charge. Please review before confirming.</div>
@@ -425,6 +475,11 @@
 
     document.getElementById('booking-confirm-btn').onclick = () => respond(true);
     document.getElementById('booking-cancel-btn').onclick  = () => respond(false);
+
+    // Focus confirm button and add escape key to cancel
+    document.getElementById('booking-confirm-btn').focus();
+    function _escHandler(e) { if (e.key === 'Escape') { respond(false); document.removeEventListener('keydown', _escHandler); } }
+    document.addEventListener('keydown', _escHandler);
   }
 
   const messageQueue = [];
@@ -494,8 +549,34 @@
   const BEMOJI = { flights:'✈', hotels:'🏨', activities:'🗺', food:'🍽', transport:'🚗' };
 
   function toggleBoard() { boardOpen ? closeBoard() : openBoard(); }
-  function openBoard()  { boardOpen = true;  document.getElementById('board-panel').classList.add('open');    document.getElementById('board-toggle-btn').classList.add('active'); }
-  function closeBoard() { boardOpen = false; document.getElementById('board-panel').classList.remove('open'); document.getElementById('board-toggle-btn').classList.remove('active'); }
+  function openBoard()  {
+    boardOpen = true;
+    document.getElementById('board-panel').classList.add('open');
+    const btn = document.getElementById('board-toggle-btn');
+    btn.classList.add('active');
+    btn.setAttribute('aria-expanded', 'true');
+  }
+  function closeBoard() {
+    boardOpen = false;
+    document.getElementById('board-panel').classList.remove('open');
+    const btn = document.getElementById('board-toggle-btn');
+    btn.classList.remove('active');
+    btn.setAttribute('aria-expanded', 'false');
+  }
+
+  // ── Sidebar (mobile) ──
+  function toggleSidebar() {
+    const sb = document.getElementById('sidebar');
+    const open = sb.classList.toggle('open');
+    document.getElementById('sidebar-overlay').classList.toggle('visible', open);
+    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
+  function closeSidebar() {
+    document.getElementById('sidebar').classList.remove('open');
+    document.getElementById('sidebar-overlay').classList.remove('visible');
+    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', 'false');
+  }
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSidebar(); });
 
   function updateItinerary(data) {
     currentItinerary = JSON.parse(JSON.stringify(data));
@@ -523,7 +604,10 @@
   function renderBoard() {
     if (!currentItinerary) return;
     const it = currentItinerary;
-    document.getElementById('board-title').textContent = '✈ ' + (it.destination||'Your Trip');
+    const destLabel = (it.destinations && it.destinations.length > 1)
+      ? it.destinations.join(' → ')
+      : (it.destination || 'Your Trip');
+    document.getElementById('board-title').textContent = '✈ ' + destLabel;
     const ds = [it.start_date,it.end_date].filter(Boolean).map(d=>fmtDate(d)).join(' → ');
     const seasonHtml = renderSeasonBadge(it.season);
     document.getElementById('board-subtitle').innerHTML = escapeHtml(ds) + (seasonHtml ? '&nbsp;&nbsp;' + seasonHtml : '');
@@ -588,7 +672,20 @@
     return issues;
   }
 
-  function initDnD(){document.querySelectorAll('.itin-card[draggable="true"]').forEach(c=>{c.addEventListener('dragstart',onDS);c.addEventListener('dragend',onDE);});document.querySelectorAll('.day-drop-zone').forEach(z=>{z.addEventListener('dragover',onDO);z.addEventListener('dragleave',onDL);z.addEventListener('drop',onDrop);});}
+  function initDnD(){
+    document.querySelectorAll('.itin-card[draggable="true"]').forEach(c=>{
+      c.addEventListener('dragstart',onDS);
+      c.addEventListener('dragend',onDE);
+      c.addEventListener('touchstart',onTS,{passive:false});
+      c.addEventListener('touchmove',onTM,{passive:false});
+      c.addEventListener('touchend',onTE,{passive:false});
+    });
+    document.querySelectorAll('.day-drop-zone').forEach(z=>{
+      z.addEventListener('dragover',onDO);
+      z.addEventListener('dragleave',onDL);
+      z.addEventListener('drop',onDrop);
+    });
+  }
   function onDS(e){draggedCard={id:e.currentTarget.dataset.id,fromIdx:parseInt(e.currentTarget.dataset.idx)};e.currentTarget.classList.add('dragging');e.dataTransfer.effectAllowed='move';}
   function onDE(e){e.currentTarget.classList.remove('dragging');document.querySelectorAll('.day-drop-zone').forEach(z=>z.classList.remove('drag-over'));}
   function onDO(e){e.preventDefault();e.dataTransfer.dropEffect='move';e.currentTarget.classList.add('drag-over');}
@@ -607,6 +704,56 @@
     localStorage.setItem('itin_'+sessionId,JSON.stringify(currentItinerary));renderBoard();
     persistItinerary();
     showToast('"'+moved.title+'" moved to '+(toDay.label||'Day '+(toIdx+1)));draggedCard=null;
+  }
+
+  // ── Touch drag-and-drop ──
+  let _touchClone = null, _touchCard = null;
+  function onTS(e){
+    if(e.touches.length!==1)return;
+    const card=e.currentTarget;
+    _touchCard={id:card.dataset.id,fromIdx:parseInt(card.dataset.idx)};
+    const t=e.touches[0];
+    _touchClone=card.cloneNode(true);
+    _touchClone.style.cssText='position:fixed;top:'+t.clientY+'px;left:'+t.clientX+'px;width:'+card.offsetWidth+'px;opacity:.8;pointer-events:none;z-index:9999;transform:translate(-50%,-50%)';
+    document.body.appendChild(_touchClone);
+    card.classList.add('dragging');
+  }
+  function onTM(e){
+    e.preventDefault();
+    if(!_touchClone)return;
+    const t=e.touches[0];
+    _touchClone.style.top=t.clientY+'px';
+    _touchClone.style.left=t.clientX+'px';
+    document.querySelectorAll('.day-drop-zone').forEach(z=>{
+      const r=z.getBoundingClientRect();
+      z.classList.toggle('drag-over',t.clientX>=r.left&&t.clientX<=r.right&&t.clientY>=r.top&&t.clientY<=r.bottom);
+    });
+  }
+  function onTE(e){
+    if(!_touchClone||!_touchCard||!currentItinerary)return;
+    if(_touchClone.parentNode)_touchClone.parentNode.removeChild(_touchClone);
+    _touchClone=null;
+    document.querySelectorAll('.itin-card.dragging').forEach(c=>c.classList.remove('dragging'));
+    const t=e.changedTouches[0];
+    let toZone=null;
+    document.querySelectorAll('.day-drop-zone').forEach(z=>{
+      z.classList.remove('drag-over');
+      const r=z.getBoundingClientRect();
+      if(t.clientX>=r.left&&t.clientX<=r.right&&t.clientY>=r.top&&t.clientY<=r.bottom)toZone=z;
+    });
+    if(!toZone){_touchCard=null;return;}
+    const toIdx=parseInt(toZone.dataset.idx);
+    if(_touchCard.fromIdx===toIdx){_touchCard=null;return;}
+    const fromDay=currentItinerary.days[_touchCard.fromIdx],toDay=currentItinerary.days[toIdx];
+    if(!fromDay||!toDay){_touchCard=null;return;}
+    const idx=fromDay.items.findIndex(i=>i.id===_touchCard.id);
+    if(idx===-1){_touchCard=null;return;}
+    const[moved]=fromDay.items.splice(idx,1);toDay.items.push(moved);
+    currentItinerary.allIssues=[...(currentItinerary.issues||[]),...detectConflicts(currentItinerary.days)];
+    localStorage.setItem('itin_'+sessionId,JSON.stringify(currentItinerary));renderBoard();
+    persistItinerary();
+    showToast('"'+moved.title+'" moved to '+(toDay.label||'Day '+(toIdx+1)));
+    _touchCard=null;
   }
 
   function wIcon(c){c=(c||'').toLowerCase();if(c.includes('thunder'))return'⛈';if(c.includes('snow')||c.includes('blizzard'))return'❄️';if(c.includes('sleet')||c.includes('hail'))return'🌨';if(c.includes('rain')||c.includes('shower')||c.includes('drizzle'))return'🌧';if(c.includes('fog')||c.includes('mist'))return'🌫';if(c.includes('overcast'))return'☁️';if(c.includes('cloud')||c.includes('partly'))return'⛅';if(c.includes('sun')||c.includes('clear')||c.includes('mainly'))return'☀️';return'🌤';}
