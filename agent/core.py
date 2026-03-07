@@ -288,7 +288,15 @@ class TravelAgent:
     def _build_system_prompt(self) -> str:
         prefs_context = self._prefs.as_context_string()
         trips_context = self._trips.as_context_string()
-        return f"{SYSTEM_PROMPT}\n\n{prefs_context}\n\n{trips_context}"
+        itinerary_context = ""
+        if self._current_trip:
+            itinerary_context = (
+                "\n\n## Current Trip Board\n"
+                "The following itinerary is currently loaded on the user's trip board. "
+                "You can reference, modify, or extend it based on the user's requests.\n"
+                f"```json\n{json.dumps(self._current_trip, indent=2)}\n```"
+            )
+        return f"{SYSTEM_PROMPT}\n\n{prefs_context}\n\n{trips_context}{itinerary_context}"
 
     def _dispatch_tool(self, name: str, inputs: dict) -> dict:
         """Route a tool call to the correct implementation."""
