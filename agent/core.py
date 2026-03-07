@@ -15,6 +15,31 @@ from typing import Callable
 import anthropic
 
 
+def _sanitize_conversation(conversation: list[dict]) -> list[dict]:
+    """Remove trailing assistant messages whose tool_use blocks have no tool_result.
+
+    If the server crashed or a tool raised an exception between appending the
+    assistant message and appending the tool results, the stored conversation
+    ends with an orphaned tool_use block.  The Claude API rejects that with a
+    400 error, so we strip those messages before sending.
+    """
+    result = list(conversation)
+    while result:
+        last = result[-1]
+        if last.get("role") != "assistant":
+            break
+        content = last.get("content", [])
+        has_tool_use = any(
+            isinstance(b, dict) and b.get("type") == "tool_use"
+            for b in (content if isinstance(content, list) else [])
+        )
+        if not has_tool_use:
+            break
+        # This assistant message has tool_use blocks with no following tool_result.
+        result.pop()
+    return result
+
+
 def _blocks_to_dicts(content) -> list[dict] | str:
     """Convert Anthropic SDK content blocks to plain JSON-serialisable dicts.
 
@@ -150,7 +175,10 @@ class TravelAgent:
                             "label": TOOL_LABELS.get(block.name, f"Using {block.name}..."),
                         })
 
-                    result = self._dispatch_tool(block.name, block.input)
+                    try:
+                        result = self._dispatch_tool(block.name, block.input)
+                    except Exception as e:
+                        result = {"status": "error", "message": str(e)}
 
                     if progress_callback:
                         progress_callback("tool_done", {"tool": block.name})
@@ -161,7 +189,12 @@ class TravelAgent:
                         "content": json.dumps(result),
                     })
 
-                self._conversation.append({"role": "user", "content": tool_results})
+                # Always append tool_results so the conversation stays valid.
+                # An empty tool_results list here would mean stop_reason was
+                # "tool_use" but no tool_use blocks were present — shouldn't
+                # happen, but guard anyway to avoid an orphaned assistant message.
+                if tool_results:
+                    self._conversation.append({"role": "user", "content": tool_results})
                 continue
 
             break
@@ -180,8 +213,8 @@ class TravelAgent:
         return self._conversation
 
     def load_conversation(self, conversation: list[dict]) -> None:
-        """Restore a previously saved conversation."""
-        self._conversation = conversation
+        """Restore a previously saved conversation, stripping any incomplete tool turns."""
+        self._conversation = _sanitize_conversation(conversation)
 
     def get_itinerary(self) -> dict | None:
         """Return the most recent itinerary pushed via update_itinerary."""
