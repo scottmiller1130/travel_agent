@@ -277,7 +277,9 @@
     #board-panel.open { width: 470px; }
     #board-inner { width: 470px; display: flex; flex-direction: column; height: 100%; overflow: hidden; }
     #board-header { padding: 15px 18px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; background: linear-gradient(135deg, #e0f2fe 0%, #ccfbf1 100%); }
-    #board-title { font-size: 16px; font-weight: 800; background: linear-gradient(135deg, var(--sky-d), var(--teal)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+    #board-title { font-size: 16px; font-weight: 800; background: linear-gradient(135deg, var(--sky-d), var(--teal)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; cursor: pointer; }
+    #board-title:hover::after { content: ' ✏'; font-size: 11px; -webkit-text-fill-color: var(--text-4); }
+    #board-title-input { font-size: 16px; font-weight: 800; color: var(--sky-d); border: 1.5px solid var(--sky); border-radius: 7px; padding: 1px 8px; outline: none; background: rgba(255,255,255,.85); width: 100%; max-width: 240px; }
     #board-subtitle { font-size: 11px; color: var(--text-3); margin-top: 2px; }
     #board-close { background: rgba(255,255,255,.7); border: 1.5px solid var(--border); color: var(--text-3); font-size: 18px; cursor: pointer; padding: 3px 8px; border-radius: 8px; line-height: 1; transition: all .15s; }
     #board-close:hover { color: var(--text); background: #fff; }
@@ -529,7 +531,7 @@
   <div id="board-inner">
     <div id="board-header">
       <div>
-        <div id="board-title">Trip Board</div>
+        <div id="board-title" onclick="startBoardRename()" title="Click to rename">Trip Board</div>
         <div id="board-subtitle">Plan a trip to see your itinerary here</div>
       </div>
       <button id="board-close" onclick="closeBoard()">×</button>
@@ -787,13 +789,42 @@
     const tip = [season.crowd_level, season.price_context].filter(Boolean).join(' · ');
     return '<span class="season-badge ' + cls + '" title="' + escapeHtml(tip) + '">' + emoji + ' ' + escapeHtml(label) + '</span>';
   }
+  let boardCustomName = null;
+
+  function startBoardRename() {
+    const titleEl = document.getElementById('board-title');
+    const current = titleEl.textContent;
+    const input = document.createElement('input');
+    input.id = 'board-title-input';
+    input.value = current;
+    input.setAttribute('aria-label', 'Board name');
+    titleEl.replaceWith(input);
+    input.select();
+    function commit() {
+      const val = input.value.trim();
+      boardCustomName = val || null;
+      const newEl = document.createElement('div');
+      newEl.id = 'board-title';
+      newEl.title = 'Click to rename';
+      newEl.onclick = startBoardRename;
+      newEl.textContent = boardCustomName || current;
+      input.replaceWith(newEl);
+    }
+    input.addEventListener('blur', commit);
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+      if (e.key === 'Escape') { boardCustomName = boardCustomName; input.value = current; input.blur(); }
+    });
+  }
+
   function renderBoard() {
     if (!currentItinerary) return;
     const it = currentItinerary;
     const destLabel = (it.destinations && it.destinations.length > 1)
       ? it.destinations.join(' → ')
       : (it.destination || 'Your Trip');
-    document.getElementById('board-title').textContent = '✈ ' + destLabel;
+    const titleEl = document.getElementById('board-title');
+    if (titleEl) titleEl.textContent = boardCustomName || ('✈ ' + destLabel);
     const ds = [it.start_date,it.end_date].filter(Boolean).map(d=>fmtDate(d)).join(' → ');
     const seasonHtml = renderSeasonBadge(it.season);
     document.getElementById('board-subtitle').innerHTML = escapeHtml(ds) + (seasonHtml ? '&nbsp;&nbsp;' + seasonHtml : '');
