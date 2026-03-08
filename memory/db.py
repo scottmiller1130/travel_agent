@@ -18,7 +18,7 @@ def _get_pool() -> ThreadedConnectionPool:
     global _pool
     if _pool is None:
         url = os.environ["DATABASE_URL"]
-        _pool = ThreadedConnectionPool(1, 10, url)
+        _pool = ThreadedConnectionPool(2, 20, url)
     return _pool
 
 
