@@ -141,17 +141,25 @@ Tone: Concise, knowledgeable, personalized. Prefer short bullet answers over lon
 
 
 class TravelAgent:
-    def __init__(self, confirm_callback: Callable[[str], bool] | None = None):
+    def __init__(
+        self,
+        confirm_callback: Callable[[str], bool] | None = None,
+        user_id: str | None = None,
+    ):
         """
         Args:
             confirm_callback: Called before any booking action. Receives a description
                               of the action and returns True if user confirms, False otherwise.
                               If None, bookings are blocked by default.
+            user_id: Clerk user ID for per-user data isolation.
+                     When set, preferences and trips are scoped to this user only.
+                     When None, operates in anonymous/global mode (backward compat).
         """
         api_key = os.getenv("ANTHROPIC_API_KEY")
         if not api_key:
             raise ValueError("ANTHROPIC_API_KEY is not set. Please add it to your Railway environment variables.")
         self._client = anthropic.Anthropic(api_key=api_key)
+        self._user_id: str | None = user_id
         self._prefs = PreferenceStore()
         self._trips = TripStore()
         self._confirm = confirm_callback or (lambda msg: False)
@@ -286,8 +294,8 @@ class TravelAgent:
         self._current_trip = itinerary or {}
 
     def _build_system_prompt(self) -> str:
-        prefs_context = self._prefs.as_context_string()
-        trips_context = self._trips.as_context_string()
+        prefs_context = self._prefs.as_context_string(user_id=self._user_id)
+        trips_context = self._trips.as_context_string(user_id=self._user_id)
         itinerary_context = ""
         if self._current_trip:
             itinerary_context = (
@@ -329,7 +337,7 @@ class TravelAgent:
             "add_to_calendar": lambda i: add_to_calendar(**i),
             "web_search": lambda i: web_search(**i),
             "save_preference": self._handle_save_preference,
-            "get_preferences": lambda i: self._prefs.get_all(),
+            "get_preferences": lambda i: self._prefs.get_all(user_id=self._user_id),
             "save_trip": self._handle_save_trip,
             "get_trips": self._handle_get_trips,
             "update_itinerary":    self._handle_update_itinerary,
@@ -349,12 +357,12 @@ class TravelAgent:
     def _handle_save_preference(self, inputs: dict) -> dict:
         key = inputs["key"]
         value = inputs["value"]
-        self._prefs.set(key, value)
+        self._prefs.set(key, value, user_id=self._user_id)
         return {"status": "success", "message": f"Preference '{key}' saved: {value}"}
 
     def _handle_save_trip(self, inputs: dict) -> dict:
         trip = inputs["trip"]
-        trip_id = self._trips.save_trip(trip)
+        trip_id = self._trips.save_trip(trip, user_id=self._user_id)
         self._current_trip = trip
         return {"status": "success", "trip_id": trip_id, "message": "Trip saved."}
 
@@ -369,7 +377,7 @@ class TravelAgent:
                 import hashlib
                 key = f"{trip_copy.get('destination', '')}-{trip_copy.get('start_date', '')}"
                 trip_copy["id"] = "TRIP-" + hashlib.md5(key.encode()).hexdigest()[:10]
-            self._trips.save_trip(trip_copy)
+            self._trips.save_trip(trip_copy, user_id=self._user_id)
         except Exception:
             pass  # never let a save failure break the itinerary update
         if self._progress_callback:
@@ -390,7 +398,7 @@ class TravelAgent:
 
     def _handle_get_trips(self, inputs: dict) -> dict:
         status = inputs.get("status")
-        trips = self._trips.get_all_trips(status=status)
+        trips = self._trips.get_all_trips(status=status, user_id=self._user_id)
         return {"status": "success", "trips": trips, "count": len(trips)}
 
     @staticmethod

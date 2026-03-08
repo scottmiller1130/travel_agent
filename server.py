@@ -222,30 +222,29 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 app.add_middleware(SecurityHeadersMiddleware)
 
 # ---------------------------------------------------------------------------
-# Rate limiting — 20 requests/min per IP on /api/chat
+# Rate limiting — per-user (authenticated) or per-IP (anonymous)
 # ---------------------------------------------------------------------------
 _rate_limit_store: dict[str, list[float]] = defaultdict(list)
 _rate_lock = threading.Lock()
-RATE_LIMIT = 20
-RATE_WINDOW = 60        # seconds
-_MAX_RATE_IPS = 10_000  # evict stale IPs before the dict grows beyond this
+RATE_LIMIT_ANON = 20   # requests/min per IP (anonymous)
+RATE_LIMIT_AUTH = 40   # requests/min per user_id (authenticated, higher trust)
+RATE_WINDOW = 60
+_MAX_RATE_KEYS = 10_000
 
 
-def _check_rate_limit(ip: str) -> bool:
-    """Return True if allowed, False if rate limit exceeded."""
+def _check_rate_limit(key: str, limit: int = RATE_LIMIT_ANON) -> bool:
+    """Return True if allowed. Key should be user_id when authenticated, IP otherwise."""
     now = time.monotonic()
     with _rate_lock:
-        # Evict IPs whose last request is older than 2× the window to bound memory.
-        if len(_rate_limit_store) > _MAX_RATE_IPS:
+        if len(_rate_limit_store) > _MAX_RATE_KEYS:
             cutoff = now - RATE_WINDOW * 2
             stale = [k for k, v in _rate_limit_store.items() if not v or max(v) < cutoff]
             for k in stale:
                 del _rate_limit_store[k]
-        timestamps = _rate_limit_store[ip]
-        _rate_limit_store[ip] = [t for t in timestamps if now - t < RATE_WINDOW]
-        if len(_rate_limit_store[ip]) >= RATE_LIMIT:
+        _rate_limit_store[key] = [t for t in _rate_limit_store[key] if now - t < RATE_WINDOW]
+        if len(_rate_limit_store[key]) >= limit:
             return False
-        _rate_limit_store[ip].append(now)
+        _rate_limit_store[key].append(now)
         return True
 
 # ---------------------------------------------------------------------------
@@ -259,13 +258,20 @@ _agent_cache: dict[str, TravelAgent] = {}
 _cache_lock = threading.Lock()
 
 
-def _get_agent(session_id: str) -> TravelAgent:
+def _get_agent(session_id: str, user_id: str | None = None) -> TravelAgent:
     """Return a live TravelAgent for the session, rehydrating from DB if needed."""
     with _cache_lock:
         if session_id in _agent_cache:
-            return _agent_cache[session_id]
+            agent = _agent_cache[session_id]
+            # Keep user_id in sync if it was just established (e.g. user logged in)
+            if user_id and not agent._user_id:
+                agent._user_id = user_id
+            return agent
 
-        agent = TravelAgent(confirm_callback=_make_confirm_callback(session_id))
+        agent = TravelAgent(
+            confirm_callback=_make_confirm_callback(session_id),
+            user_id=user_id,
+        )
 
         # Restore persisted state if available
         saved = _session_store.load(session_id)
@@ -275,6 +281,15 @@ def _get_agent(session_id: str) -> TravelAgent:
 
         _agent_cache[session_id] = agent
         return agent
+
+
+def _require_session_access(session_id: str, auth_user: dict | None) -> None:
+    """Raise 403/404 if the session doesn't exist or the authenticated user doesn't own it."""
+    if not _session_store.exists(session_id):
+        raise HTTPException(status_code=404, detail="Session not found.")
+    if auth_user and auth_user.get("user_id"):
+        if not _session_store.owns(session_id, auth_user["user_id"]):
+            raise HTTPException(status_code=403, detail="Access denied.")
 
 
 def _save_session(session_id: str, agent: TravelAgent, itinerary=None) -> None:
@@ -321,14 +336,21 @@ class ChatRequest(BaseModel):
 
 @app.post("/api/chat/{session_id}")
 async def chat(session_id: str, body: ChatRequest, request: Request):
+    auth_user = _user_from_request(request)
+    uid = auth_user["user_id"] if auth_user else None
+
+    # Rate limit: use user_id when authenticated (higher limit), IP otherwise
     client_ip = request.client.host if request.client else "unknown"
-    if not _check_rate_limit(client_ip):
+    rl_key   = uid if uid else client_ip
+    rl_limit = RATE_LIMIT_AUTH if uid else RATE_LIMIT_ANON
+    if not _check_rate_limit(rl_key, rl_limit):
         raise HTTPException(status_code=429, detail="Too many requests. Please wait a moment.")
 
+    # Session ownership check
+    _require_session_access(session_id, auth_user)
+
     # Enforce plan limits for authenticated users
-    auth_user = _user_from_request(request)
-    if auth_user and auth_user.get("user_id"):
-        uid = auth_user["user_id"]
+    if uid:
         user_rec = _user_store.get(uid)
         if user_rec:
             usage = _user_store.get_usage(uid)
@@ -343,7 +365,7 @@ async def chat(session_id: str, body: ChatRequest, request: Request):
             _user_store.increment_chat(uid)
 
     try:
-        agent = _get_agent(session_id)
+        agent = _get_agent(session_id, user_id=uid)
     except Exception as startup_err:
         err_msg = str(startup_err)
 
@@ -427,10 +449,10 @@ class ItineraryUpdate(BaseModel):
 
 
 @app.delete("/api/itinerary/{session_id}")
-async def clear_itinerary(session_id: str):
+async def clear_itinerary(session_id: str, request: Request):
     """Clear the current itinerary for a session."""
-    if not _session_store.exists(session_id):
-        raise HTTPException(status_code=403, detail="Unknown session.")
+    auth_user = _user_from_request(request)
+    _require_session_access(session_id, auth_user)
     _session_store.clear_itinerary(session_id)
     with _cache_lock:
         if session_id in _agent_cache:
@@ -439,8 +461,10 @@ async def clear_itinerary(session_id: str):
 
 
 @app.post("/api/itinerary/{session_id}")
-async def save_itinerary(session_id: str, body: ItineraryUpdate):
+async def save_itinerary(session_id: str, body: ItineraryUpdate, request: Request):
     """Persist an itinerary from the frontend (drag-and-drop reorder, import)."""
+    auth_user = _user_from_request(request)
+    _require_session_access(session_id, auth_user)
     _session_store.save_itinerary(session_id, body.itinerary)
     # Also update the live agent if it's in cache
     with _cache_lock:
@@ -1127,7 +1151,9 @@ async def delete_workspace(workspace_id: str, request: Request):
 # Reset conversation (keeps trips and preferences)
 # ---------------------------------------------------------------------------
 @app.post("/api/reset/{session_id}")
-async def reset(session_id: str):
+async def reset(session_id: str, request: Request):
+    auth_user = _user_from_request(request)
+    _require_session_access(session_id, auth_user)
     with _cache_lock:
         if session_id in _agent_cache:
             _agent_cache[session_id].reset()
@@ -1159,11 +1185,32 @@ async def booking_cancel(session_id: str):
 
 
 # ---------------------------------------------------------------------------
-# Health check — returns minimal info to avoid leaking configuration
+# Health check — component-level status without leaking secrets
 # ---------------------------------------------------------------------------
 @app.get("/api/health")
 async def health():
-    return {"status": "ok"}
+    import httpx as _hx
+    components: dict[str, str] = {}
+
+    # Database
+    try:
+        from memory.db import get_conn
+        with get_conn() as conn:
+            conn.cursor().execute("SELECT 1")
+        components["database"] = "ok"
+    except Exception:
+        components["database"] = "error"
+
+    # Anthropic API (lightweight — just check key is set, no real call)
+    components["anthropic"] = "ok" if os.getenv("ANTHROPIC_API_KEY") else "unconfigured"
+
+    # Optional services
+    components["serpapi"]  = "configured" if os.getenv("SERPAPI_KEY")  else "not_configured"
+    components["amadeus"]  = "configured" if os.getenv("AMADEUS_CLIENT_ID") else "not_configured"
+    components["clerk"]    = "configured" if os.getenv("CLERK_JWKS_URL") else "not_configured"
+
+    overall = "ok" if components["database"] == "ok" else "degraded"
+    return JSONResponse({"status": overall, "components": components})
 
 
 # ---------------------------------------------------------------------------
