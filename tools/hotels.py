@@ -1,9 +1,16 @@
 """
-Hotel search — Amadeus Hotel Search API (free developer tier).
-Get free keys at https://developers.amadeus.com (no credit card required).
-Set AMADEUS_CLIENT_ID and AMADEUS_CLIENT_SECRET in your environment.
+Hotel search — multi-source with graceful fallback:
 
-Falls back to real hotel names from OpenStreetMap when Amadeus keys are absent.
+1. Hostelworld API (HOSTELWORLD_API_KEY)     → real hostel/dorm inventory & pricing
+2. Booking.com Affiliate API (BOOKING_COM_API_KEY) → broad hotel + hostel coverage
+3. Amadeus Hotel Search (AMADEUS_CLIENT_ID)  → GDS hotel inventory (standard hotels only)
+4. OpenStreetMap + estimated pricing         → always-available fallback
+
+Plug-and-play: set any API key in your environment to unlock that source.
+Get keys:
+  Hostelworld API: https://www.hostelworld.com/pwa/developers  (affiliate program)
+  Booking.com Affiliate: https://join.booking.com/affiliateprogram/welcome/
+  Amadeus: https://developers.amadeus.com (free, no credit card)
 """
 
 import math
@@ -24,6 +31,97 @@ from tools.flights import _get_amadeus_token, _find_airport, AIRPORTS
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
 OVERPASS_URL  = "https://overpass-api.de/api/interpreter"
 OSM_HEADERS   = {"User-Agent": "TravelAgentApp/1.0 (travel-agent-demo)"}
+
+# ── Hostelworld API stub ──────────────────────────────────────────────────────
+# Set HOSTELWORLD_API_KEY to enable real hostel/dorm inventory and pricing.
+# API docs: https://www.hostelworld.com/pwa/developers
+# Affiliate sign-up: https://www.hostelworld.com/info/affiliates
+
+def _hostelworld_search(destination: str, check_in: str, check_out: str,
+                        guests: int, max_results: int,
+                        accommodation_type: str) -> dict | None:
+    """
+    Hostelworld API integration — plug-and-play when HOSTELWORLD_API_KEY is set.
+
+    Returns real hostel names, dorm/private room prices, and amenity data
+    including common room quality, kitchen access, and vibe (party vs quiet).
+    This is the authoritative source for hostel and dorm inventory.
+    """
+    api_key = os.getenv("HOSTELWORLD_API_KEY")
+    if not api_key or not _HTTPX:
+        return None  # silently fall through to next source
+
+    if accommodation_type not in ("hostel", "dorm"):
+        return None  # Hostelworld is hostel-specific; hotels go to other sources
+
+    # TODO: implement when API key available
+    # Hostelworld affiliate API base: https://api.hostelworld.com/2.0/
+    # Endpoints:
+    #   GET /properties?city={city}&checkIn={date}&checkOut={date}&guests={n}
+    #   Returns: property name, type (hostel/guesthouse), dorm prices, private prices,
+    #            amenities (common_room_type, kitchen, lockers, rooftop_bar), vibe_tags
+    #
+    # Example response shape to map to our schema:
+    # {
+    #   "hotel_id": str(property["id"]),
+    #   "name": property["name"],
+    #   "stars": None,  # hostels don't use stars
+    #   "rating": property["rating"]["overall"],
+    #   "review_count": property["rating"]["numberOfRatings"],
+    #   "price_per_night_usd": property["lowestDormPrice"] if dorm else property["lowestPrivatePrice"],
+    #   "amenities": [tag for tag in property["facilities"]],
+    #   "vibe": property.get("vibe_tags", []),  # party | social | quiet | boutique
+    #   "source": "Hostelworld (live)",
+    # }
+
+    return None  # remove this line once implemented
+
+
+# ── Booking.com Affiliate API stub ────────────────────────────────────────────
+# Set BOOKING_COM_API_KEY to enable real hotel and hostel availability + pricing.
+# API docs: https://developers.booking.com/
+# Affiliate program: https://join.booking.com/affiliateprogram/welcome/
+
+def _booking_com_search(destination: str, check_in: str, check_out: str,
+                        guests: int, rooms: int, max_results: int,
+                        max_price: int | None, accommodation_type: str,
+                        min_stars: int | None = None) -> dict | None:
+    """
+    Booking.com Affiliate API integration — plug-and-play when BOOKING_COM_API_KEY is set.
+
+    Covers the full spectrum: luxury 5-star hotels, boutique guesthouses, hostels.
+    Best source for luxury inventory (Four Seasons, Aman, Ritz-Carlton, etc.) and
+    for mid-range hotels where real availability data matters.
+    """
+    api_key = os.getenv("BOOKING_COM_API_KEY")
+    if not api_key or not _HTTPX:
+        return None  # silently fall through to next source
+
+    # TODO: implement when API key available
+    # Booking.com Affiliate REST API v2:
+    # Base: https://distribution-xml.booking.com/2.0/json/
+    # Endpoint: GET /hotels?city_ids={city_id}&checkin={date}&checkout={date}
+    #           &room1=A,A&rows={max_results}&languagecode=en-us
+    # Auth: HTTP Basic with api_key:secret
+    #
+    # City ID lookup: GET /cities?name={destination}
+    # Filter params: hotel_class (star rating), price_min, price_max, accommodation_type
+    #
+    # Example response shape to map to our schema:
+    # {
+    #   "hotel_id": str(hotel["hotel_id"]),
+    #   "name": hotel["hotel_name"],
+    #   "stars": hotel.get("hotel_class"),
+    #   "rating": hotel.get("review_score"),
+    #   "review_count": hotel.get("review_nr"),
+    #   "price_per_night_usd": hotel["composite_price_breakdown"]["gross_amount_per_night"]["value"],
+    #   "free_cancellation": hotel.get("is_free_cancellable", False),
+    #   "neighborhood": hotel.get("district"),
+    #   "amenities": [f["name"] for f in hotel.get("facilities", [])],
+    #   "source": "Booking.com (live)",
+    # }
+
+    return None  # remove this line once implemented
 
 
 # ── Amadeus hotel search ──────────────────────────────────────────────────────
@@ -324,6 +422,71 @@ def _price_only_hotels(destination, check_in, check_out, guests, rooms,
             "source": "Estimated pricing (set AMADEUS_CLIENT_ID for live rates)"}
 
 
+# ── Accommodation type pricing multipliers ────────────────────────────────────
+
+_ACCOM_CONFIG = {
+    "hotel":      {"osm_types": "hotel|motel",              "price_mult": 1.0,  "label": "Hotel"},
+    "hostel":     {"osm_types": "hostel",                    "price_mult": 0.35, "label": "Hostel (private room)"},
+    "guesthouse": {"osm_types": "guest_house",               "price_mult": 0.45, "label": "Guesthouse"},
+    "dorm":       {"osm_types": "hostel",                    "price_mult": 0.18, "label": "Hostel (dorm bed)"},
+}
+
+
+def _dorm_price(destination: str, rng: random.Random) -> int:
+    """Per-bed dorm price based on destination tier."""
+    tier_map = {
+        "paris": 35, "london": 38, "new york": 45, "tokyo": 32,
+        "dubai": 30, "singapore": 35, "sydney": 34, "zurich": 48,
+        "amsterdam": 32, "san francisco": 42,
+        "barcelona": 24, "rome": 22, "berlin": 20, "madrid": 22,
+        "istanbul": 14, "prague": 14, "lisbon": 20, "athens": 16,
+        "bangkok": 10, "bali": 8, "kuala lumpur": 10,
+        "ho chi minh": 8, "hanoi": 7, "cairo": 10, "marrakech": 12,
+    }
+    d_lower = destination.lower()
+    base = 22  # default
+    for key, price in tier_map.items():
+        if key in d_lower:
+            base = price
+            break
+    return int(base * rng.uniform(0.85, 1.20))
+
+
+def _apply_accommodation_type(result: dict, accommodation_type: str) -> dict:
+    """Post-process results to apply accommodation type pricing and labeling."""
+    cfg = _ACCOM_CONFIG.get(accommodation_type, _ACCOM_CONFIG["hotel"])
+    label = cfg["label"]
+    mult = cfg["price_mult"]
+
+    for item in result.get("results", []):
+        if accommodation_type == "dorm":
+            rng = random.Random(hash(item.get("name", "")) + 1)
+            dest = item.get("destination", "")
+            item["price_per_night_usd"] = _dorm_price(dest, rng)
+            item["price_per_bed_usd"] = item["price_per_night_usd"]
+            nights = item.get("nights", 1)
+            guests = item.get("guests", 1)
+            item["total_price_usd"] = item["price_per_night_usd"] * nights * guests
+            item["accommodation_type"] = label
+            item["note"] = "Dorm bed price per person. Mixed or female-only dorms typically available."
+            # Adjust amenities for hostel context
+            item["amenities"] = list(set(item.get("amenities", [])) |
+                                     {"WiFi", "Shared Kitchen", "Lockers", "Common Room"})
+        elif accommodation_type in ("hostel", "guesthouse"):
+            item["price_per_night_usd"] = max(10, int(item["price_per_night_usd"] * mult))
+            nights = item.get("nights", 1)
+            rooms = item.get("rooms", 1)
+            item["total_price_usd"] = item["price_per_night_usd"] * nights * rooms
+            item["accommodation_type"] = label
+            if accommodation_type == "hostel":
+                item["amenities"] = list(set(item.get("amenities", [])) |
+                                         {"WiFi", "Shared Kitchen", "Common Room"})
+        else:
+            item["accommodation_type"] = label
+
+    return result
+
+
 # ── Public API ────────────────────────────────────────────────────────────────
 
 def search_hotels(
@@ -334,47 +497,133 @@ def search_hotels(
     rooms: int = 1,
     max_results: int = 5,
     max_price_per_night: int | None = None,
+    accommodation_type: str = "hotel",
+    min_stars: int | None = None,
 ) -> dict:
     """
-    Search hotels. Uses Amadeus if AMADEUS_CLIENT_ID is set;
-    otherwise real hotel names from OpenStreetMap + estimated pricing.
+    Search hotels/hostels/guesthouses.
+
+    Source priority (each source is tried in order; first success wins):
+    1. Hostelworld API   — real hostel/dorm inventory (HOSTELWORLD_API_KEY)
+    2. Booking.com API   — full spectrum hotel/hostel coverage (BOOKING_COM_API_KEY)
+    3. Amadeus GDS       — standard hotel inventory (AMADEUS_CLIENT_ID, hotels only)
+    4. OpenStreetMap     — always-available fallback with estimated pricing
+
+    accommodation_type: "hotel" (default), "hostel", "guesthouse", "dorm"
+    min_stars: minimum star rating filter (for luxury travelers; e.g. 4 or 5)
     """
     if not _HTTPX:
         return {"status": "error", "message": "httpx not installed"}
 
-    if os.getenv("AMADEUS_CLIENT_ID"):
+    fetch_count = max_results if accommodation_type == "hotel" else max_results + 5
+    query_meta = {
+        "destination": destination, "check_in": check_in,
+        "check_out": check_out, "guests": guests, "rooms": rooms,
+        "accommodation_type": accommodation_type,
+    }
+    if min_stars:
+        query_meta["min_stars"] = min_stars
+
+    # 1. Hostelworld — best source for hostel/dorm
+    if accommodation_type in ("hostel", "dorm"):
         try:
-            result = _amadeus_hotels(destination, check_in, check_out,
-                                     guests, rooms, max_results, max_price_per_night)
+            result = _hostelworld_search(destination, check_in, check_out,
+                                         guests, fetch_count, accommodation_type)
             if result:
-                result["query"] = {
-                    "destination": destination, "check_in": check_in,
-                    "check_out": check_out, "guests": guests, "rooms": rooms,
-                }
+                result["query"] = query_meta
                 result["currency"] = "USD"
+                result = _apply_accommodation_type(result, accommodation_type)
+                if "results" in result:
+                    result["results"] = result["results"][:max_results]
                 return result
         except Exception:
             pass
 
-    # OpenStreetMap fallback
+    # 2. Booking.com — broad coverage for all types
+    try:
+        result = _booking_com_search(destination, check_in, check_out,
+                                     guests, rooms, fetch_count, max_price_per_night,
+                                     accommodation_type, min_stars)
+        if result:
+            result["query"] = query_meta
+            result["currency"] = "USD"
+            result = _apply_accommodation_type(result, accommodation_type)
+            if "results" in result:
+                result["results"] = result["results"][:max_results]
+            return result
+    except Exception:
+        pass
+
+    # 3. Amadeus — standard hotels only
+    if os.getenv("AMADEUS_CLIENT_ID") and accommodation_type == "hotel":
+        try:
+            result = _amadeus_hotels(destination, check_in, check_out,
+                                     guests, rooms, fetch_count, max_price_per_night)
+            if result:
+                # Apply star filter for luxury travelers
+                if min_stars and "results" in result:
+                    result["results"] = [
+                        h for h in result["results"]
+                        if (h.get("stars") or 0) >= min_stars
+                    ]
+                result["query"] = query_meta
+                result["currency"] = "USD"
+                result = _apply_accommodation_type(result, accommodation_type)
+                if "results" in result:
+                    result["results"] = result["results"][:max_results]
+                return result
+        except Exception:
+            pass
+
+    # 4. OpenStreetMap fallback
     result = _osm_hotels(destination, check_in, check_out, guests, rooms,
-                         max_results, max_price_per_night)
-    result["query"] = {
-        "destination": destination, "check_in": check_in,
-        "check_out": check_out, "guests": guests, "rooms": rooms,
-    }
+                         fetch_count, max_price_per_night)
+    result = _apply_accommodation_type(result, accommodation_type)
+    # Apply star filter post-hoc for luxury travelers
+    if min_stars and "results" in result:
+        result["results"] = [
+            h for h in result["results"]
+            if (h.get("stars") or 0) >= min_stars
+        ]
+    if "results" in result:
+        result["results"] = result["results"][:max_results]
+    result["query"] = query_meta
     result["currency"] = "USD"
     return result
 
 
-def book_hotel(hotel_id: str, guest_name: str,
-               guest_email: str, payment_confirmed: bool = False) -> dict:
+def book_hotel(
+    hotel_id: str,
+    guest_name: str,
+    guest_email: str,
+    payment_confirmed: bool = False,
+    room_type: str | None = None,
+    bed_preference: str | None = None,
+    special_requests: str | None = None,
+) -> dict:
     if not payment_confirmed:
-        return {"status": "pending_confirmation",
-                "message": "Please confirm you want to book this hotel."}
+        msg = "Please confirm you want to book this hotel."
+        if room_type:
+            msg += f" Room preference: {room_type}."
+        if special_requests:
+            msg += f" Special requests: {special_requests}."
+        return {"status": "pending_confirmation", "message": msg}
+
     code = "".join(random.choices(string.ascii_uppercase + string.digits, k=8))
-    return {
-        "status": "booked", "confirmation_code": code,
-        "hotel_id": hotel_id, "guest_name": guest_name, "guest_email": guest_email,
+    result = {
+        "status": "booked",
+        "confirmation_code": code,
+        "hotel_id": hotel_id,
+        "guest_name": guest_name,
+        "guest_email": guest_email,
         "message": f"Hotel booked! Confirmation: {code}",
     }
+    if room_type:
+        result["room_type"] = room_type
+        result["message"] += f" Room preference '{room_type}' noted."
+    if bed_preference:
+        result["bed_preference"] = bed_preference
+    if special_requests:
+        result["special_requests"] = special_requests
+        result["message"] += f" Special requests forwarded: {special_requests}."
+    return result

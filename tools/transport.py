@@ -122,7 +122,7 @@ def search_ground_transport(
 
     # ── Train ─────────────────────────────────────────────────────────────────
     if "train" in transport_types:
-        if km <= 1200:  # Most intercity rail routes < 1200 km
+        if km <= 2000:  # Extended: overnight trains cover up to ~2000 km
             operator  = _country_train_operator(o_country)
             is_hsr    = km < 800 and o_country in ("FR", "DE", "ES", "IT", "JP", "GB")
             speed_kmh = 280 if is_hsr else 120
@@ -136,9 +136,8 @@ def search_ground_transport(
                 base_pp = 70 + km * 0.16
 
             base_pp  = _price_jitter(base_pp, seed + 10)
-            price    = base_pp * passengers
 
-            # Generate 2-3 departure times
+            # Generate 2-3 daytime departure times
             times = [("06:30", "Earlybird", int(base_pp * 0.85)),
                      ("09:15", "Flexible",  base_pp),
                      ("14:45", "Afternoon", int(base_pp * 0.95))]
@@ -163,16 +162,46 @@ def search_ground_transport(
                     "price_usd":       pp_price * passengers,
                     "notes":           "Book early for best fares; seat reservation may be required",
                 })
+
+            # Add overnight sleeper option for routes > 400 km
+            if km > 400:
+                from datetime import datetime as _dt, timedelta as _td
+                overnight_pp = _price_jitter(int(base_pp * 1.15), seed + 30)
+                dep = "22:00"
+                arr_total_min = 22 * 60 + int(travel_h * 60)
+                arr_day_offset = arr_total_min // (24 * 60)
+                arr_h_ov = (arr_total_min % (24 * 60)) // 60
+                arr_m_ov = arr_total_min % 60
+                try:
+                    arr_date = (_dt.strptime(date, "%Y-%m-%d") + _td(days=arr_day_offset)).strftime("%Y-%m-%d")
+                except Exception:
+                    arr_date = date
+                results.append({
+                    "type":             "train",
+                    "provider":         operator,
+                    "train_type":       "Overnight / Sleeper",
+                    "fare_type":        "Sleeper",
+                    "departure_time":   dep,
+                    "arrival_time":     f"{arr_h_ov:02d}:{arr_m_ov:02d}",
+                    "arrival_date":     arr_date,
+                    "travel_time":      f"{int(travel_h)}h {int((travel_h % 1) * 60)}m",
+                    "departure_date":   date,
+                    "distance_km":      round(km),
+                    "passengers":       passengers,
+                    "price_per_person_usd": overnight_pp,
+                    "price_usd":        overnight_pp * passengers,
+                    "notes":            "Overnight sleeper — saves one night of accommodation. Couchette or private cabin available.",
+                })
         else:
             results.append({
                 "type":      "train",
                 "available": False,
-                "notes":     f"No direct rail service found for {route} ({round(km):,} km). Consider flying.",
+                "notes":     f"No direct rail service found for {route} ({round(km):,} km). Consider flying or a multi-leg journey.",
             })
 
     # ── Bus ───────────────────────────────────────────────────────────────────
     if "bus" in transport_types:
-        if km <= 800:
+        if km <= 1500:
             operator   = _BUS_OPERATORS[seed % len(_BUS_OPERATORS)]
             bus_h      = km / 80  # avg speed incl. stops
             # Bus is always cheapest: ~$0.06-0.10/km per person
@@ -202,7 +231,7 @@ def search_ground_transport(
             results.append({
                 "type":      "bus",
                 "available": False,
-                "notes":     f"No bus service found for {route} ({round(km):,} km).",
+                "notes":     f"No bus service found for {route} ({round(km):,} km). Consider train or flight.",
             })
 
     # Sort by price (unavailable options last)

@@ -89,6 +89,7 @@ TOOL_LABELS = {
 
 from memory.preferences import PreferenceStore
 from memory.trips import TripStore
+from memory.users import UserStore, PLAN_LIMITS
 from tools.flights import search_flights, book_flight, find_cheapest_dates, find_cheapest_month
 from tools.hotels import search_hotels, book_hotel
 from tools.weather import get_weather
@@ -102,56 +103,140 @@ from agent.tools_schema import TOOLS
 # Actions that require a human confirmation step before proceeding
 CONFIRMATION_REQUIRED = {"book_flight", "book_hotel"}
 
+# Tools counted against the monthly api_calls quota
+METERED_TOOLS = {"search_flights", "search_hotels", "find_cheapest_dates", "find_cheapest_month"}
+
 MAX_CONVERSATION_MESSAGES = 30  # Summarize when conversation exceeds this length
 KEEP_RECENT_MESSAGES = 16       # Always keep the most recent N messages
 KEEP_INITIAL_MESSAGES = 2       # Always keep the very first user/assistant exchange
 
-SYSTEM_PROMPT = """You are a personal travel agent with full authority to plan, research, and book travel on behalf of the user.
+SYSTEM_PROMPT = """You are a world-class personal travel concierge. You serve three distinct traveler profiles — and you adapt fluidly to each.
 
-Your capabilities:
-- Search and compare flights and hotels
-- Hunt for the cheapest flight dates using find_cheapest_dates or find_cheapest_month
-- Check weather forecasts and build day-by-day itineraries
-- Research destinations (visa requirements, currency, safety, local tips)
-- Check the user's calendar availability
-- Book flights and hotels (with explicit user confirmation before payment)
-- Save trips and preferences to memory for future personalization
-- Plan multi-city trips (e.g. Paris → Rome → Barcelona)
-- Search ground transportation: trains, buses, car rental via search_ground_transport
-- Look up live currency exchange rates via get_exchange_rate
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TRAVELER PROFILES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-How you work:
-1. If destination or dates are unclear, ask one focused clarifying question before searching. Don't ask multiple questions at once.
-2. Search for what was asked — don't run all tools at once. Start with flights or hotels based on context, then expand only if the user wants more.
-3. Present 2-3 options concisely. The UI shows price/detail cards — don't repeat that data in prose. Focus on the trade-offs.
-4. NEVER book anything (set payment_confirmed=true) without the user explicitly saying "yes, book it" or equivalent.
-5. Save preferences automatically when the user mentions them.
-6. After booking, add the trip to the calendar automatically.
-7. Call update_itinerary once the user has a plan they want to move forward with — not during exploration. Include weather if you've already fetched it, and flag real conflicts (tight connections, missing transfers). Immediately after update_itinerary, call save_trip with the same data so the trip is permanently stored.
-8. Mention season context (peak/shoulder/off) when it meaningfully affects price or experience.
-9. Use find_cheapest_dates or find_cheapest_month when the user explicitly asks about deals or flexibility — not automatically on every request.
-10. Note that flight prices are estimated unless Amadeus API credentials are configured. Be transparent about this when relevant.
-11. Multi-city trips: when planning a route with 2+ cities, populate the `destinations` array in update_itinerary (e.g. ["Paris", "Rome", "Barcelona"]) and set `destination` to the first city. Group itinerary days by city — label each day section with the city name so the trip board is clear. Search connecting flights between each city pair.
-12. Budget enforcement: if the user's preferences include max_budget_per_day_usd, pass it as max_price_per_night to search_hotels and as max_price_usd to search_flights to filter out results that exceed the budget. Proactively warn when options are limited within budget.
-13. Ground transport: use search_ground_transport for city-to-city routes under ~1200 km where a train or bus may be better than flying (Paris→Amsterdam, NYC→Boston, London→Edinburgh). Always offer it for airport transfers. Include in update_itinerary as type="transfer".
-14. Currency: when the user's preferred currency is not USD, call get_exchange_rate and include converted amounts in your responses. When showing budgets, note both USD and home currency.
+**Adventure Traveler (traveler_profile = "adventure")**
+Moves slowly, goes deep. Spends $40-120/day. Prioritizes unique experiences. Books hostels, dorms, guesthouses. Loves overnight trains, slow overland routes, local food markets, off-the-beaten-path towns. Wants cheapest flight dates, dorm vs private room comparisons, FlixBus options, rail pass advice, visa-on-arrival info. May stay in one place 1-2 weeks ("base yourself" mode). Tracks budget in multiple currencies crossing borders.
+- Default search_hotels: accommodation_type="hostel" or "dorm"
+- Default flights: economy, proactively hunt for cheapest dates
+- Ground transport: trains/buses first — note overnight sleeper saves a hostel night
+- Rail passes: for multi-city Europe (3+ cities) or Japan trips, mention Interrail/Eurail/JR Pass and offer to research via web_search
+- Slow travel: when user wants to "base themselves" somewhere, reframe itinerary around a home base + day trips rather than a moving route
+- Travel pace: slow by default — build breathing room into each day
 
-Tone: Concise, knowledgeable, personalized. Prefer short bullet answers over long paragraphs. Let the UI cards do the heavy lifting.
+**Mid-Range Traveler (traveler_profile = "mid_range")**
+Comfort without excess. Spends $100-200/day. Books 3-star hotels or guesthouses. Economy or premium economy flights. Wants good value, not the cheapest or the most expensive. Cares about location, reviews, and free cancellation.
+- Default search_hotels: accommodation_type="hotel", stars=3
+- Default flights: economy, still check cheapest dates
+- Balance comfort and cost in recommendations
+
+**Luxury / Affluent Traveler (traveler_profile = "luxury")**
+Values time, quality, and experience above all. Spends $300-1000+/day. Books 4-5 star hotels, expects suite or room category options. Business class or premium economy. Private transfers, curated insider picks, pre-arranged services. Doesn't want budget options or long lists.
+- Default search_hotels: accommodation_type="hotel", min_stars=4, use room_type/special_requests in book_hotel
+- Default flights: business class; use find_cheapest_dates to find *optimal timing* (not cheapest price) — frame as "best time to go" not "cheapest dates"
+- Ground transport: offer private transfers or first-class rail
+- Proactively suggest: early check-in requests, restaurant reservations via web_search, airport lounge access, spa bookings
+- Give 1-2 strong recommendations, not lists of 5
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PROFILE DETECTION & ONBOARDING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+**If traveler_profile is null/unknown (first-time users):**
+On the VERY FIRST message (before searching anything), ask ONE question:
+"Quick question before I start searching — are you planning more of an adventure/backpacker trip, a comfortable mid-range trip, or a luxury experience? That helps me show you the right options."
+Then immediately save_preference(key="traveler_profile", value=<their answer>).
+
+**Auto-detect from conversation signals:**
+- Mentions hostels, dorms, backpacking, rail pass, FlixBus, "on a budget", "slow travel" → save traveler_profile="adventure"
+- Mentions business class, suites, specific luxury brands (Four Seasons, Aman, Ritz), fine dining, private transfer → save traveler_profile="luxury"
+- Always respect explicitly saved preferences over auto-detection.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+HOW YOU WORK
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. **Profile first.** If traveler_profile is null, ask the one profile question before anything else. If known, use PROFILE_DEFAULTS — never assume 3-star hotels or $300/day for an unclassified user.
+
+2. **One question at a time.** If destination or dates are unclear after profile is known, ask one focused clarifying question. Never multiple questions at once.
+
+3. **Search what was asked.** Don't run all tools at once. Start with what the user needs (flights or hotels), then expand if they want more.
+
+4. **Present options with trade-offs.** 2-3 options for adventure/mid-range. 1-2 strong picks for luxury. The UI shows cards — don't repeat data in prose. Focus on what makes each right for THIS traveler.
+
+5. **Never book without explicit confirmation.** Don't set payment_confirmed=true until the user says "yes, book it" or equivalent.
+
+6. **Save preferences automatically.** When the user mentions preferences (pace, airlines, dietary, style), save them immediately via save_preference. This includes traveler_profile, accommodation_preference, companion_profile, trip_type, travel_pace.
+
+7. **Build the itinerary when they're ready.** Call update_itinerary when the user has a plan to move forward with — not during exploration. Give each day a theme label capturing the emotional arc ("Arrival & First Impressions", "Temple Trail & Market Evening", "Slow Morning at the Lake"). Include weather if fetched. Flag real conflicts. Immediately call save_trip after update_itinerary.
+
+8. **Season context.** Mention peak/shoulder/off when it meaningfully affects price or experience.
+
+9. **Date scanning — profile-aware:**
+   - Adventure/mid-range: use find_cheapest_dates whenever any flexibility exists — even slight. Frame as "cheapest dates." Always use find_cheapest_month when travel month isn't fixed.
+   - Luxury: use find_cheapest_dates to find *optimal timing* — frame as "best time to travel" (fewest crowds, best weather, optimal experience). Pass cabin_class="business" or "first".
+
+10. **Pricing transparency.** Note that flight prices are estimated unless Amadeus/SerpAPI keys are configured. Hotel pricing is estimated unless Amadeus keys are set (for hotels) or Booking.com/Hostelworld keys are set (for hostels).
+
+11. **Multi-city trips.** Populate destinations array in update_itinerary. Group days by city. Search connecting transport (flights OR trains) between each city pair.
+
+12. **Budget enforcement.** Pass max_price_per_night to search_hotels and max_price_usd to search_flights when user has a budget. Warn when options are limited within budget. For luxury travelers, never cap unless they give you a budget.
+
+13. **Ground transport — profile-aware:**
+    - Adventure: trains/buses first. "The 22:00 sleeper to Chiang Mai is legendary — you wake up refreshed and skip a hostel night." Flag overnight options as accommodation savers.
+    - Luxury: offer private transfers or first-class rail. Frame as convenience, not cost.
+    - Rail passes: for adventure travelers doing 3+ cities in Europe or Japan, proactively mention Interrail/Eurail/Japan Rail Pass — use web_search("Interrail pass vs point-to-point [route]") to research.
+
+14. **Currency.** When user's preferred currency is not USD, call get_exchange_rate and include converted amounts. For multi-country trips (e.g. Serbia → North Macedonia → Albania), batch all destination currencies in one call.
+
+15. **Accommodation — profile-aware:**
+    - Adventure: search_hotels with accommodation_type="hostel" or "dorm" by default
+    - Mid-range: "guesthouse" or "hotel" with star filter
+    - Luxury: "hotel" with min_stars=4+, use room_type and special_requests in book_hotel (e.g. room_type="harbour suite", special_requests="early check-in, high floor preferred")
+
+16. **Slow travel / base-yourself mode.** When an adventure traveler wants to stay 5+ days in one place, reframe around a home base: lead with the best hostel/guesthouse for that duration, then offer day trip options. Don't force a moving itinerary structure.
+
+17. **Visa & entry intel.** When destination involves complex visa rules (Central Asia, the Balkans, Southeast Asia border crossings), proactively use web_search to check current requirements. Surface border crossing practicalities, not just visa policy.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TONE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Adventure Travelers: Fellow traveler energy. Practical, enthusiastic, full of local tips. Direct about trade-offs. "The 22:00 sleeper saves you a hostel night and gets you there at dawn — legendary."
+
+Mid-Range: Knowledgeable friend. Warm, balanced, good-value-focused. "This guesthouse gets the balance right — solid location, excellent reviews, free cancellation."
+
+Luxury Travelers: Personal concierge. Warm, authoritative, effortless. Anticipate needs. "I'd lean toward the Ritz-Carlton for the harbour suite — the private butler service is genuinely exceptional there. I can also note a request for early check-in."
 """
 
 
 class TravelAgent:
-    def __init__(self, confirm_callback: Callable[[str], bool] | None = None):
+    def __init__(
+        self,
+        confirm_callback: Callable[[str], bool] | None = None,
+        user_id: str | None = None,
+        user_store: UserStore | None = None,
+    ):
         """
         Args:
             confirm_callback: Called before any booking action. Receives a description
                               of the action and returns True if user confirms, False otherwise.
                               If None, bookings are blocked by default.
+            user_id: Clerk user ID for per-user data isolation.
+                     When set, preferences and trips are scoped to this user only.
+                     When None, operates in anonymous/global mode (backward compat).
+            user_store: Shared UserStore instance for quota enforcement. When provided
+                        and user_id is set, metered tools (search_flights, search_hotels,
+                        find_cheapest_dates, find_cheapest_month) will be gated by the
+                        user's monthly api_calls limit.
         """
         api_key = os.getenv("ANTHROPIC_API_KEY")
         if not api_key:
             raise ValueError("ANTHROPIC_API_KEY is not set. Please add it to your Railway environment variables.")
         self._client = anthropic.Anthropic(api_key=api_key)
+        self._user_id: str | None = user_id
+        self._user_store: UserStore | None = user_store
         self._prefs = PreferenceStore()
         self._trips = TripStore()
         self._confirm = confirm_callback or (lambda msg: False)
@@ -286,8 +371,8 @@ class TravelAgent:
         self._current_trip = itinerary or {}
 
     def _build_system_prompt(self) -> str:
-        prefs_context = self._prefs.as_context_string()
-        trips_context = self._trips.as_context_string()
+        prefs_context = self._prefs.as_context_string(user_id=self._user_id)
+        trips_context = self._trips.as_context_string(user_id=self._user_id)
         itinerary_context = ""
         if self._current_trip:
             itinerary_context = (
@@ -300,6 +385,23 @@ class TravelAgent:
 
     def _dispatch_tool(self, name: str, inputs: dict) -> dict:
         """Route a tool call to the correct implementation."""
+
+        # --- Metered tools: check + increment monthly api_calls quota ---
+        if name in METERED_TOOLS and self._user_store and self._user_id:
+            user_rec = self._user_store.get(self._user_id)
+            if user_rec:
+                usage = self._user_store.get_usage(self._user_id)
+                if not self._user_store.within_limit(user_rec, "api_calls", usage):
+                    plan = user_rec["plan"]
+                    cap  = PLAN_LIMITS[plan]["api_calls"]
+                    return {
+                        "status": "error",
+                        "message": (
+                            f"Monthly search limit reached ({cap} searches on {plan} plan). "
+                            "Please upgrade to Pro for 200 searches/month, or Team for 500."
+                        ),
+                    }
+                self._user_store.increment_api(self._user_id)
 
         # --- Booking tools: require explicit user confirmation ---
         if name in CONFIRMATION_REQUIRED and inputs.get("payment_confirmed"):
@@ -329,7 +431,7 @@ class TravelAgent:
             "add_to_calendar": lambda i: add_to_calendar(**i),
             "web_search": lambda i: web_search(**i),
             "save_preference": self._handle_save_preference,
-            "get_preferences": lambda i: self._prefs.get_all(),
+            "get_preferences": lambda i: self._prefs.get_all(user_id=self._user_id),
             "save_trip": self._handle_save_trip,
             "get_trips": self._handle_get_trips,
             "update_itinerary":    self._handle_update_itinerary,
@@ -349,12 +451,12 @@ class TravelAgent:
     def _handle_save_preference(self, inputs: dict) -> dict:
         key = inputs["key"]
         value = inputs["value"]
-        self._prefs.set(key, value)
+        self._prefs.set(key, value, user_id=self._user_id)
         return {"status": "success", "message": f"Preference '{key}' saved: {value}"}
 
     def _handle_save_trip(self, inputs: dict) -> dict:
         trip = inputs["trip"]
-        trip_id = self._trips.save_trip(trip)
+        trip_id = self._trips.save_trip(trip, user_id=self._user_id)
         self._current_trip = trip
         return {"status": "success", "trip_id": trip_id, "message": "Trip saved."}
 
@@ -369,7 +471,7 @@ class TravelAgent:
                 import hashlib
                 key = f"{trip_copy.get('destination', '')}-{trip_copy.get('start_date', '')}"
                 trip_copy["id"] = "TRIP-" + hashlib.md5(key.encode()).hexdigest()[:10]
-            self._trips.save_trip(trip_copy)
+            self._trips.save_trip(trip_copy, user_id=self._user_id)
         except Exception:
             pass  # never let a save failure break the itinerary update
         if self._progress_callback:
@@ -390,7 +492,7 @@ class TravelAgent:
 
     def _handle_get_trips(self, inputs: dict) -> dict:
         status = inputs.get("status")
-        trips = self._trips.get_all_trips(status=status)
+        trips = self._trips.get_all_trips(status=status, user_id=self._user_id)
         return {"status": "success", "trips": trips, "count": len(trips)}
 
     @staticmethod

@@ -1,9 +1,13 @@
 """
-Flight search — real airport database + real airline assignments per route.
-Pricing is distance-calculated (no live booking API is free/registration-free).
+Flight search — live data from Google Flights with fallbacks.
 
-If AMADEUS_CLIENT_ID + AMADEUS_CLIENT_SECRET are set, uses Amadeus live pricing.
-Sign up free (no credit card): https://developers.amadeus.com/
+Priority order:
+  1. Google Flights via SerpAPI  (set SERPAPI_KEY)
+     → Real prices, real airlines, carbon data. 100 free/month; $50/mo for 5,000.
+     → Sign up at https://serpapi.com/
+  2. Amadeus GDS API             (set AMADEUS_CLIENT_ID + AMADEUS_CLIENT_SECRET)
+     → Free sandbox, no credit card: https://developers.amadeus.com/
+  3. Distance-calculated mock    (always available, realistic but not real fares)
 """
 
 import math
@@ -379,7 +383,102 @@ def _amadeus_flights(origin, destination, departure_date,
     return {"status": "success", "results": results, "source": "Amadeus (live pricing)"}
 
 
-# ── Public API ────────────────────────────────────────────────────────────────
+def _serpapi_flights(origin_iata: str, dest_iata: str, departure_date: str,
+                     return_date: str | None, passengers: int,
+                     cabin_class: str, max_results: int) -> dict | None:
+    """
+    Search Google Flights via SerpAPI.
+    Requires SERPAPI_KEY env var. Sign up free at https://serpapi.com/
+    100 free searches/month; $50/mo for 5,000 searches.
+    """
+    api_key = os.getenv("SERPAPI_KEY", "").strip()
+    if not api_key or not _HTTPX:
+        return None
+
+    cabin_map = {"economy": 1, "premium_economy": 2, "business": 3, "first": 4}
+    params = {
+        "engine":         "google_flights",
+        "departure_id":   origin_iata,
+        "arrival_id":     dest_iata,
+        "outbound_date":  departure_date,
+        "currency":       "USD",
+        "hl":             "en",
+        "adults":         passengers,
+        "travel_class":   cabin_map.get(cabin_class, 1),
+        "api_key":        api_key,
+        "type":           "1" if return_date else "2",  # 1=round-trip, 2=one-way
+    }
+    if return_date:
+        params["return_date"] = return_date
+
+    r = _httpx.get("https://serpapi.com/search.json", params=params, timeout=15)
+    if r.status_code != 200:
+        return None
+    data = r.json()
+
+    # Combine best + other flights, de-dupe by price
+    raw = data.get("best_flights", []) + data.get("other_flights", [])
+    if not raw:
+        return None
+
+    results = []
+    seen_prices: set[float] = set()
+    for fg in raw:
+        legs = fg.get("flights", [])
+        if not legs:
+            continue
+        price = fg.get("price", 0)
+        if price in seen_prices:
+            continue
+        seen_prices.add(price)
+
+        first, last = legs[0], legs[-1]
+        duration_min = fg.get("total_duration", 0)
+        stops = len(legs) - 1
+
+        dep_airport = first.get("departure_airport", {})
+        arr_airport = last.get("arrival_airport", {})
+        dep_time_raw = dep_airport.get("time", "")   # "2025-01-15 08:30"
+        arr_time_raw = arr_airport.get("time", "")
+        dep_t = dep_time_raw.split(" ")[-1][:5] if dep_time_raw else ""
+        arr_t = arr_time_raw.split(" ")[-1][:5] if arr_time_raw else ""
+
+        airline = first.get("airline", "")
+        flight_num = first.get("flight_number", "")
+
+        results.append({
+            "flight_id":             f"GF_{origin_iata}{dest_iata}_{len(results)+1:02d}",
+            "airline":               airline,
+            "flight_number":         flight_num,
+            "origin":                origin_iata,
+            "destination":           dest_iata,
+            "departure_date":        departure_date,
+            "departure_time":        dep_t,
+            "arrival_time":          arr_t,
+            "duration":              f"{duration_min // 60}h {duration_min % 60}m",
+            "stops":                 stops,
+            "cabin_class":           cabin_class,
+            "price_usd":             price,
+            "price_per_person_usd":  round(price / passengers) if passengers > 1 else price,
+            "seats_available":       fg.get("extensions", {}).get("seats_left"),
+            "return_date":           return_date,
+            "carbon_grams":          (fg.get("carbon_emissions") or {}).get("this_flight"),
+        })
+        if len(results) >= max_results:
+            break
+
+    if not results:
+        return None
+
+    results.sort(key=lambda x: x["price_usd"])
+    return {
+        "status":   "success",
+        "results":  results,
+        "currency": "USD",
+        "source":   "Google Flights (live pricing)",
+    }
+
+
 
 @ttl_cache(ttl=1800)  # Cache for 30 minutes — prices are estimated anyway
 def search_flights(
@@ -393,28 +492,44 @@ def search_flights(
     max_price_usd: int | None = None,
 ) -> dict:
     """
-    Search flights. Uses Amadeus live pricing if AMADEUS_CLIENT_ID is set;
-    otherwise uses real airport data + distance-calculated pricing.
+    Search flights. Priority order:
+      1. Google Flights via SerpAPI (SERPAPI_KEY)   — real fares, best coverage
+      2. Amadeus live API (AMADEUS_CLIENT_ID+SECRET) — airline GDS fares
+      3. Distance-calculated mock pricing            — always-available fallback
     """
-    # Try Amadeus first
+    # Resolve city names → IATA codes once (used by all sources)
+    o_res = _find_airport(origin)
+    d_res = _find_airport(destination)
+    origin_iata = o_res[0] if o_res else origin.upper()[:3]
+    dest_iata   = d_res[0] if d_res else destination.upper()[:3]
+
+    def _apply_filters(res: dict) -> dict:
+        if max_price_usd is not None:
+            res["results"] = [r for r in res["results"] if r["price_usd"] <= max_price_usd]
+        res.setdefault("query", {
+            "origin": origin_iata, "destination": dest_iata,
+            "departure_date": departure_date, "return_date": return_date,
+            "passengers": passengers, "cabin_class": cabin_class,
+        })
+        return res
+
+    # 1. Google Flights via SerpAPI
+    if _HTTPX and os.getenv("SERPAPI_KEY"):
+        try:
+            result = _serpapi_flights(origin_iata, dest_iata, departure_date,
+                                      return_date, passengers, cabin_class, max_results)
+            if result:
+                return _apply_filters(result)
+        except Exception:
+            pass  # Fall through
+
+    # 2. Amadeus
     if _HTTPX and os.getenv("AMADEUS_CLIENT_ID"):
-        # Resolve city → IATA if needed
-        o_res = _find_airport(origin)
-        d_res = _find_airport(destination)
-        origin_iata = o_res[0] if o_res else origin.upper()[:3]
-        dest_iata   = d_res[0] if d_res else destination.upper()[:3]
         try:
             result = _amadeus_flights(origin_iata, dest_iata, departure_date,
                                       return_date, passengers, cabin_class, max_results)
             if result:
-                if max_price_usd is not None:
-                    result["results"] = [r for r in result["results"] if r["price_usd"] <= max_price_usd]
-                result["query"] = {
-                    "origin": origin_iata, "destination": dest_iata,
-                    "departure_date": departure_date, "return_date": return_date,
-                    "passengers": passengers, "cabin_class": cabin_class,
-                }
-                return result
+                return _apply_filters(result)
         except Exception:
             pass  # Fall through to calculated pricing
 
@@ -479,7 +594,7 @@ def search_flights(
         },
         "results":  results,
         "currency": "USD",
-        "source":   "Real airport database + distance-calculated pricing (set AMADEUS_CLIENT_ID for live fares)",
+        "source":   "Real airport database + distance-calculated pricing (set SERPAPI_KEY for live Google Flights fares)",
     }
     if max_price_usd is not None and not results:
         payload["budget_note"] = f"No flights found under ${max_price_usd:,}. Consider relaxing the budget or choosing different dates."
@@ -631,7 +746,7 @@ def find_cheapest_dates(
         "price_heatmap":      price_heatmap,
         "results":            results[:20],
         "summary":            summary,
-        "source":             "Calculated pricing (set AMADEUS_CLIENT_ID for live fares)",
+        "source":             "Calculated pricing (set SERPAPI_KEY for live Google Flights fares)",
     }
 
 

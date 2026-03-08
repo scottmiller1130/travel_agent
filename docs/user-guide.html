@@ -527,6 +527,8 @@
     <span class="badge">💰 Budgets</span>
     <span class="badge">📅 Itineraries</span>
     <span class="badge">💱 Currency</span>
+    <span class="badge">👥 Workspaces</span>
+    <span class="badge">🔗 Share Links</span>
   </div>
 </div>
 <div class="wave"></div>
@@ -538,15 +540,18 @@
   <nav class="toc-sidebar" aria-label="Table of contents">
     <h3>On this page</h3>
     <a href="#getting-started">🚀 Getting Started</a>
+    <a href="#account">👤 Your Account</a>
+    <a href="#plans">🏷 Plans &amp; Limits</a>
     <a href="#chat">💬 Talking to the Agent</a>
     <a href="#flights">✈ Searching Flights</a>
     <a href="#hotels">🏨 Finding Hotels</a>
     <a href="#deals">🎯 Deal Hunting</a>
     <a href="#board">🗺 Trip Board</a>
-    <a href="#budget">💰 Budget Tracking</a>
-    <a href="#multi">🗺 Multi-Destination</a>
+    <a href="#budget">💰 Budget &amp; Travelers</a>
+    <a href="#multi">🌍 Multi-Destination</a>
     <a href="#currency">💱 Currency</a>
     <a href="#weather">🌤 Weather</a>
+    <a href="#workspaces">👥 Workspaces</a>
     <a href="#export">📤 Export &amp; Share</a>
     <a href="#preferences">⚙️ Preferences</a>
     <a href="#tips">💡 Tips &amp; Tricks</a>
@@ -567,10 +572,11 @@
     <section class="section" id="getting-started">
       <span class="section-tag tag-blue">🚀 Start Here</span>
       <h2>Getting Started</h2>
-      <p class="lead">No account needed. Open the app, say where you want to go, and the agent takes it from there.</p>
+      <p class="lead">Works without an account. Sign up to save your trips permanently, unlock higher limits, and collaborate with others.</p>
 
       <ol class="steps">
         <li><p><strong>Open the app</strong> in your browser. Your session is created automatically — your trip data is saved so you can pick up where you left off.</p></li>
+        <li><p><strong>Sign in</strong> (optional but recommended) — click <strong>Sign in</strong> in the sidebar to create a free account with email or Google. Your trips, preferences, and itineraries are then tied to your account, not just your browser.</p></li>
         <li><p><strong>Type your destination</strong> in the chat box at the bottom. Be as vague or specific as you like — <em>"I want to go somewhere warm in January"</em> works just as well as <em>"Flights from JFK to Bali on March 15"</em>.</p></li>
         <li><p><strong>The agent will ask follow-up questions</strong> if it needs more info — number of travelers, budget, departure city, dates, etc.</p></li>
         <li><p><strong>Watch the Trip Board</strong> (🗺 button, top right) fill in as the agent builds your itinerary.</p></li>
@@ -589,6 +595,67 @@
         <span class="hint-chip">Best month to visit Lisbon?</span>
         <span class="hint-chip">Remember I prefer window seats</span>
       </div>
+    </section>
+
+    <!-- ── ACCOUNT ── -->
+    <section class="section" id="account">
+      <span class="section-tag tag-purple">👤 Your Account</span>
+      <h2>Creating an Account</h2>
+      <p class="lead">A free account ties your trips, preferences, and workspaces to <em>you</em> — not just your browser. Sign in on any device and pick up where you left off.</p>
+
+      <h3><span class="emoji-h">🔑</span> How to sign in</h3>
+      <ol class="steps">
+        <li><p>Click <strong>Sign in</strong> in the bottom-left sidebar panel.</p></li>
+        <li><p>Choose <strong>Continue with Google</strong> for one-click sign-in, or enter your email to receive a magic link / set a password.</p></li>
+        <li><p>You're in. Your avatar and plan badge appear in the sidebar.</p></li>
+      </ol>
+
+      <div class="info">
+        <span class="info-icon">ℹ️</span>
+        <div>The app works fully without an account — anonymous sessions still get flights, hotels, itineraries, and deal hunting. Signing in adds trip history sync, workspaces, and higher usage limits.</div>
+      </div>
+
+      <h3><span class="emoji-h">👤</span> Your profile panel</h3>
+      <p>Once signed in, the sidebar shows:</p>
+      <ul style="padding-left:20px;color:var(--text-2);margin-bottom:12px">
+        <li style="margin-bottom:6px"><strong>Your name and email</strong> from your account</li>
+        <li style="margin-bottom:6px"><strong>Plan badge</strong> — Free / Pro / Team</li>
+        <li style="margin-bottom:6px"><strong>Usage bar</strong> — how many chat turns you've used this month vs. your plan limit</li>
+        <li style="margin-bottom:6px"><strong>Upgrade button</strong> — if you're on the Free plan and want more</li>
+      </ul>
+
+      <h3><span class="emoji-h">🔒</span> Your data is private</h3>
+      <p>All trips, preferences, and itineraries are scoped to your user ID. Other users can never see your data. The only way to share an itinerary is to explicitly generate a share link (see <a href="#export" style="color:var(--sky-d)">Export &amp; Share</a>).</p>
+    </section>
+
+    <!-- ── PLANS ── -->
+    <section class="section" id="plans">
+      <span class="section-tag tag-gold">🏷 Plans</span>
+      <h2>Plans &amp; Usage Limits</h2>
+      <p class="lead">Start free. Upgrade when you need more searches or collaboration features.</p>
+
+      <table class="cmd-table">
+        <thead>
+          <tr><th>Feature</th><th>Free</th><th>Pro ($19/mo)</th><th>Team ($49/mo)</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Chat turns / month</td><td>20</td><td>Unlimited</td><td>Unlimited</td></tr>
+          <tr><td>Flight searches / month</td><td>10</td><td>200</td><td>500</td></tr>
+          <tr><td>Trip history</td><td class="result">✓</td><td class="result">✓</td><td class="result">✓</td></tr>
+          <tr><td>Preferences sync</td><td class="result">✓</td><td class="result">✓</td><td class="result">✓</td></tr>
+          <tr><td>Shareable links</td><td class="result">✓</td><td class="result">✓</td><td class="result">✓</td></tr>
+          <tr><td>Collaborative workspaces</td><td style="color:var(--text-3)">—</td><td class="result">✓</td><td class="result">✓</td></tr>
+          <tr><td>Workspace members</td><td style="color:var(--text-3)">—</td><td>Up to 5</td><td>Unlimited</td></tr>
+        </tbody>
+      </table>
+
+      <div class="tip">
+        <span class="tip-icon">💡</span>
+        <div><strong>Hit your limit?</strong> You'll see a prompt in the chat offering to upgrade. Your current itinerary is never lost — you can export it before upgrading.</div>
+      </div>
+
+      <h3><span class="emoji-h">📊</span> Checking your usage</h3>
+      <p>Your current month's usage is shown in the sidebar under your avatar. The bar fills as you use chat turns. It resets on the 1st of each month.</p>
     </section>
 
     <!-- ── TALKING TO THE AGENT ── -->
@@ -669,7 +736,7 @@
     <section class="section" id="flights">
       <span class="section-tag tag-blue">✈ Flights</span>
       <h2>Searching Flights</h2>
-      <p class="lead">The agent searches real routes using actual airport and airline data. If you've set up an Amadeus API key, it pulls live pricing.</p>
+      <p class="lead">Flight results come from <strong>Google Flights</strong> via SerpAPI — real prices, real airlines, real departure times. Carbon emission data is included where available.</p>
 
       <h3><span class="emoji-h">🔍</span> What you can search for</h3>
       <div class="feature-grid">
@@ -861,37 +928,42 @@
 
     <!-- ── BUDGET ── -->
     <section class="section" id="budget">
-      <span class="section-tag tag-green">💰 Budget</span>
-      <h2>Budget Tracking</h2>
-      <p class="lead">Tell the agent your total budget and it enforces it — warning you when flights or hotels would go over.</p>
+      <span class="section-tag tag-green">💰 Budget &amp; Travelers</span>
+      <h2>Budget Tracking &amp; Per-Person Breakdown</h2>
+      <p class="lead">Tell the agent your total budget and number of travelers. The board shows the total cost, per-person cost, and a breakdown by category — all in one place.</p>
 
       <div class="budget-demo">
-        <div style="display:flex;justify-content:space-between;align-items:center">
-          <strong>Est. $2,620</strong>
-          <span style="font-size:12px;color:var(--text-3)">87% of $3,000 budget</span>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+          <strong>Est. $5,240</strong>
+          <span style="font-size:12px;color:var(--text-3)">87% of $6,000 budget</span>
         </div>
+        <div style="font-size:12px;color:var(--text-3);margin-bottom:6px">$1,310 per person &nbsp;·&nbsp; 4 travelers</div>
         <div class="budget-bar-bg">
           <div class="budget-bar-fill" style="width:87%"></div>
         </div>
         <div class="budget-chips">
-          <span class="budget-chip">✈ $1,640</span>
-          <span class="budget-chip">🏨 $980</span>
-          <span class="budget-chip">🗺 $400</span>
-          <span class="budget-chip">🍽 $240</span>
+          <span class="budget-chip">✈ $3,280 · $820/pp</span>
+          <span class="budget-chip">🏨 $1,120 · $280/pp</span>
+          <span class="budget-chip">🗺 $480 · $120/pp</span>
+          <span class="budget-chip">🍽 $360 · $90/pp</span>
         </div>
       </div>
 
-      <h3><span class="emoji-h">🔢</span> How it works</h3>
+      <h3><span class="emoji-h">👥</span> Travelers selector</h3>
+      <p>Use the <strong>− / +</strong> stepper in the budget panel (bottom of the Trip Board) to adjust the number of travelers at any time. All per-person amounts update instantly — no need to re-ask the agent.</p>
+
+      <h3><span class="emoji-h">🔢</span> How budget tracking works</h3>
       <ol class="steps">
-        <li><p>Tell the agent your budget: <strong>"Plan a trip to Bali for $5,000 total"</strong></p></li>
+        <li><p>Tell the agent your budget: <strong>"Plan a trip to Bali for 4 people, total budget $6,000"</strong></p></li>
         <li><p>As it searches flights and hotels, it tracks the running total in the board's budget bar.</p></li>
         <li><p>If a result would bust the budget, the agent warns you and suggests cheaper alternatives.</p></li>
         <li><p>The bar turns <span style="color:var(--gold);font-weight:700">amber at 70%</span> and <span style="color:var(--rose);font-weight:700">red at 90%</span> of budget.</p></li>
+        <li><p>Category chips show both <strong>total</strong> and <strong>per-person</strong> amounts for flights, hotels, activities, and food.</p></li>
       </ol>
 
       <div class="tip">
         <span class="tip-icon">💡</span>
-        <div><strong>Tip:</strong> You can set a permanent daily budget in preferences: <em>"Remember my max budget is $300/day"</em>. The agent will always search within this limit.</div>
+        <div><strong>Tip:</strong> All budgets in the agent are <em>total</em> for the whole group. When you say "budget $4,000 for 2 people", the agent targets $4,000 total — $2,000 per person — and shows both in the budget panel.</div>
       </div>
     </section>
 
@@ -971,6 +1043,56 @@
       </div>
 
       <p>Ask the agent <strong>"Is June a good time to visit Santorini?"</strong> for a full breakdown including crowd levels, weather, and typical prices.</p>
+    </section>
+
+    <!-- ── WORKSPACES ── -->
+    <section class="section" id="workspaces">
+      <span class="section-tag tag-purple">👥 Workspaces</span>
+      <h2>Collaborative Workspaces</h2>
+      <p class="lead">Plan a group trip together. Create a workspace, invite your travel companions, and everyone edits the same itinerary in real time. Available on Pro and Team plans.</p>
+
+      <h3><span class="emoji-h">🏗</span> Creating a workspace</h3>
+      <ol class="steps">
+        <li><p>Open the <strong>Workspaces</strong> panel in the sidebar (appears after signing in).</p></li>
+        <li><p>Click <strong>+ New Workspace</strong> and give it a name (e.g. "Italy Trip — Summer 2025").</p></li>
+        <li><p>Optionally link it to your current planning session so invited members can see the itinerary right away.</p></li>
+        <li><p>Click <strong>Create</strong>. You're the owner.</p></li>
+      </ol>
+
+      <h3><span class="emoji-h">✉️</span> Inviting members</h3>
+      <ol class="steps">
+        <li><p>Open the workspace and click <strong>Invite member</strong>.</p></li>
+        <li><p>Enter your travel companion's email address and choose their role:</p>
+          <table class="cmd-table" style="margin-top:8px">
+            <thead><tr><th>Role</th><th>Can view</th><th>Can chat &amp; edit</th><th>Can manage members</th></tr></thead>
+            <tbody>
+              <tr><td><strong>Editor</strong></td><td class="result">✓</td><td class="result">✓</td><td style="color:var(--text-3)">—</td></tr>
+              <tr><td><strong>Viewer</strong></td><td class="result">✓</td><td style="color:var(--text-3)">—</td><td style="color:var(--text-3)">—</td></tr>
+            </tbody>
+          </table>
+        </li>
+        <li><p>Click <strong>Send invite</strong>. Your companion receives an email with a link to join.</p></li>
+      </ol>
+
+      <div class="info">
+        <span class="info-icon">ℹ️</span>
+        <div>Invited members who don't yet have an account will be prompted to sign up when they follow the invite link. Their role is activated automatically once they join.</div>
+      </div>
+
+      <h3><span class="emoji-h">✈</span> How workspace planning works</h3>
+      <p>Everyone in the workspace shares the same chat session and Trip Board. When one member updates the itinerary, others see it reflected the next time they load the page. The AI agent responds to whoever sends the most recent message — great for back-and-forth group planning.</p>
+
+      <h3><span class="emoji-h">🔑</span> Owner controls</h3>
+      <ul style="padding-left:20px;color:var(--text-2);margin-bottom:12px">
+        <li style="margin-bottom:6px">Change a member's role at any time from Editor ↔ Viewer</li>
+        <li style="margin-bottom:6px">Remove a member by clicking the ✕ next to their name</li>
+        <li style="margin-bottom:6px">Delete the workspace entirely (removes access for all members)</li>
+      </ul>
+
+      <div class="tip">
+        <span class="tip-icon">💡</span>
+        <div><strong>Tip:</strong> Use the <strong>Viewer</strong> role for stakeholders who should see the trip plan but shouldn't be able to change it — like a manager approving a team offsite itinerary.</div>
+      </div>
     </section>
 
     <!-- ── EXPORT & SHARE ── -->
@@ -1132,7 +1254,8 @@
 <footer>
   <div style="font-size:36px;margin-bottom:16px">✈</div>
   <strong>Travel Agent</strong> — AI-powered personal travel planner<br>
-  <span style="margin-top:8px;display:block;opacity:.6">Your conversations and itineraries are saved automatically. Sessions idle for more than 30 days are cleared to keep things tidy.</span>
+  <span style="margin-top:8px;display:block;opacity:.6">Signed-in sessions are saved permanently to your account. Anonymous sessions idle for more than 30 days are cleared to keep things tidy.</span>
+  <span style="margin-top:6px;display:block;opacity:.5;font-size:12px">Powered by Claude AI &nbsp;·&nbsp; Flights via Google Flights (SerpAPI) &nbsp;·&nbsp; Weather via Open-Meteo &nbsp;·&nbsp; Maps via OpenStreetMap</span>
 </footer>
 
 </body>

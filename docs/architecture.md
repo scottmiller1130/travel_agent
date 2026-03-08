@@ -1,12 +1,13 @@
 # Architecture Deep-Dive
 
-This document explains how the Travel Agent is built, how its components interact, and the key design decisions behind it.
+This document explains how Travel Agent is built, how its components interact, and the key design decisions behind it.
 
 ---
 
 ## Table of Contents
 
 - [System Architecture](#system-architecture)
+- [Authentication & User Model](#authentication--user-model)
 - [Backend Components](#backend-components)
   - [FastAPI Server](#fastapi-server-serverpy)
   - [Agent Core](#agent-core-agentcorepy)
@@ -15,9 +16,10 @@ This document explains how the Travel Agent is built, how its components interac
 - [Frontend Architecture](#frontend-architecture-staticindexhtml)
 - [Data Flows](#data-flows)
   - [Message → Response](#1-message--response-flow)
-  - [Booking Confirmation](#2-booking-confirmation-flow)
-  - [Session Restore](#3-session-restore-flow)
-  - [Deal Hunting](#4-deal-hunting-flow)
+  - [Auth Flow](#2-auth-flow)
+  - [Booking Confirmation](#3-booking-confirmation-flow)
+  - [Session Restore](#4-session-restore-flow)
+  - [Deal Hunting](#5-deal-hunting-flow)
 - [External APIs](#external-apis)
 - [Data Models](#data-models)
 - [Security Architecture](#security-architecture)
@@ -27,83 +29,74 @@ This document explains how the Travel Agent is built, how its components interac
 
 ## System Architecture
 
-```mermaid
-graph TD
-    subgraph Browser["Browser"]
-        SPA["Single-Page App\nindex.html\n(HTML + CSS + JS)"]
-    end
-
-    subgraph Server["FastAPI Server  —  server.py"]
-        Routes["HTTP Routes\nPOST /api/chat\nGET /api/session\nDELETE /api/session"]
-        SSE["SSE Stream\nReal-time events"]
-        RateLimit["Rate Limiter\n20 req/min per IP"]
-        AgentCache["In-memory\nAgent Cache"]
-    end
-
-    subgraph AgentLayer["Agent Layer  —  agent/"]
-        Core["core.py\nAgentic Loop"]
-        Schema["tools_schema.py\n16 Tool Definitions"]
-    end
-
-    subgraph ToolsLayer["Tools Layer  —  tools/"]
-        Flights["flights.py"]
-        Hotels["hotels.py"]
-        Weather["weather.py"]
-        Maps["maps.py"]
-        Search["search.py"]
-        Seasons["seasons.py\n(in-process)"]
-        Calendar["calendar.py"]
-    end
-
-    subgraph MemoryLayer["Memory Layer  —  memory/"]
-        Prefs["preferences.py\nUser Settings"]
-        Trips["trips.py\nTrip History"]
-        Sessions["sessions.py\nConversations"]
-    end
-
-    subgraph ExternalAPIs["External APIs"]
-        Claude["Anthropic\nClaude Sonnet 4.6"]
-        Amadeus["Amadeus API\n(flights + hotels)"]
-        OpenMeteo["Open-Meteo\n(weather, free)"]
-        OSM["OpenStreetMap\n(maps + POI, free)"]
-        Wiki["Wikipedia\n(search, free)"]
-        Brave["Brave Search\n(optional)"]
-    end
-
-    subgraph Storage["SQLite Storage  (~/.travel_agent/)"]
-        SessionsDB[("sessions.db")]
-        PrefsDB[("preferences.db")]
-        TripsDB[("trips.db")]
-    end
-
-    SPA -->|"POST /api/chat\n{message, session_id}"| Routes
-    Routes -->|SSE events| SPA
-    Routes --> RateLimit
-    Routes --> AgentCache
-    AgentCache --> Core
-    Core -->|"messages + tool schemas"| Claude
-    Claude -->|"tool_use blocks"| Core
-    Core --> Schema
-    Core -->|parallel dispatch| Flights
-    Core -->|parallel dispatch| Hotels
-    Core -->|parallel dispatch| Weather
-    Core -->|parallel dispatch| Maps
-    Core -->|parallel dispatch| Search
-    Core -->|parallel dispatch| Calendar
-    Core --> MemoryLayer
-
-    Flights --> Amadeus
-    Hotels --> Amadeus
-    Hotels --> OSM
-    Weather --> OpenMeteo
-    Maps --> OSM
-    Search --> Wiki
-    Search --> Brave
-
-    Prefs --> PrefsDB
-    Trips --> TripsDB
-    Sessions --> SessionsDB
 ```
+Browser  (static/index.html — vanilla JS SPA)
+    │  Authorization: Bearer {Clerk JWT}
+    │  REST + SSE streaming
+    ▼
+FastAPI (server.py)
+    ├─ Auth: Clerk JWT → user_id  (RS256 via PyJWKClient)
+    ├─ Rate limiting: per-user_id (auth) or per-IP (anon)
+    ├─ Session ownership enforcement on all endpoints
+    │
+    ├─ TravelAgent (agent/core.py)
+    │   ├─ Anthropic Claude claude-sonnet-4-6  (agentic tool-call loop)
+    │   ├─ 18 tool definitions  (flights, hotels, weather, maps …)
+    │   └─ Per-user PreferenceStore + TripStore
+    │
+    └─ PostgreSQL  (Railway managed)
+        ├─ sessions          conversation + itinerary per session
+        ├─ users             Clerk user records + subscription plan
+        ├─ usage             monthly chat_turns + api_calls per user
+        ├─ preferences       anonymous/global defaults
+        ├─ user_preferences  per-user overrides
+        ├─ trips             saved trip history  (per-user)
+        ├─ workspaces        collaborative planning spaces
+        ├─ workspace_members roles: owner / editor / viewer
+        └─ share_tokens      read-only itinerary share links
+```
+
+---
+
+## Authentication & User Model
+
+### Overview
+
+Auth is **optional**. When `CLERK_JWKS_URL` is not set, the app runs in anonymous mode and all features continue to work. When Clerk is configured, users can sign in and get per-user data isolation, higher rate limits, and access to workspaces.
+
+### Auth Flow
+
+```
+Browser                          FastAPI                      Clerk
+  │                                │                            │
+  │  1. User clicks "Sign in"      │                            │
+  │─────────────────────────────────────────────────────────── ▶│
+  │  2. Clerk modal (email/Google OAuth)                        │
+  │  3. Clerk issues JWT (RS256)   │                            │
+  │◀─────────────────────────────────────────────────────────── │
+  │  4. JS stores token in memory  │                            │
+  │                                │                            │
+  │  5. Any /api/* request         │                            │
+  │     Authorization: Bearer JWT ▶│                            │
+  │                                │  6. PyJWKClient.get_key()  │
+  │                                │───────────────────────────▶│
+  │                                │◀─── public key (cached) ───│
+  │                                │                            │
+  │                                │  7. jwt.decode(RS256)      │
+  │                                │     → user_id, email       │
+  │                                │                            │
+  │◀── response (user-scoped) ─────│                            │
+```
+
+### Key implementation notes
+
+| Component | Detail |
+|---|---|
+| JWT library | `PyJWT[cryptography]` + `PyJWKClient(jwks_url, cache_keys=True)` |
+| Algorithm | RS256 (asymmetric — no shared secret) |
+| JWKS caching | Keys are cached in-process; rotations handled automatically |
+| Auth-optional | `_user_from_request()` returns `None` if no valid token; all downstream code accepts `user_id=None` |
+| `verify_aud` | Disabled — Clerk JWTs don't include an `aud` claim by default |
 
 ---
 
@@ -113,31 +106,40 @@ graph TD
 
 The server is the entry point for all web traffic. It manages:
 
-- **Sessions**: Each browser tab gets a UUID `session_id`. The server caches `TravelAgent` instances in memory and restores from SQLite on cache miss.
+- **Auth**: Clerk JWT verified on every authenticated request via `_user_from_request()`
+- **Sessions**: Each browser tab gets a `secrets.token_urlsafe(32)` session ID. The server caches `TravelAgent` instances in memory and restores from PostgreSQL on cache miss.
+- **Session ownership**: `_require_session_access(session_id, auth_user)` raises 403 if the authenticated user doesn't own the session.
 - **SSE Streaming**: Chat responses are streamed via Server-Sent Events so the UI updates in real-time as tools execute.
-- **Rate Limiting**: A sliding window of 20 requests/minute per IP protects against abuse.
-- **Persistence**: After each chat exchange, the conversation and current itinerary are written to `sessions.db`.
+- **Rate Limiting**: Authenticated users → 40 req/min (keyed by `user_id`). Anonymous → 20 req/min (keyed by IP).
+- **Plan limits**: Before each chat turn, `UserStore.within_limit()` checks the user's plan. Returns HTTP 402 if exhausted.
 
 **Key routes:**
 
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/` | Serve `static/index.html` |
-| `POST` | `/api/chat/{session_id}` | Send a message; returns SSE stream |
-| `GET` | `/api/session/{session_id}` | Restore a session (conversation + itinerary) |
-| `DELETE` | `/api/session/{session_id}` | Clear a session (start fresh) |
-| `GET` | `/api/sessions` | List all sessions |
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `GET` | `/api/config` | None | Clerk publishable key + auth_enabled flag |
+| `GET` | `/api/health` | None | Component status: db, anthropic, serpapi, clerk |
+| `POST` | `/api/me` | Required | Upsert user from JWT claims |
+| `GET` | `/api/me` | Required | Current user profile + usage + plan limits |
+| `POST` | `/api/session/new` | Optional | Create session (links to user if authenticated) |
+| `POST` | `/api/chat/{session_id}` | Optional | Chat — SSE stream of tool events + final response |
+| `GET` | `/api/itinerary/{session_id}` | Optional | Fetch current itinerary JSON |
+| `POST` | `/api/itinerary/{session_id}` | Optional | Save itinerary (drag reorder, travelers update) |
+| `POST` | `/api/share/{session_id}` | Optional | Create read-only share link |
+| `GET` | `/api/workspaces` | Required | List user's workspaces |
+| `POST` | `/api/workspaces` | Required | Create workspace |
+| `POST` | `/api/workspaces/{id}/invite` | Required | Invite member by email |
 
 **SSE event types emitted during a chat:**
 
 ```
-tool_start      → { "tool": "search_flights", "label": "Searching flights…" }
-tool_done       → { "tool": "search_flights" }
+tool_start       → { "tool": "search_flights", "label": "Searching flights…" }
+tool_done        → { "tool": "search_flights" }
 itinerary_update → { "itinerary": { "destination": "…", "days": […] } }
-deal_result     → { "deal": { "origin": "…", "results": […] } }
-month_result    → { "deal": { "origin": "…", "months": […] } }
-error           → { "message": "…" }
-done            → { "content": "Final agent response text" }
+deal_result      → { "deal": { "origin": "…", "results": […] } }
+month_result     → { "deal": { "origin": "…", "months": […] } }
+error            → { "message": "…" }
+done             → { "content": "Final agent response text" }
 ```
 
 ---
@@ -146,92 +148,71 @@ done            → { "content": "Final agent response text" }
 
 The `TravelAgent` class runs the **agentic reasoning loop**:
 
-```mermaid
-flowchart TD
-    Start(["agent.chat(message)"])
-    Append["Append user message\nto conversation history"]
-    BuildPrompt["Build system prompt\n(with user prefs + recent trips)"]
-    CallClaude["Call Claude API\n(full conversation + 16 tool schemas)"]
-    CheckStop{{"Claude\nend_turn?"}}
-    ExtractText["Extract text\nreturn to server"]
-    ExtractTools["Extract tool_use blocks"]
-    Confirm{{"Booking tool\nwithout confirmation?"}}
-    AskUser["Inject confirmation\nrequest into response"]
-    Dispatch["Dispatch all tool calls\nin parallel (threads)"]
-    Collect["Collect tool results"]
-    Append2["Append tool results\nto conversation"]
-
-    Start --> Append
-    Append --> BuildPrompt
-    BuildPrompt --> CallClaude
-    CallClaude --> CheckStop
-    CheckStop -->|"yes"| ExtractText
-    CheckStop -->|"no"| ExtractTools
-    ExtractTools --> Confirm
-    Confirm -->|"yes"| AskUser
-    AskUser --> ExtractText
-    Confirm -->|"no"| Dispatch
-    Dispatch --> Collect
-    Collect --> Append2
-    Append2 --> CallClaude
+```
+agent.chat(message)
+  │
+  ├─ Append user message to conversation history
+  ├─ Build system prompt
+  │   ├─ _prefs.as_context_string(user_id=self._user_id)
+  │   └─ _trips.as_context_string(user_id=self._user_id)
+  │
+  ├─ Call Claude API (full conversation + 18 tool schemas)
+  │
+  ├─ Claude returns tool_use blocks?
+  │   ├─ YES → dispatch all tool calls in parallel (ThreadPoolExecutor)
+  │   │        collect results → append to conversation → loop
+  │   └─ NO  → extract text → return to server
+  │
+  └─ Server persists session to PostgreSQL
 ```
 
+**Per-user isolation in the agent:**
+
+`TravelAgent.__init__(user_id=None)` accepts the authenticated user's ID. All internal calls to `PreferenceStore` and `TripStore` pass `user_id=self._user_id`, ensuring the agent reads and writes only that user's data. Without this, all users would share the same preference pool — a critical security flaw that is prevented by design.
+
 **Key design decisions:**
-- **Parallel tool execution**: All tool calls in a single Claude response are dispatched simultaneously using `ThreadPoolExecutor`.
-- **Context injection**: User preferences and recent trips are injected into the system prompt on every turn, keeping Claude informed without the user repeating themselves.
-- **Conversation history**: The full conversation is sent to Claude each turn (no external memory retrieval needed for short sessions).
+
+| Decision | Why |
+|---|---|
+| Parallel tool execution | All tool calls in a single Claude response dispatch simultaneously via `ThreadPoolExecutor` |
+| Context injection | User preferences and recent trips injected into system prompt every turn — Claude stays informed without re-asking |
+| Full conversation history | Entire conversation sent to Claude each turn; no external retrieval needed for session-length context |
+| Per-session in-memory agent cache | Avoids re-parsing long conversation histories on repeated requests |
 
 ---
 
 ### Tools Layer
 
-Each tool is a Python module that Claude can call. Tools have two modes:
+Each tool is a Python module that Claude can call. Tools have a fallback chain — the app always returns results even without API keys.
 
-1. **Real API mode**: Activated when environment variables are set.
-2. **Fallback mode**: Uses free public APIs (Open-Meteo, OpenStreetMap, Wikipedia) or mock data.
+**Flight search priority chain:**
 
-```mermaid
-graph LR
-    subgraph flights["flights.py"]
-        F1["search_flights()"]
-        F2["book_flight()"]
-        F3["find_cheapest_dates()"]
-        F4["find_cheapest_month()"]
-    end
-    subgraph hotels["hotels.py"]
-        H1["search_hotels()"]
-        H2["book_hotel()"]
-    end
-    subgraph weather["weather.py"]
-        W1["get_weather()"]
-    end
-    subgraph maps["maps.py"]
-        M1["search_places()"]
-        M2["get_distance()"]
-    end
-    subgraph search["search.py"]
-        S1["web_search()"]
-    end
-    subgraph calendar["calendar.py"]
-        C1["check_availability()"]
-        C2["add_to_calendar()"]
-    end
-
-    F1 & F2 & F3 & F4 --> Amadeus[("Amadeus API\nor mock")]
-    H1 & H2 --> AmadeusH[("Amadeus API\nor OSM + mock")]
-    W1 --> OpenMeteo[("Open-Meteo\nor climate profile")]
-    M1 & M2 --> OSM[("OpenStreetMap\nNominatim + Overpass")]
-    S1 --> WikiBrave[("Wikipedia\nor Brave Search")]
-    C1 & C2 --> CalFile[("~/.travel_agent/\ncalendar.json")]
 ```
+search_flights()
+  1. SerpAPI (engine=google_flights)   ← primary; real Google Flights prices
+     SERPAPI_KEY set?  yes → real data | no → skip
+  2. Amadeus GDS                       ← fallback; production or test sandbox
+     AMADEUS_CLIENT_ID set?  yes → real data | no → skip
+  3. Distance-calculated mock pricing  ← always available; realistic estimates
+```
+
+**Tool modules:**
+
+| Module | Functions | Data Source |
+|---|---|---|
+| `flights.py` | `search_flights`, `book_flight`, `find_cheapest_dates`, `find_cheapest_month` | SerpAPI → Amadeus → mock |
+| `hotels.py` | `search_hotels`, `book_hotel` | Amadeus → OSM + mock |
+| `weather.py` | `get_weather` | Open-Meteo (free, no key) |
+| `maps.py` | `search_places`, `get_distance` | OpenStreetMap / Nominatim / Overpass |
+| `search.py` | `web_search` | Brave Search → Wikipedia |
+| `seasons.py` | (in-process) | Built-in destination database |
+| `calendar.py` | `check_availability`, `add_to_calendar` | Local calendar JSON |
 
 #### Tool: `find_cheapest_dates` / `find_cheapest_month`
 
-The deal-hunting flagship feature. Scans flight prices across a flexible date window and returns ranked results:
-
 ```
 find_cheapest_dates(origin, destination, target_date, flexibility_days=7)
-  → Scans [target_date - N ... target_date + N]
+  → Scans [target_date − N … target_date + N]
   → Returns: best_price, savings_vs_target, days_from_target
 
 find_cheapest_month(origin, destination, year, month)
@@ -242,91 +223,132 @@ find_cheapest_month(origin, destination, year, month)
 
 #### Tool: `update_itinerary`
 
-A special tool that has no external API side-effect — it simply causes the server to emit an `itinerary_update` SSE event, which the frontend uses to update the visual trip board in real-time.
+Causes the server to emit an `itinerary_update` SSE event. Accepts `travelers` (integer ≥ 1) and `max_budget_usd` fields in addition to the day-by-day structure. The frontend uses these to render the travelers stepper and per-person budget breakdown.
 
 ---
 
 ### Memory Layer
 
-Three SQLite-backed stores in `~/.travel_agent/` (or `$TRAVEL_AGENT_DATA_DIR`):
+All data stored in **PostgreSQL** (Railway managed). Tables are created with `CREATE TABLE IF NOT EXISTS` on first boot; columns added with `ALTER TABLE … ADD COLUMN IF NOT EXISTS` for zero-downtime migrations.
 
-```mermaid
-erDiagram
-    PREFERENCES {
-        text key PK
-        text value_json
-        datetime updated_at
-    }
+**Database schema:**
 
-    TRIPS {
-        text id PK
-        text destination
-        date start_date
-        date end_date
-        text status
-        text data_json
-        datetime created_at
-    }
+```sql
+-- Core session storage
+sessions (
+    session_id   TEXT PRIMARY KEY,
+    user_id      TEXT,               -- NULL for anonymous; FK to users
+    conversation TEXT,               -- JSON conversation history
+    itinerary    TEXT,               -- JSON current itinerary
+    created_at   TEXT,
+    updated_at   TEXT
+)
 
-    SESSIONS {
-        text session_id PK
-        text conversation_json
-        text itinerary_json
-        datetime created_at
-        datetime updated_at
-    }
+-- User accounts (synced from Clerk JWT claims)
+users (
+    id         TEXT PRIMARY KEY,     -- Clerk user_id (e.g. user_abc123)
+    email      TEXT,
+    name       TEXT,
+    plan       TEXT DEFAULT 'free',  -- free | pro | team
+    created_at TEXT,
+    updated_at TEXT
+)
+
+-- Monthly usage metering
+usage (
+    user_id     TEXT,
+    month       TEXT,                -- YYYY-MM
+    chat_turns  INTEGER DEFAULT 0,
+    api_calls   INTEGER DEFAULT 0,
+    PRIMARY KEY (user_id, month)
+)
+
+-- Anonymous/global preferences
+preferences (
+    key        TEXT PRIMARY KEY,
+    value_json TEXT,
+    updated_at TEXT
+)
+
+-- Per-user preference overrides
+user_preferences (
+    user_id    TEXT,
+    key        TEXT,
+    value_json TEXT,
+    updated_at TEXT,
+    PRIMARY KEY (user_id, key)
+)
+
+-- Saved trips (per-user)
+trips (
+    id         TEXT PRIMARY KEY,
+    user_id    TEXT,                 -- NULL = anonymous
+    name       TEXT,
+    data_json  TEXT,
+    created_at TEXT
+)
+
+-- Collaborative workspaces
+workspaces (
+    id         TEXT PRIMARY KEY,     -- "WS" + token_urlsafe(10)
+    name       TEXT NOT NULL,
+    owner_id   TEXT NOT NULL,
+    session_id TEXT,
+    created_at TEXT,
+    updated_at TEXT
+)
+
+-- Workspace membership
+workspace_members (
+    workspace_id  TEXT NOT NULL,
+    user_id       TEXT,              -- NULL until invite is claimed
+    invited_email TEXT NOT NULL,
+    role          TEXT DEFAULT 'editor',  -- owner | editor | viewer
+    joined_at     TEXT,
+    PRIMARY KEY (workspace_id, invited_email)
+)
+
+-- Read-only share tokens
+share_tokens (
+    token      TEXT PRIMARY KEY,
+    session_id TEXT,
+    created_at TEXT
+)
 ```
 
-**Preference keys stored by default:**
+**Plan limits** (defined in `memory/users.py:PLAN_LIMITS`):
 
-| Key | Example Value |
-|---|---|
-| `preferred_airlines` | `["Delta", "United"]` |
-| `seat_preference` | `"window"` |
-| `budget_per_day` | `200` |
-| `home_airport` | `"JFK"` |
-| `dietary_restrictions` | `["vegetarian"]` |
-| `travel_pace` | `"relaxed"` |
-| `accommodation_type` | `"hotel"` |
+| Plan | `chat_turns`/month | `api_calls`/month |
+|---|---|---|
+| free | 20 | 10 |
+| pro | unlimited (−1) | 200 |
+| team | unlimited (−1) | 500 |
 
 ---
 
 ## Frontend Architecture (`static/index.html`)
 
-The entire frontend is a single HTML file (~2000 lines). It uses no build step, no npm, and only one CDN dependency (`marked.js` for Markdown rendering).
+The entire frontend is a single HTML file. It uses no build step, no npm, and only one CDN dependency (`marked.js` for Markdown rendering). The Clerk JS SDK is loaded from the Clerk CDN when `CLERK_PUBLISHABLE_KEY` is configured.
 
-```mermaid
-graph TD
-    subgraph Layout["Three-Column Layout"]
-        Sidebar["Sidebar (270px)\n• Logo\n• Session list\n• Preferences panel\n• Reset button"]
-        Chat["Chat Panel (flex)\n• Message history\n• Tool progress indicators\n• Deal cards\n• Input box"]
-        Board["Trip Board (400px)\n• Day-by-day cards\n• Drag-and-drop\n• Budget summary\n• Weather badges"]
-    end
-
-    subgraph SSE["SSE Event Handlers"]
-        OnToolStart["tool_start\n→ show progress spinner"]
-        OnToolDone["tool_done\n→ hide spinner"]
-        OnItinerary["itinerary_update\n→ render trip board"]
-        OnDeal["deal_result\n→ render deal card"]
-        OnDone["done\n→ render agent message"]
-    end
-
-    subgraph Components["Key UI Components"]
-        DealCard["Deal Card\n• Price vs target date\n• Savings badge\n• Heat map calendar"]
-        ItineraryCard["Itinerary Day Card\n• Flight/hotel/activity items\n• Drag handle\n• Remove button"]
-        BudgetBar["Budget Bar\n• Category chips\n• Color-coded by % used"]
-        WeatherBadge["Season Badge\n• peak / shoulder / off"]
-    end
-```
-
-**State management** is entirely in plain JavaScript module-level variables:
+**State management** (plain JavaScript module-level variables):
 
 ```javascript
-let currentSessionId   // UUID for this browser tab
-let currentItinerary   // { destination, days: [...], budget: {...} }
-let conversationEl     // DOM reference to chat panel
-let activeSseSource    // EventSource for current chat request
+let currentSessionId    // token_urlsafe(32) from server
+let currentItinerary    // { destination, days, budget, travelers, max_budget_usd }
+let _clerk              // Clerk JS SDK instance (null if auth disabled)
+let _clerkToken         // current JWT string
+let _currentUser        // { id, email, name, plan, usage }
 ```
+
+**Auth-aware API calls:** All `/api/*` requests go through `window._apiFetch(url, opts)`, which injects `Authorization: Bearer {token}` when a Clerk session is active and falls back to unauthenticated fetch otherwise.
+
+**Key UI panels:**
+
+| Panel | Contents |
+|---|---|
+| Sidebar (left) | Logo, session list, workspace chip, user profile panel (plan badge + usage bar), sign-in prompt |
+| Chat (center) | Message history, tool progress spinners, deal cards, input box |
+| Trip Board (right) | Day-by-day cards (draggable), travelers stepper, budget bar + per-person breakdown, weather badges |
 
 ---
 
@@ -334,166 +356,158 @@ let activeSseSource    // EventSource for current chat request
 
 ### 1. Message → Response Flow
 
-```mermaid
-sequenceDiagram
-    participant U as User
-    participant F as Frontend (JS)
-    participant S as Server (SSE)
-    participant A as Agent Loop
-    participant C as Claude API
-    participant T as Tools (parallel)
-
-    U->>F: Submit message
-    F->>S: POST /api/chat/{session_id}\n{message: "Plan a trip to Tokyo"}
-    activate S
-    S-->>F: SSE stream opened
-    S->>A: agent.chat(message, progress_cb)
-    activate A
-
-    A->>C: {system: "...", messages: [...], tools: [16 schemas]}
-    activate C
-    C-->>A: tool_use: search_flights(JFK, NRT, 2025-05-10)
-    C-->>A: tool_use: get_weather(Tokyo, May)
-    C-->>A: tool_use: web_search("Tokyo travel tips")
-    deactivate C
-
-    A-->>S: progress("search_flights")
-    S-->>F: {event: tool_start, tool: "search_flights"}
-    F->>F: Show "Searching flights…" spinner
-
-    par Parallel tool execution
-        A->>T: search_flights(...)
-    and
-        A->>T: get_weather(...)
-    and
-        A->>T: web_search(...)
-    end
-    T-->>A: [flight results, weather data, search results]
-
-    A-->>S: progress done
-    S-->>F: {event: tool_done, tool: "search_flights"}
-
-    A->>C: tool results appended
-    activate C
-    C-->>A: tool_use: update_itinerary({days: [...]})
-    deactivate C
-
-    A-->>S: itinerary data
-    S-->>F: {event: itinerary_update, itinerary: {...}}
-    F->>F: Render trip board
-
-    A->>C: tool result
-    activate C
-    C-->>A: end_turn: "Here's your 7-day Tokyo trip…"
-    deactivate C
-
-    A-->>S: final response
-    deactivate A
-    S-->>F: {event: done, content: "Here's your 7-day Tokyo trip…"}
-    deactivate S
-    S->>S: persist session to SQLite
-
-    F->>U: Render chat message + trip board
+```
+User submits message
+  │
+  ▼
+Frontend: _apiFetch POST /api/chat/{session_id}
+  Authorization: Bearer {JWT}               ← injected by _apiFetch
+  │
+  ▼
+Server: _user_from_request()               ← verifies JWT via JWKS
+  _check_rate_limit(user_id or IP)
+  _require_session_access(session_id, user)
+  plan limit check (UserStore.within_limit)
+  _get_agent(session_id, user_id=uid)
+  │
+  ▼
+TravelAgent.chat(message, progress_cb)
+  build system prompt with user prefs + trips
+  │
+  ▼
+Claude API ──► tool_use blocks (parallel)
+  │           ├─ search_flights → SerpAPI → Amadeus → mock
+  │           ├─ get_weather → Open-Meteo
+  │           └─ update_itinerary → SSE itinerary_update event
+  │
+  ▼
+SSE stream → Frontend
+  tool_start / tool_done / itinerary_update / done
+  │
+  ▼
+Server persists session to PostgreSQL
+UserStore.increment_chat(user_id)          ← usage metering
 ```
 
----
+### 2. Auth Flow
 
-### 2. Booking Confirmation Flow
-
-```mermaid
-sequenceDiagram
-    participant U as User
-    participant C as Claude
-    participant BT as book_flight tool
-    participant CAL as Calendar
-    participant DB as trips.db
-
-    U->>C: "Book that $842 flight"
-    C->>BT: book_flight(JFK, LIS, 2025-05-10,\n  payment_confirmed=false)
-    BT-->>C: {"status": "awaiting_confirmation",\n  "message": "Ready to book for $842"}
-    C->>U: "I'll book JFK→LIS on May 10 for $842.\nShall I confirm?"
-    U->>C: "Yes, go ahead"
-    C->>BT: book_flight(JFK, LIS, 2025-05-10,\n  payment_confirmed=true)
-    BT-->>C: {"confirmation": "IB3847", "pnr": "XZ9Q2"}
-    C->>CAL: add_to_calendar(trip_event)
-    C->>DB: save_trip(trip_data)
-    C->>U: "✓ Booked! Confirmation: IB3847\nAdded to your calendar."
+```
+Page load
+  │
+  ▼
+GET /api/config → { clerk_publishable_key, auth_enabled }
+  │
+  ├─ auth_enabled = false → skip Clerk, run anonymous
+  │
+  └─ auth_enabled = true
+      │
+      ▼
+      Load Clerk JS from CDN
+      Clerk.load() → check existing session
+      │
+      ├─ No session → show "Sign in" button in sidebar
+      │
+      └─ Session found
+          getToken() → JWT string
+          POST /api/me { Authorization: Bearer JWT }
+          Server: upsert users table with email + name
+          Response: { id, email, plan, usage }
+          renderUserPanel(user) → show avatar + plan badge + usage bar
 ```
 
----
+### 3. Booking Confirmation Flow
 
-### 3. Session Restore Flow
-
-```mermaid
-sequenceDiagram
-    participant B as Browser (new tab)
-    participant S as Server
-    participant DB as sessions.db
-
-    B->>B: Generate or read session_id\n(localStorage)
-    B->>S: GET /api/session/{session_id}
-    S->>DB: SELECT conversation, itinerary WHERE id=?
-    alt Session exists
-        DB-->>S: {conversation: [...], itinerary: {...}}
-        S-->>B: 200 OK with session data
-        B->>B: Restore chat history\n+ render trip board
-    else No session
-        DB-->>S: empty
-        S-->>B: 200 OK with empty data
-        B->>B: Fresh start
-    end
+```
+User: "Book that $842 flight"
+  │
+Claude: book_flight(payment_confirmed=false)
+  │
+Tool returns: { status: "awaiting_confirmation", summary: "JFK→LIS $842" }
+  │
+Claude asks user: "Shall I confirm this booking?"
+  │
+User: "Yes"
+  │
+Server: POST /api/booking/confirm/{session_id}
+  │
+Claude: book_flight(payment_confirmed=true)
+  │
+Tool returns: { confirmation: "IB3847", pnr: "XZ9Q2" }
+  │
+Claude: "✓ Booked! Confirmation: IB3847"
 ```
 
----
+### 4. Session Restore Flow
 
-### 4. Deal Hunting Flow
+```
+Browser tab opens
+  │
+  ▼
+Read session_id from localStorage (or request new one)
+GET /api/itinerary/{session_id}
+  │
+  ├─ Session exists → restore chat history + render trip board
+  └─ No session → fresh start, create new session_id
+```
 
-```mermaid
-flowchart TD
-    U(["User: Find cheapest\nflights to Paris\nin September"])
-    Claude["Claude calls\nfind_cheapest_month(\n  origin=JFK,\n  dest=CDG,\n  year=2025, month=9\n)"]
-    Scan["Scan all Sep 2025\ndeparture dates"]
-    Season["Apply season\nmultipliers from\nseasons.py database"]
-    Rank["Rank by price\nGroup by week"]
-    SSE["Emit month_result\nSSE event"]
-    UI["Frontend renders\nmonth card with\nheat-map calendar"]
+### 5. Deal Hunting Flow
 
-    U --> Claude
-    Claude --> Scan
-    Scan --> Season
-    Season --> Rank
-    Rank --> SSE
-    SSE --> UI
+```
+User: "Find cheapest flights to Paris in September"
+  │
+Claude: find_cheapest_month(JFK, CDG, 2025, 9)
+  │
+  ▼
+Scan all Sep 2025 departure dates (SerpAPI or mock)
+Apply season multipliers from seasons.py database
+Rank by price, group by week
+  │
+  ▼
+SSE: month_result event
+Frontend: render month card with heat-map calendar
+User clicks cheapest week → search_flights for that date
 ```
 
 ---
 
 ## External APIs
 
-### Amadeus (Flights & Hotels)
+### SerpAPI — Google Flights (Primary)
 
-- Uses OAuth 2.0 client credentials flow; token is cached until expiry.
-- **Test sandbox**: `https://test.api.amadeus.com` (free, limited data)
-- **Production**: `https://api.amadeus.com` (requires paid plan)
-- Set `AMADEUS_HOST` env var to switch between them.
+The primary flight data source. Scrapes Google Flights and returns structured JSON.
 
 ```
-Authentication:
-  POST /v1/security/oauth2/token
-  → access_token (cached, ~30 min TTL)
+GET https://serpapi.com/search.json
+  ?engine=google_flights
+  &departure_id=JFK
+  &arrival_id=NRT
+  &outbound_date=2025-05-10
+  &type=1  (1=round-trip, 2=one-way)
+  &adults=2
+  &travel_class=1  (1=economy, 2=premium, 3=business, 4=first)
+  &currency=USD
+  &api_key={SERPAPI_KEY}
 
-Flight search:
-  GET /v2/shopping/flight-offers
-  → price, segments, carriers, cabin class
-
-Hotel search:
-  GET /v3/shopping/hotel-offers
-  → properties, rates, amenities
+Response shape:
+  best_flights[].flights[].airline
+  best_flights[].flights[].departure_airport.time
+  best_flights[].price
+  best_flights[].carbon_emissions.this_flight
 ```
 
-### Open-Meteo (Weather)
+### Amadeus GDS (Fallback)
 
-Free, no API key required. Returns hourly/daily forecasts using WMO weather codes.
+OAuth 2.0 client credentials flow; token cached ~30 min.
+
+```
+POST /v1/security/oauth2/token → access_token
+GET  /v2/shopping/flight-offers → price, segments, carriers
+GET  /v3/shopping/hotel-offers  → properties, rates, amenities
+
+AMADEUS_HOST: test.api.amadeus.com (default) or api.amadeus.com
+```
+
+### Open-Meteo (Weather — free, no key)
 
 ```
 GET https://api.open-meteo.com/v1/forecast
@@ -502,30 +516,22 @@ GET https://api.open-meteo.com/v1/forecast
   &forecast_days=7
 ```
 
-### OpenStreetMap (Maps & POI)
-
-Two free APIs used:
-
-- **Nominatim** — Geocoding (place name → lat/lon)
-- **Overpass API** — POI search (restaurants, museums, beaches, etc.) using OSM tag queries
+### OpenStreetMap / Nominatim (Maps — free, no key)
 
 ```
-Nominatim:
-  GET https://nominatim.openstreetmap.org/search
-  ?q=Lisbon&format=json&limit=1
-
-Overpass:
-  POST https://overpass-api.de/api/interpreter
-  [out:json]; node["amenity"="restaurant"](around:2000,38.7,-9.1); out 10;
+Nominatim:  GET https://nominatim.openstreetmap.org/search?q=Lisbon&format=json
+Overpass:   POST https://overpass-api.de/api/interpreter
+            [out:json]; node["amenity"="restaurant"](around:2000,38.7,-9.1); out 10;
 ```
 
-### Wikipedia (Search)
-
-Free REST API, no key needed. Returns article summaries for travel research.
+### Brave Search / Wikipedia (Web research)
 
 ```
-GET https://en.wikipedia.org/api/rest_v1/page/summary/{title}
-GET https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch={query}
+Brave:     GET https://api.search.brave.com/res/v1/web/search?q={query}
+           X-Subscription-Token: {BRAVE_SEARCH_API_KEY}
+
+Wikipedia: GET https://en.wikipedia.org/api/rest_v1/page/summary/{title}
+           (fallback when BRAVE_SEARCH_API_KEY not set)
 ```
 
 ---
@@ -560,13 +566,6 @@ GET https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch={query}
           "title": "Bairro Alto Hotel",
           "detail": "Check-in · Superior Room",
           "price_usd": 180
-        },
-        {
-          "type": "activity",
-          "time": "19:00",
-          "title": "Dinner in Alfama",
-          "detail": "Traditional fado restaurant",
-          "price_usd": 45
         }
       ]
     }
@@ -581,29 +580,19 @@ GET https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch={query}
 }
 ```
 
-### Deal Card (sent via `deal_result` SSE event)
+`travelers` and `max_budget_usd` drive the per-person math in the frontend budget panel. All `price_usd` values are **total** for the group; the UI divides by `travelers` to show per-person amounts.
+
+### Deal Card (sent via `deal_result` / `month_result` SSE event)
 
 ```json
 {
   "origin": "JFK",
-  "origin_city": "New York",
   "destination": "CDG",
-  "destination_city": "Paris",
   "target_date": "2025-09-15",
   "results_by_price": [
-    {
-      "date": "2025-09-12",
-      "price_usd": 680,
-      "days_from_target": -3,
-      "savings_usd": 145,
-      "savings_pct": 17
-    }
+    { "date": "2025-09-12", "price_usd": 680, "savings_usd": 145, "savings_pct": 17 }
   ],
-  "heatmap": {
-    "2025-09-01": 920,
-    "2025-09-02": 880,
-    "2025-09-12": 680
-  }
+  "heatmap": { "2025-09-01": 920, "2025-09-12": 680 }
 }
 ```
 
@@ -611,74 +600,82 @@ GET https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch={query}
 
 ## Security Architecture
 
-```mermaid
-graph TD
-    Internet(["Internet"])
-    RateLimit["Rate Limiter\n20 req/min per IP"]
-    Headers["Security Headers\nCSP · X-Frame-Options\nX-Content-Type-Options"]
-    Pydantic["Input Validation\n(Pydantic models)"]
-    NoKeys["No API keys in\nfrontend / JS"]
-    Confirm["Booking Confirmation\nRequired before payment"]
-    SQLite["SQLite\n(local file, not network)"]
+### Layers
 
-    Internet --> RateLimit
-    RateLimit --> Headers
-    Headers --> Pydantic
-    Pydantic --> NoKeys
-    NoKeys --> Confirm
-    Confirm --> SQLite
+```
+Internet
+  │
+  ▼  Rate limiting: 40/min per user_id (auth) or 20/min per IP (anon)
+  │
+  ▼  Security headers: CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy
+  │
+  ▼  JWT verification: RS256 via PyJWKClient (Clerk JWKS endpoint)
+  │
+  ▼  Session ownership: _require_session_access() → 403 if mismatch
+  │
+  ▼  Plan limits: UserStore.within_limit() → 402 if exceeded
+  │
+  ▼  Input validation: Pydantic models on all request bodies
+  │
+  ▼  Parameterized SQL: no string interpolation in queries
+  │
+  ▼  Booking confirmation: payment_confirmed=true only after explicit user approval
+  │
+  ▼  API keys server-side only: frontend never receives SERPAPI_KEY, AMADEUS secrets
 ```
 
-**Protections in place:**
-- Rate limiting prevents API abuse and cost amplification
-- CSP blocks XSS by restricting script/style sources
-- All API keys are server-side only; the frontend gets only sanitized data
-- Booking tools require `payment_confirmed=true`, which Claude only sets after explicit user confirmation
-- Pydantic validates all incoming request bodies
+### Key security properties
+
+| Property | Implementation |
+|---|---|
+| Session ID entropy | `secrets.token_urlsafe(32)` — 256-bit, server-generated |
+| Cross-user isolation | `sessions.user_id` enforced on every `/api/*/{session_id}` endpoint |
+| JWT algorithm | RS256 (asymmetric) — no shared secret to leak |
+| CSRF | Stateless JWT eliminates CSRF for all API calls |
+| SQL injection | Parameterized queries throughout (`%s` placeholders via psycopg2) |
+| XSS | CSP restricts script/style sources; `marked.js` output is sandboxed |
+| Agent data isolation | `TravelAgent(user_id=uid)` — preferences and trips scoped per user |
 
 ---
 
 ## Deployment Architecture
 
-### Local Development
-
-```
-Developer Machine
-├── uvicorn server:app --reload   (port 8000)
-├── ~/.travel_agent/
-│   ├── sessions.db
-│   ├── preferences.db
-│   └── trips.db
-└── .env  (API keys)
-```
-
-### Railway.app Production
+### Railway.app (Production)
 
 ```
 Railway Project
-├── Web Service (Nixpacks from Procfile)
-│   └── uvicorn server:app --host 0.0.0.0 --port $PORT
-├── Persistent Volume  →  /data
-│   ├── sessions.db
-│   ├── preferences.db
-│   └── trips.db
-└── Environment Variables
-    ├── ANTHROPIC_API_KEY
-    ├── AMADEUS_CLIENT_ID
-    ├── AMADEUS_CLIENT_SECRET
-    ├── BRAVE_SEARCH_API_KEY
-    └── TRAVEL_AGENT_DATA_DIR=/data
+├── Web Service  (Nixpacks → uvicorn server:app --host 0.0.0.0 --port $PORT)
+│
+└── PostgreSQL Service
+    └── DATABASE_URL → injected via Railway reference variable
+
+Environment Variables:
+  Required:
+    ANTHROPIC_API_KEY
+    DATABASE_URL            ← ${{Postgres.DATABASE_URL}}
+  Recommended:
+    SERPAPI_KEY             ← Google Flights live prices
+    CLERK_PUBLISHABLE_KEY   ← user auth (frontend)
+    CLERK_JWKS_URL          ← user auth JWT verification (backend)
+  Optional:
+    AMADEUS_CLIENT_ID + AMADEUS_CLIENT_SECRET
+    BRAVE_SEARCH_API_KEY
+    LOG_LEVEL
 ```
 
-**`railway.json` config:**
-```json
-{
-  "build": { "builder": "NIXPACKS" },
-  "deploy": {
-    "restartPolicyType": "ON_FAILURE",
-    "restartPolicyMaxRetries": 10
-  }
-}
+### Local Development
+
+```
+uvicorn server:app --reload --port 8000
+
+.env (copy from .env.example):
+  ANTHROPIC_API_KEY=sk-ant-...
+  DATABASE_URL=postgresql://...
+  SERPAPI_KEY=...            (optional)
+  CLERK_PUBLISHABLE_KEY=...  (optional — app runs anonymous without it)
+  CLERK_JWKS_URL=...
 ```
 
-The `TRAVEL_AGENT_DATA_DIR` environment variable is the key to persistence on Railway — it redirects all SQLite databases to the mounted volume, surviving deployments and restarts.
+### Zero-downtime migrations
+
+Schema is managed with `CREATE TABLE IF NOT EXISTS` and `ALTER TABLE … ADD COLUMN IF NOT EXISTS`. No migration tool is required for additive changes. Alembic is on the Phase 2 roadmap for more complex schema evolution.
