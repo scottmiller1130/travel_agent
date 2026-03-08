@@ -1,0 +1,13 @@
+# Ruff linter config — https://docs.astral.sh/ruff/
+line-length = 100
+
+[lint]
+select = ["E", "F", "W", "I"]   # pycodestyle errors, pyflakes, isort
+ignore = [
+    "E501",   # line too long (handled by formatter, not enforced in CI)
+    "E741",   # ambiguous variable names (l, O, I) — common in travel math
+    "F401",   # unused imports in __init__.py re-exports
+]
+
+[lint.per-file-ignores]
+"tests/*" = ["F811"]  # allow redefining fixtures/helpers in test files
