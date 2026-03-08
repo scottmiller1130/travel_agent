@@ -12,10 +12,35 @@ import json
 import logging
 import os
 import time
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeoutError
 from typing import Callable
 
 import anthropic
+
+from agent.tools_schema import TOOLS
+from memory.preferences import PreferenceStore
+from memory.trips import TripStore
+from memory.users import PLAN_LIMITS, UserStore
+from tools.advisory import get_travel_advisory
+from tools.budget import get_budget_status, log_expense
+from tools.calendar import add_to_calendar, check_availability
+from tools.currency import get_exchange_rate
+from tools.experiences import search_experiences
+from tools.flights import (
+    book_flight,
+    find_cheapest_dates,
+    find_cheapest_month,
+    search_flights,
+)
+from tools.hotels import book_hotel, search_hotels
+from tools.inspiration import get_inspiration
+from tools.maps import get_distance, search_places
+from tools.packing import generate_packing_list
+from tools.search import web_search
+from tools.transport import search_ground_transport
+from tools.visa import get_visa_requirements
+from tools.weather import get_weather
 
 log = logging.getLogger("travel_agent.agent")
 
@@ -94,24 +119,6 @@ TOOL_LABELS = {
     "generate_packing_list": "Building your packing list...",
 }
 
-from memory.preferences import PreferenceStore
-from memory.trips import TripStore
-from memory.users import UserStore, PLAN_LIMITS
-from tools.flights import search_flights, book_flight, find_cheapest_dates, find_cheapest_month
-from tools.hotels import search_hotels, book_hotel
-from tools.experiences import search_experiences
-from tools.inspiration import get_inspiration
-from tools.budget import log_expense, get_budget_status
-from tools.weather import get_weather
-from tools.maps import search_places, get_distance
-from tools.calendar import check_availability, add_to_calendar
-from tools.search import web_search
-from tools.transport import search_ground_transport
-from tools.currency import get_exchange_rate
-from tools.visa import get_visa_requirements
-from tools.advisory import get_travel_advisory
-from tools.packing import generate_packing_list
-from agent.tools_schema import TOOLS
 
 # Actions that require a human confirmation step before proceeding
 CONFIRMATION_REQUIRED = {"book_flight", "book_hotel"}

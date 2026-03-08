@@ -31,21 +31,27 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from dotenv import load_dotenv
+from dotenv import load_dotenv  # noqa: E402
+
 load_dotenv()
 
-from fastapi import FastAPI, Request, Response, HTTPException
-from starlette.middleware.base import BaseHTTPMiddleware
-from fastapi.responses import StreamingResponse, HTMLResponse, JSONResponse, FileResponse
-from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from fastapi import FastAPI, HTTPException, Request, Response  # noqa: E402
+from fastapi.responses import (  # noqa: E402
+    FileResponse,
+    HTMLResponse,
+    JSONResponse,
+    StreamingResponse,
+)
+from fastapi.staticfiles import StaticFiles  # noqa: E402
+from pydantic import BaseModel  # noqa: E402
+from starlette.middleware.base import BaseHTTPMiddleware  # noqa: E402
 
-from agent.core import TravelAgent
-from memory.preferences import PreferenceStore
-from memory.trips import TripStore
-from memory.sessions import SessionStore
-from memory.users import UserStore
-from memory.workspaces import WorkspaceStore
+from agent.core import TravelAgent  # noqa: E402
+from memory.preferences import PreferenceStore  # noqa: E402
+from memory.sessions import SessionStore  # noqa: E402
+from memory.trips import TripStore  # noqa: E402
+from memory.users import UserStore  # noqa: E402
+from memory.workspaces import WorkspaceStore  # noqa: E402
 
 _workspace_store = WorkspaceStore()
 
@@ -612,8 +618,8 @@ async def create_share_link(session_id: str, request: Request):
 @app.get("/s/{token}", response_class=HTMLResponse)
 async def shared_itinerary(token: str):
     """Render a rich, accordion read-only itinerary view for a share token."""
-    from datetime import date as _dt_date
     import html as _html
+    from datetime import date as _dt_date
 
     data = _session_store.get_session_for_token(token)
     if not data or not data.get("itinerary"):
@@ -680,12 +686,18 @@ async def shared_itinerary(token: str):
     acts_n     = sum(1 for i in all_items if i.get("type") == "activity")
 
     stats = []
-    if num_days:     stats.append(("📅", str(num_days),             "days"))
-    if travelers:    stats.append(("👥", str(travelers),            "traveler(s)"))
-    if flights_n:    stats.append(("✈",  str(flights_n),           "flight(s)"))
-    if hotels_n:     stats.append(("🏨", str(hotels_n),            "hotel night(s)"))
-    if acts_n:       stats.append(("🗺", str(acts_n),              "activities"))
-    if budget_total: stats.append(("💰", f"${budget_total:,.0f}",  "est. total"))
+    if num_days:
+        stats.append(("📅", str(num_days), "days"))
+    if travelers:
+        stats.append(("👥", str(travelers), "traveler(s)"))
+    if flights_n:
+        stats.append(("✈", str(flights_n), "flight(s)"))
+    if hotels_n:
+        stats.append(("🏨", str(hotels_n), "hotel night(s)"))
+    if acts_n:
+        stats.append(("🗺", str(acts_n), "activities"))
+    if budget_total:
+        stats.append(("💰", f"${budget_total:,.0f}", "est. total"))
     if budget_total and travelers and travelers > 1:
         per_person_total = round(budget_total / travelers)
         stats.append(("👤", f"${per_person_total:,.0f}", "per person"))

@@ -12,8 +12,7 @@ Tables:
 import secrets
 from datetime import datetime
 
-from memory.db import get_conn
-
+from memory.db import get_conn  # noqa: E402
 
 ROLES = ("owner", "editor", "viewer")
 
