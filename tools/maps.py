@@ -66,7 +66,10 @@ def _overpass_pois(bbox: list[float], osm_filter: str, limit: int) -> list[dict]
     spread = max(abs(n - s), abs(e - w))
     if spread < 0.05:
         pad = (0.05 - spread) / 2
-        s -= pad; n += pad; w -= pad; e += pad
+        s -= pad
+        n += pad
+        w -= pad
+        e += pad
 
     query = f"""
 [out:json][timeout:12];

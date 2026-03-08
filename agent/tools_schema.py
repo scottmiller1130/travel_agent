@@ -615,4 +615,103 @@ TOOLS: list[dict] = [
             "required": ["destination", "days"],
         },
     },
+    {
+        "name": "get_visa_requirements",
+        "description": (
+            "Get visa and entry requirements for a destination based on the traveler's passport. "
+            "Use this proactively when planning international trips — especially for destinations "
+            "with complex visa rules (Asia, Africa, Middle East, Central Asia). "
+            "Returns visa type (free/on-arrival/e-visa/embassy), duration allowed, cost, and official links."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "destination": {
+                    "type": "string",
+                    "description": "Destination country or city (e.g. 'Thailand', 'India', 'Tokyo')",
+                },
+                "passport_country": {
+                    "type": "string",
+                    "description": "Traveler's passport country or nationality (e.g. 'US', 'British', 'Australian')",
+                    "default": "US",
+                },
+                "trip_purpose": {
+                    "type": "string",
+                    "enum": ["tourism", "business", "transit"],
+                    "description": "Purpose of travel",
+                    "default": "tourism",
+                },
+            },
+            "required": ["destination"],
+        },
+    },
+    {
+        "name": "get_travel_advisory",
+        "description": (
+            "Get the current government travel advisory / safety level for a destination. "
+            "Always call this when the user asks about safety, or for destinations in regions "
+            "with elevated risk (Middle East, Africa, Central/South Asia, parts of Latin America). "
+            "Returns advisory level 1–4, safety message, and practical tips. "
+            "Level 1 = normal precautions, 2 = increased caution, 3 = reconsider travel, 4 = do not travel."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "destination": {
+                    "type": "string",
+                    "description": "Destination country or city (e.g. 'Mexico', 'Egypt', 'Bangkok')",
+                },
+                "passport_country": {
+                    "type": "string",
+                    "description": "Traveler's passport country for context (e.g. 'US', 'UK')",
+                    "default": "US",
+                },
+            },
+            "required": ["destination"],
+        },
+    },
+    {
+        "name": "generate_packing_list",
+        "description": (
+            "Generate a personalised packing list for a trip based on destination, duration, "
+            "climate, planned activities, and traveler profile. "
+            "Call this when the user asks 'what should I pack?', 'help me pack', or is finalising their trip. "
+            "Returns categorised list (essentials, clothing, activity gear, toiletries) with packing tips."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "destination": {
+                    "type": "string",
+                    "description": "Trip destination (e.g. 'Thailand', 'Swiss Alps', 'Tokyo')",
+                },
+                "duration_days": {
+                    "type": "integer",
+                    "description": "Length of trip in days",
+                },
+                "climate": {
+                    "type": "string",
+                    "enum": ["warm", "tropical", "mild", "cold", "snowy", "desert"],
+                    "description": "Expected climate / weather at destination",
+                    "default": "mild",
+                },
+                "activities": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Planned activities (e.g. ['hiking', 'beach', 'city', 'business', 'skiing'])",
+                },
+                "traveler_profile": {
+                    "type": "string",
+                    "enum": ["adventure", "mid_range", "luxury"],
+                    "description": "Traveler profile — affects how minimal or extensive the list is",
+                    "default": "mid_range",
+                },
+                "trip_type": {
+                    "type": "string",
+                    "description": "Optional trip type hint: honeymoon, family, business, backpacker, solo",
+                },
+            },
+            "required": ["destination", "duration_days"],
+        },
+    },
 ]

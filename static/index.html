@@ -4,6 +4,22 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Travel Agent ✈</title>
+
+  <!-- PWA -->
+  <link rel="manifest" href="/manifest.json" />
+  <meta name="theme-color" content="#0ea5e9" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Travel Agent" />
+  <link rel="apple-touch-icon" href="/icons/icon-192.svg" />
+
+  <!-- SEO / Social -->
+  <meta name="description" content="Your personal AI travel concierge — plan trips, search flights, find hotels and build day-by-day itineraries." />
+  <meta property="og:title" content="Travel Agent" />
+  <meta property="og:description" content="Your personal AI travel concierge." />
+  <meta property="og:type" content="website" />
+
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>✈</text></svg>" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -227,6 +243,9 @@
     #export-wrap { position: relative; display: block; }
     #export-btn { display: flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 9px; border: 1.5px solid var(--teal); background: var(--teal-l); color: var(--teal); font-size: 12px; font-weight: 700; cursor: pointer; transition: all .15s; white-space: nowrap; }
     #export-btn:hover { background: var(--teal); color: #fff; }
+    #install-btn { display: none; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 9px; border: 1.5px solid var(--sky); background: var(--sky-l); color: var(--sky-d); font-size: 12px; font-weight: 700; cursor: pointer; transition: all .15s; white-space: nowrap; }
+    #install-btn:hover { background: var(--sky); color: #fff; }
+    #install-btn.visible { display: flex; }
     #export-menu { position: absolute; top: calc(100% + 6px); right: 0; background: var(--surface); border: 1.5px solid var(--border); border-radius: 11px; box-shadow: var(--shadow-lg); min-width: 180px; overflow: hidden; z-index: 999; display: none; }
     #export-menu.open { display: block; animation: msgIn .15s ease; }
     .export-item { display: flex; align-items: center; gap: 10px; padding: 11px 15px; font-size: 13px; font-weight: 600; color: var(--text-2); cursor: pointer; transition: background .12s; border: none; background: none; width: 100%; text-align: left; }
@@ -458,6 +477,7 @@
       #header-right { gap: 6px; }
       #board-toggle-btn { font-size: 11px; padding: 6px 10px; }
       #export-btn { font-size: 11px; padding: 6px 10px; }
+      #install-btn { font-size: 11px; padding: 6px 10px; }
       #board-panel { width: 100% !important; }
       /* Deal calendar: tighter on mobile */
       .price-cal-grid { gap: 4px; }
@@ -600,6 +620,7 @@
       </div>
     </div>
     <div id="header-right">
+      <button id="install-btn" onclick="installApp()" aria-label="Install Travel Agent app">⬇ Install App</button>
       <div id="export-wrap">
         <button id="export-btn" onclick="toggleExportMenu(event)" aria-label="Export or import itinerary" aria-haspopup="true" aria-expanded="false">⬇ Export / Import</button>
         <div id="export-menu">
@@ -1822,6 +1843,63 @@
       if (d.itinerary) updateItinerary(d.itinerary);
     } catch(_) {}
   })();
+</script>
+
+<script>
+// ── PWA: Service Worker registration ──────────────────────────────────────
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js', { scope: '/' })
+      .then(reg => {
+        console.log('[SW] registered, scope:', reg.scope);
+        // Check for updates in the background
+        reg.addEventListener('updatefound', () => {
+          const newWorker = reg.installing;
+          newWorker.addEventListener('statechange', () => {
+            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+              // New version available — show subtle toast
+              showToast('App updated — reload for the latest version.', 6000);
+            }
+          });
+        });
+      })
+      .catch(err => console.warn('[SW] registration failed:', err));
+  });
+}
+
+// ── PWA: Install prompt ────────────────────────────────────────────────────
+let _installPrompt = null;
+
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  _installPrompt = e;
+  document.getElementById('install-btn').classList.add('visible');
+});
+
+window.addEventListener('appinstalled', () => {
+  _installPrompt = null;
+  document.getElementById('install-btn').classList.remove('visible');
+  showToast('Travel Agent installed! Find it on your home screen.', 4000);
+});
+
+function installApp() {
+  if (!_installPrompt) return;
+  _installPrompt.prompt();
+  _installPrompt.userChoice.then(choice => {
+    if (choice.outcome === 'accepted') {
+      _installPrompt = null;
+      document.getElementById('install-btn').classList.remove('visible');
+    }
+  });
+}
+
+// ── Offline / online status indicator ─────────────────────────────────────
+function _updateOnlineStatus() {
+  if (!navigator.onLine) {
+    showToast('You\'re offline — your itinerary board is still available.', 5000);
+  }
+}
+window.addEventListener('offline', _updateOnlineStatus);
 </script>
 </body>
 </html>

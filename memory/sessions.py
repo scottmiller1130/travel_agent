@@ -49,9 +49,11 @@ class SessionStore:
             """)
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS share_tokens (
-                    token      TEXT PRIMARY KEY,
-                    session_id TEXT NOT NULL,
-                    created_at TEXT NOT NULL
+                    token              TEXT PRIMARY KEY,
+                    session_id         TEXT NOT NULL,
+                    itinerary_snapshot TEXT,
+                    created_at         TEXT NOT NULL,
+                    expires_at         TEXT NOT NULL
                 )
             """)
             cur.execute(
@@ -62,6 +64,13 @@ class SessionStore:
             )
             cur.execute(
                 "CREATE INDEX IF NOT EXISTS idx_share_tokens_session ON share_tokens(session_id)"
+            )
+            # Migrate existing deployments — add columns introduced in v2 of share_tokens
+            cur.execute(
+                "ALTER TABLE share_tokens ADD COLUMN IF NOT EXISTS itinerary_snapshot TEXT"
+            )
+            cur.execute(
+                "ALTER TABLE share_tokens ADD COLUMN IF NOT EXISTS expires_at TEXT NOT NULL DEFAULT '2099-12-31'"
             )
             self._ready = True
 
@@ -154,53 +163,56 @@ class SessionStore:
             cur = conn.cursor()
             cur.execute("DELETE FROM sessions WHERE id = %s", (session_id,))
 
-    def create_share_token(self, session_id: str) -> str:
-        """Generate a share token for a session and return it."""
+    def create_share_token(self, session_id: str, itinerary: dict) -> str:
+        """Snapshot the itinerary and return a permanent share token (valid 90 days)."""
         self._ensure_db()
         token = secrets.token_urlsafe(16)
-        now = datetime.now().isoformat()
+        now = datetime.now()
+        expires = (now + timedelta(days=90)).isoformat()
         with get_conn() as conn:
             cur = conn.cursor()
             cur.execute(
                 """
-                INSERT INTO share_tokens (token, session_id, created_at)
-                VALUES (%s, %s, %s)
-                ON CONFLICT (token) DO UPDATE SET session_id = EXCLUDED.session_id
+                INSERT INTO share_tokens (token, session_id, itinerary_snapshot, created_at, expires_at)
+                VALUES (%s, %s, %s, %s, %s)
                 """,
-                (token, session_id, now),
+                (token, session_id, json.dumps(itinerary), now.isoformat(), expires),
             )
         return token
 
     def expire_old_sessions(self, days: int = 30) -> int:
         """Delete sessions not updated in `days` days. Returns count deleted."""
         cutoff = (datetime.now() - timedelta(days=days)).isoformat()
+        now = datetime.now().isoformat()
         with get_conn() as conn:
             cur = conn.cursor()
             cur.execute("DELETE FROM sessions WHERE updated_at < %s", (cutoff,))
             deleted = cur.rowcount
-            cur.execute(
-                "DELETE FROM share_tokens WHERE session_id NOT IN (SELECT id FROM sessions)"
-            )
+            # Remove share tokens that have expired
+            cur.execute("DELETE FROM share_tokens WHERE expires_at < %s", (now,))
         return deleted
 
     def get_session_for_token(self, token: str) -> dict | None:
-        """Return the itinerary for a share token, or None if invalid."""
+        """Return the snapshotted itinerary for a share token, or None if invalid/expired."""
         self._ensure_db()
+        now = datetime.now().isoformat()
         with get_conn() as conn:
             cur = conn.cursor()
             cur.execute(
                 """
-                SELECT s.itinerary
-                FROM share_tokens t
-                JOIN sessions s ON t.session_id = s.id
-                WHERE t.token = %s
+                SELECT itinerary_snapshot, expires_at
+                FROM share_tokens
+                WHERE token = %s
                 """,
                 (token,),
             )
             row = cur.fetchone()
         if not row:
             return None
-        return {"itinerary": json.loads(row[0]) if row[0] else None}
+        snapshot, expires_at = row
+        if expires_at < now:
+            return None  # treat expired tokens as not found
+        return {"itinerary": json.loads(snapshot) if snapshot else None}
 
     def owns(self, session_id: str, user_id: str) -> bool:
         """Return True if the session belongs to the given user."""

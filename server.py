@@ -36,7 +36,7 @@ load_dotenv()
 
 from fastapi import FastAPI, Request, Response, HTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
-from fastapi.responses import StreamingResponse, HTMLResponse, JSONResponse
+from fastapi.responses import StreamingResponse, HTMLResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -215,7 +215,8 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
             "connect-src 'self' https://*.clerk.accounts.dev https://clerk.com https://api.clerk.com; "
             "img-src 'self' data: https://*.clerk.com https://*.gravatar.com; "
-            "font-src 'self' https://fonts.gstatic.com;"
+            "font-src 'self' https://fonts.gstatic.com; "
+            "worker-src 'self';"
         )
         return response
 
@@ -319,6 +320,42 @@ async def root():
             status_code=404,
         )
     return HTMLResponse(index.read_text())
+
+
+# ---------------------------------------------------------------------------
+# PWA static files — manifest, service worker, icons
+# ---------------------------------------------------------------------------
+@app.get("/manifest.json")
+async def manifest():
+    path = STATIC_DIR / "manifest.json"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="manifest.json not found")
+    return FileResponse(path, media_type="application/manifest+json")
+
+
+@app.get("/sw.js")
+async def service_worker():
+    path = STATIC_DIR / "sw.js"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="sw.js not found")
+    response = FileResponse(path, media_type="application/javascript")
+    # Allow the SW to control the full origin scope
+    response.headers["Service-Worker-Allowed"] = "/"
+    # No caching — browser must always fetch the latest SW
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return response
+
+
+@app.get("/icons/{filename}")
+async def pwa_icon(filename: str):
+    # Sanitize: only allow simple filenames, no path traversal
+    if "/" in filename or "\\" in filename or ".." in filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    path = STATIC_DIR / "icons" / filename
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Icon not found")
+    media_type = "image/svg+xml" if filename.endswith(".svg") else "image/png"
+    return FileResponse(path, media_type=media_type)
 
 
 @app.get("/help", response_class=HTMLResponse)
@@ -567,7 +604,7 @@ async def create_share_link(session_id: str, request: Request):
     saved = _session_store.load(session_id)
     if not saved or not saved.get("itinerary"):
         raise HTTPException(status_code=404, detail="No itinerary to share for this session.")
-    token = _session_store.create_share_token(session_id)
+    token = _session_store.create_share_token(session_id, saved["itinerary"])
     base_url = str(request.base_url).rstrip("/")
     return JSONResponse({"status": "ok", "share_url": f"{base_url}/s/{token}"})
 

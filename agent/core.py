@@ -89,6 +89,9 @@ TOOL_LABELS = {
     "update_itinerary": "Building your trip board...",
     "find_cheapest_dates":  "Hunting for cheap dates...",
     "find_cheapest_month":  "Scanning months for best deals...",
+    "get_visa_requirements": "Checking visa requirements...",
+    "get_travel_advisory":   "Checking travel advisories...",
+    "generate_packing_list": "Building your packing list...",
 }
 
 from memory.preferences import PreferenceStore
@@ -105,6 +108,9 @@ from tools.calendar import check_availability, add_to_calendar
 from tools.search import web_search
 from tools.transport import search_ground_transport
 from tools.currency import get_exchange_rate
+from tools.visa import get_visa_requirements
+from tools.advisory import get_travel_advisory
+from tools.packing import generate_packing_list
 from agent.tools_schema import TOOLS
 
 # Actions that require a human confirmation step before proceeding
@@ -230,6 +236,12 @@ HOW YOU WORK
 24. **Proactive deal alerts.** If the user hasn't fixed their dates, always run find_cheapest_dates or find_cheapest_month in the background for the route. Present the best date as the default recommendation. For luxury, frame as "best travel window" (lowest crowds, best weather) not "cheapest."
 
 25. **Language & local context.** For non-English destinations, include: key phrases, tipping customs, whether credit cards are widely accepted, and any local etiquette that matters (dress codes, haggling culture, tuk-tuk scams to avoid).
+
+26. **Visa & entry requirements.** Use get_visa_requirements whenever planning an international trip. Call it proactively — don't wait for the user to ask. Surface the result early in the planning conversation so visa lead-time doesn't surprise them. For multi-destination trips, call it for each country.
+
+27. **Travel advisories.** Use get_travel_advisory for any destination outside Western Europe, North America, Japan, Singapore, Australia, and New Zealand. Always call it for: Middle East, Africa, Central/South Asia, Southeast Asia (Level 2+ risk), Latin America, Eastern Europe. Present the level clearly. For Level 3 or 4, strongly flag it and recommend the user check official sources.
+
+28. **Packing lists.** Use generate_packing_list when the user asks "what should I pack?", "help me pack", or is finalising their itinerary. Pass the correct climate (warm/tropical/mild/cold/snowy/desert), duration_days, activities (from the itinerary), and traveler_profile. Present the list in clean sections. For adventure travelers: emphasise the light-packing tips. For luxury: skip the budget gear items.
 
 TONE
 
@@ -472,6 +484,9 @@ class TravelAgent:
             "update_itinerary":    self._handle_update_itinerary,
             "find_cheapest_dates": self._handle_find_cheapest_dates,
             "find_cheapest_month": self._handle_find_cheapest_month,
+            "get_visa_requirements": lambda i: get_visa_requirements(**i),
+            "get_travel_advisory":   lambda i: get_travel_advisory(**i),
+            "generate_packing_list": lambda i: generate_packing_list(**i),
         }
 
         handler = dispatch.get(name)
