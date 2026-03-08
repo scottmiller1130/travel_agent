@@ -503,6 +503,46 @@
     .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
     .skip-link { position: absolute; top: -40px; left: 8px; background: var(--sky); color: #fff; padding: 6px 12px; border-radius: 0 0 8px 8px; font-size: 13px; font-weight: 700; z-index: 9999; transition: top .15s; }
     .skip-link:focus { top: 0; }
+
+    /* ── Auth / User profile ─────────────────────────────────────────────── */
+    #user-panel { padding: 11px 14px; border-top: 1px solid var(--border); margin-top: auto; background: var(--surface2); }
+    .user-card { display: flex; align-items: center; gap: 9px; }
+    .user-avatar { width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(135deg, var(--sky), var(--teal)); display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 800; color: #fff; flex-shrink: 0; overflow: hidden; }
+    .user-avatar img { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; }
+    .user-info { flex: 1; min-width: 0; }
+    .user-name { font-size: 12px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .user-plan { font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 10px; display: inline-block; margin-top: 1px; }
+    .plan-free  { background: #f1f5f9; color: var(--text-3); }
+    .plan-pro   { background: #ccfbf1; color: #0f766e; }
+    .plan-team  { background: #ede9fe; color: #5b21b6; }
+    .user-actions { display: flex; gap: 5px; align-items: center; }
+    .user-action-btn { background: none; border: 1.5px solid var(--border); border-radius: 7px; cursor: pointer; font-size: 12px; color: var(--text-3); padding: 3px 8px; font-family: inherit; font-weight: 600; transition: all .15s; }
+    .user-action-btn:hover { background: var(--surface); color: var(--text); border-color: var(--border2); }
+    .usage-bar-wrap { margin-top: 7px; }
+    .usage-bar-label { display: flex; justify-content: space-between; font-size: 10px; color: var(--text-4); margin-bottom: 3px; font-weight: 600; }
+    .usage-bar-outer { height: 3px; background: var(--border); border-radius: 2px; overflow: hidden; }
+    .usage-bar-inner { height: 3px; border-radius: 2px; background: linear-gradient(90deg, var(--sky), var(--teal)); transition: width .4s var(--ease); }
+    .usage-bar-inner.warn  { background: var(--gold); }
+    .usage-bar-inner.limit { background: var(--rose); }
+
+    /* ── Sign-in button (shown when not logged in) ── */
+    .signin-prompt { padding: 11px 14px 14px; border-top: 1px solid var(--border); margin-top: auto; text-align: center; }
+    .signin-prompt p { font-size: 11px; color: var(--text-4); margin-bottom: 8px; font-weight: 500; line-height: 1.4; }
+    #sign-in-btn { width: 100%; padding: 9px; border-radius: 9px; font-size: 13px; font-weight: 700; background: linear-gradient(135deg,#0ea5e9,#0d9488); color: #fff; border: none; cursor: pointer; font-family: inherit; box-shadow: 0 3px 10px rgba(14,165,233,.3); transition: all .18s; }
+    #sign-in-btn:hover { opacity: .9; transform: translateY(-1px); box-shadow: 0 5px 14px rgba(14,165,233,.35); }
+
+    /* ── Workspace chip ── */
+    .ws-chip { display: flex; align-items: center; gap: 6px; padding: 5px 10px; background: var(--surface2); border: 1.5px solid var(--border); border-radius: 9px; margin: 0 14px 8px; cursor: pointer; transition: all .15s; }
+    .ws-chip:hover { border-color: var(--purple); background: #f5f3ff; }
+    .ws-chip .ws-icon { font-size: 14px; }
+    .ws-chip .ws-name { font-size: 12px; font-weight: 700; color: var(--text-2); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ws-chip .ws-count { font-size: 10px; font-weight: 700; color: var(--text-4); background: var(--border); border-radius: 8px; padding: 1px 6px; }
+
+    /* ── Upgrade nudge ── */
+    .upgrade-nudge { margin: 6px 14px; padding: 8px 11px; background: linear-gradient(135deg,#f0fdf4,#ecfdf5); border: 1.5px solid #bbf7d0; border-radius: 10px; cursor: pointer; transition: all .15s; }
+    .upgrade-nudge:hover { border-color: #34d399; }
+    .upgrade-nudge .un-title { font-size: 11px; font-weight: 800; color: #065f46; }
+    .upgrade-nudge .un-desc  { font-size: 10px; color: #6ee7b7; margin-top: 1px; font-weight: 600; }
   </style>
 </head>
 <body>
@@ -519,11 +559,14 @@
     <button class="btn primary" onclick="newTrip()"><span class="icon">✈</span> New Trip</button>
     <a class="btn" href="/help" target="_blank" style="text-decoration:none"><span class="icon">📖</span> User Guide</a>
   </div>
+  <div id="workspace-slot"></div>
   <div class="sidebar-section"><h3>Saved Trips</h3></div>
   <div id="trips-list"><p class="empty-state">No trips yet.<br>Ask me to plan one!</p></div>
-  <div style="padding:10px 14px 16px;border-top:1px solid var(--border);margin-top:auto">
+  <div style="padding:6px 14px 10px;border-top:1px solid var(--border)">
     <button class="btn" style="font-size:11px;color:var(--text-4);border-color:transparent;padding:5px 8px" onclick="resetConversation()">↺ Reset conversation</button>
   </div>
+  <!-- User panel (auth) — populated by JS -->
+  <div id="user-panel"></div>
 </div>
 
 <div id="main">
@@ -712,7 +755,7 @@
     async function respond(approved) {
       el.remove();
       const endpoint = approved ? 'confirm' : 'cancel';
-      try { await fetch('/api/booking/' + endpoint + '/' + sessionId, { method: 'POST' }); } catch(_) {}
+      try { await _apiFetch('/api/booking/' + endpoint + '/' + sessionId, { method: 'POST' }); } catch(_) {}
     }
 
     document.getElementById('booking-confirm-btn').onclick = () => respond(true);
@@ -739,7 +782,8 @@
     inputEl.value = ''; autoResize(inputEl);
     addUserMessage(text); addThinkingMessage();
     try {
-      const res = await fetch('/api/chat/' + sessionId, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: text }), signal: _abortCtrl.signal });
+      const res = await _apiFetch('/api/chat/' + sessionId, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: text }), signal: _abortCtrl.signal });
+      if (res.status === 402) { const e = await res.json(); const t = document.getElementById('thinking-msg'); if(t)t.remove(); _setStopMode(false); showUpgradeModal(); return; }
       const reader = res.body.getReader(); const decoder = new TextDecoder(); let buf = ''; let gotResponse = false;
       while (true) {
         const { value, done } = await reader.read(); if (done) break;
@@ -769,7 +813,7 @@
   }
 
   let _savedTrips = [];
-  async function loadTrips() { try { const r = await fetch('/api/trips/' + sessionId); const d = await r.json(); renderTrips(d.trips || []); } catch (_) {} }
+  async function loadTrips() { try { const r = await _apiFetch('/api/trips/' + sessionId); const d = await r.json(); renderTrips(d.trips || []); } catch (_) {} }
   function renderTrips(trips) {
     _savedTrips = trips;
     const el = document.getElementById('trips-list');
@@ -794,7 +838,7 @@
     if (!t) return;
     currentItinerary = t;
     localStorage.setItem('itin_' + sessionId, JSON.stringify(t));
-    fetch('/api/itinerary/' + sessionId, {
+    _apiFetch('/api/itinerary/' + sessionId, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ itinerary: t }),
@@ -808,7 +852,7 @@
     if (!tripId) return;
     if (!confirm('Delete this saved trip?')) return;
     try {
-      const r = await fetch('/api/trips/' + sessionId + '/' + tripId, { method: 'DELETE' });
+      const r = await _apiFetch('/api/trips/' + sessionId + '/' + tripId, { method: 'DELETE' });
       if (!r.ok) { showToast('Could not delete trip.'); return; }
       showToast('Trip deleted.');
       loadTrips();
@@ -817,7 +861,7 @@
 
   async function resetConversation() {
     showConfirmModal('Reset conversation? Your trips and preferences will be kept.', async () => {
-      await fetch('/api/reset/' + sessionId, { method: 'POST' });
+      await _apiFetch('/api/reset/' + sessionId, { method: 'POST' });
       currentItinerary = null; localStorage.removeItem('itin_' + sessionId); location.reload();
     });
   }
@@ -833,7 +877,7 @@
     if (!currentItinerary) return;
     showConfirmModal('Clear the trip board? This cannot be undone.', async () => {
       try {
-        await fetch('/api/itinerary/' + sessionId, { method: 'DELETE' });
+        await _apiFetch('/api/itinerary/' + sessionId, { method: 'DELETE' });
         currentItinerary = null;
         localStorage.removeItem('itin_' + sessionId);
         document.getElementById('board-title').textContent = 'Trip Board';
@@ -994,7 +1038,7 @@
     renderBudget(currentItinerary.budget, cur, currentItinerary.max_budget_usd);
     // Persist the updated travelers count to the session
     localStorage.setItem('itin_' + sessionId, JSON.stringify(currentItinerary));
-    fetch('/api/itinerary/' + sessionId, {
+    _apiFetch('/api/itinerary/' + sessionId, {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
       body: JSON.stringify({itinerary: currentItinerary})
@@ -1254,7 +1298,7 @@
 
   function persistItinerary() {
     if (!currentItinerary) return;
-    fetch('/api/itinerary/' + sessionId, {
+    _apiFetch('/api/itinerary/' + sessionId, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({itinerary: currentItinerary}),
@@ -1268,7 +1312,7 @@
     const name = prompt('Name this trip:', dest);
     if (name === null) return; // cancelled
     try {
-      const r = await fetch('/api/trips/' + sessionId, {
+      const r = await _apiFetch('/api/trips/' + sessionId, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: name.trim() || dest }),
@@ -1283,7 +1327,7 @@
     document.getElementById('export-menu').classList.remove('open');
     if (!currentItinerary) { showToast('Plan a trip first to share it.'); return; }
     try {
-      const r = await fetch('/api/share/' + sessionId, { method: 'POST' });
+      const r = await _apiFetch('/api/share/' + sessionId, { method: 'POST' });
       if (!r.ok) { showToast('Nothing to share yet — save an itinerary first.'); return; }
       const d = await r.json();
       await navigator.clipboard.writeText(d.share_url).catch(() => {});
@@ -1491,11 +1535,151 @@
     showToast('Ready — press Enter to search!');
   }
 
+  // ── Auth state ────────────────────────────────────────────────────────────
+  let _clerk = null;         // Clerk JS instance (null when auth disabled)
+  let _clerkToken = null;    // cached JWT string
+  let _currentUser = null;   // { user_id, email, name, plan } from /api/me
+
+  async function authHeaders() {
+    if (!_clerk) return {};
+    try {
+      _clerkToken = await _clerk.session?.getToken() || null;
+    } catch(_) {}
+    return _clerkToken ? { 'Authorization': 'Bearer ' + _clerkToken } : {};
+  }
+
+  function renderUserPanel(user, usage, limits) {
+    const el = document.getElementById('user-panel');
+    if (!user) {
+      el.innerHTML = `
+        <div class="signin-prompt">
+          <p>Sign in to save trips across devices and get your personal planning space.</p>
+          <button id="sign-in-btn" onclick="_clerk&&_clerk.openSignIn()">Sign In / Create Account</button>
+        </div>`;
+      return;
+    }
+    _currentUser = user;
+    const initial = (user.name || user.email || '?')[0].toUpperCase();
+    const planClass = 'plan-' + (user.plan || 'free');
+    const planLabel = (user.plan || 'free').charAt(0).toUpperCase() + (user.plan||'free').slice(1);
+    const chatUsed = usage?.chat_turns || 0;
+    const chatMax  = limits?.chat_turns === -1 ? '∞' : (limits?.chat_turns || 20);
+    const chatPct  = limits?.chat_turns === -1 ? 0 : Math.min(100, Math.round(chatUsed / (limits?.chat_turns||20) * 100));
+    const barCls   = chatPct >= 100 ? 'limit' : chatPct >= 80 ? 'warn' : '';
+    const needsUpgrade = user.plan === 'free' && chatPct >= 80;
+    el.innerHTML = `
+      <div class="user-card">
+        <div class="user-avatar">${initial}</div>
+        <div class="user-info">
+          <div class="user-name">${escapeHtml(user.name || user.email || 'My Account')}</div>
+          <span class="user-plan ${planClass}">${planLabel}</span>
+        </div>
+        <div class="user-actions">
+          <button class="user-action-btn" onclick="_clerk&&_clerk.openUserProfile()" title="Account settings">⚙</button>
+          <button class="user-action-btn" onclick="_clerk&&_clerk.signOut().then(()=>location.reload())" title="Sign out">→</button>
+        </div>
+      </div>
+      ${limits?.chat_turns !== -1 ? `
+      <div class="usage-bar-wrap">
+        <div class="usage-bar-label"><span>Chats this month</span><span>${chatUsed} / ${chatMax}</span></div>
+        <div class="usage-bar-outer"><div class="usage-bar-inner ${barCls}" style="width:${chatPct}%"></div></div>
+      </div>` : ''}
+      ${needsUpgrade ? `
+      <div class="upgrade-nudge" onclick="showUpgradeModal()">
+        <div class="un-title">⚡ Upgrade to Pro</div>
+        <div class="un-desc">Unlimited chats · $19/month</div>
+      </div>` : ''}`;
+  }
+
+  function showUpgradeModal() {
+    const el = document.createElement('div');
+    el.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:1000';
+    el.innerHTML = `
+      <div style="background:#fff;border-radius:20px;padding:32px;max-width:380px;width:90%;box-shadow:0 25px 60px rgba(0,0,0,.25);text-align:center">
+        <div style="font-size:36px;margin-bottom:12px">⚡</div>
+        <div style="font-size:20px;font-weight:900;color:#0f172a;margin-bottom:6px">Upgrade to Pro</div>
+        <div style="font-size:13px;color:#64748b;margin-bottom:20px;line-height:1.6">
+          Unlimited AI chats · 200 flight searches/month<br>Unlimited saved trips · Priority support
+        </div>
+        <div style="font-size:32px;font-weight:900;color:#0d9488;margin-bottom:20px">$19<span style="font-size:14px;font-weight:600;color:#94a3b8">/month</span></div>
+        <button onclick="this.closest('div[style*=fixed]').remove()" style="padding:12px 32px;border-radius:12px;border:none;background:linear-gradient(135deg,#0ea5e9,#0d9488);color:#fff;font-size:15px;font-weight:800;cursor:pointer;width:100%;font-family:inherit;box-shadow:0 4px 14px rgba(14,165,233,.4)">Upgrade Now</button>
+        <button onclick="this.closest('div[style*=fixed]').remove()" style="margin-top:10px;padding:8px;background:none;border:none;color:#94a3b8;cursor:pointer;font-size:12px;font-family:inherit">Maybe later</button>
+      </div>`;
+    document.body.appendChild(el);
+    el.addEventListener('click', e => { if (e.target === el) el.remove(); });
+  }
+
+  // ── Clerk initialization ──────────────────────────────────────────────────
+  async function initAuth() {
+    let cfg;
+    try { cfg = await (await fetch('/api/config')).json(); } catch(_) { return; }
+    if (!cfg.auth_enabled || !cfg.clerk_publishable_key) return;
+
+    // Load Clerk JS SDK dynamically only when auth is configured
+    await new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/@clerk/clerk-js@5/dist/clerk.browser.js';
+      s.onload = resolve; s.onerror = reject;
+      document.head.appendChild(s);
+    });
+
+    _clerk = new window.Clerk(cfg.clerk_publishable_key);
+    await _clerk.load();
+
+    _clerk.addListener(async ({ user }) => {
+      if (user) {
+        // Sync user to our DB and render profile
+        const hdrs = await authHeaders();
+        try {
+          const r = await fetch('/api/me', { method: 'POST', headers: hdrs });
+          const d = await r.json();
+          renderUserPanel(d.user, d.usage, d.limits);
+        } catch(_) { renderUserPanel(null, null, null); }
+      } else {
+        renderUserPanel(null, null, null);
+      }
+    });
+
+    if (!_clerk.user) {
+      renderUserPanel(null, null, null);
+    }
+  }
+
+  // ── Workspace (collaborative trip planning) ───────────────────────────────
+  // Phase 2 — stub rendered when user is in a shared workspace
+  function renderWorkspaceChip(ws) {
+    const el = document.getElementById('workspace-slot');
+    if (!ws) { el.innerHTML = ''; return; }
+    el.innerHTML = `
+      <div class="ws-chip" title="Shared workspace">
+        <span class="ws-icon">👥</span>
+        <span class="ws-name">${escapeHtml(ws.name)}</span>
+        <span class="ws-count">${ws.member_count} members</span>
+      </div>`;
+  }
+
+  // ── Wrap fetch calls to include auth header ───────────────────────────────
+  const _origFetch = window.fetch;
+  // We patch only /api/* calls to inject the auth token automatically.
+  window._apiFetch = async (url, opts = {}) => {
+    const hdrs = await authHeaders();
+    return _origFetch(url, {
+      ...opts,
+      headers: { ...(opts.headers || {}), ...hdrs },
+    });
+  };
+
   (async () => {
+    // Init auth in parallel with session setup
+    const authPromise = initAuth();
+
     // Ensure we have a server-generated session ID for new visitors.
     if (!sessionId) {
       try {
-        const r = await fetch('/api/session/new', { method: 'POST' });
+        const r = await _origFetch('/api/session/new', {
+          method: 'POST',
+          headers: await authHeaders(),
+        });
         const d = await r.json();
         sessionId = d.session_id;
       } catch (_) {
@@ -1503,6 +1687,8 @@
       }
       localStorage.setItem('travel_agent_session', sessionId);
     }
+
+    await authPromise;
 
     loadTrips();
     inputEl.focus();
@@ -1514,7 +1700,7 @@
       try { updateItinerary(JSON.parse(local)); return; } catch(_) {}
     }
     try {
-      const r = await fetch('/api/itinerary/' + sessionId);
+      const r = await _apiFetch('/api/itinerary/' + sessionId);
       const d = await r.json();
       if (d.itinerary) updateItinerary(d.itinerary);
     } catch(_) {}

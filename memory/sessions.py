@@ -38,9 +38,14 @@ class SessionStore:
                     id           TEXT PRIMARY KEY,
                     conversation TEXT NOT NULL DEFAULT '[]',
                     itinerary    TEXT,
+                    user_id      TEXT,
                     created_at   TEXT NOT NULL,
                     updated_at   TEXT NOT NULL
                 )
+            """)
+            # Add user_id column to existing deployments that don't have it yet
+            cur.execute("""
+                ALTER TABLE sessions ADD COLUMN IF NOT EXISTS user_id TEXT
             """)
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS share_tokens (
@@ -53,21 +58,24 @@ class SessionStore:
                 "CREATE INDEX IF NOT EXISTS idx_sessions_updated_at ON sessions(updated_at)"
             )
             cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)"
+            )
+            cur.execute(
                 "CREATE INDEX IF NOT EXISTS idx_share_tokens_session ON share_tokens(session_id)"
             )
             self._ready = True
 
-    def create(self, session_id: str) -> None:
+    def create(self, session_id: str, user_id: str | None = None) -> None:
         """Create a new empty session row (server-generated IDs only)."""
         self._ensure_db()
         now = datetime.now().isoformat()
         with get_conn() as conn:
             cur = conn.cursor()
             cur.execute("""
-                INSERT INTO sessions (id, conversation, itinerary, created_at, updated_at)
-                VALUES (%s, '[]', NULL, %s, %s)
+                INSERT INTO sessions (id, conversation, itinerary, user_id, created_at, updated_at)
+                VALUES (%s, '[]', NULL, %s, %s, %s)
                 ON CONFLICT (id) DO NOTHING
-            """, (session_id, now, now))
+            """, (session_id, user_id, now, now))
 
     def exists(self, session_id: str) -> bool:
         """Return True if the session was created server-side."""
@@ -194,12 +202,27 @@ class SessionStore:
             return None
         return {"itinerary": json.loads(row[0]) if row[0] else None}
 
+    def owns(self, session_id: str, user_id: str) -> bool:
+        """Return True if the session belongs to the given user."""
+        self._ensure_db()
+        with get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT user_id FROM sessions WHERE id = %s",
+                (session_id,),
+            )
+            row = cur.fetchone()
+        if not row:
+            return False
+        # Anonymous sessions (user_id=NULL) are accessible to anyone who knows the ID
+        return row[0] is None or row[0] == user_id
+
     def list_sessions(self) -> list[dict]:
         """Return metadata for all sessions (for admin/debugging)."""
         with get_conn() as conn:
             cur = conn.cursor()
             cur.execute(
-                "SELECT id, created_at, updated_at FROM sessions ORDER BY updated_at DESC"
+                "SELECT id, user_id, created_at, updated_at FROM sessions ORDER BY updated_at DESC"
             )
             rows = cur.fetchall()
-        return [{"id": r[0], "created_at": r[1], "updated_at": r[2]} for r in rows]
+        return [{"id": r[0], "user_id": r[1], "created_at": r[2], "updated_at": r[3]} for r in rows]

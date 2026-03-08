@@ -44,6 +44,10 @@ from agent.core import TravelAgent
 from memory.preferences import PreferenceStore
 from memory.trips import TripStore
 from memory.sessions import SessionStore
+from memory.users import UserStore
+from memory.workspaces import WorkspaceStore
+
+_workspace_store = WorkspaceStore()
 
 app = FastAPI(title="Travel Agent API")
 
@@ -114,6 +118,69 @@ if not _ANTHROPIC_API_KEY:
     sys.exit(1)
 
 # ---------------------------------------------------------------------------
+# Auth — Clerk JWT verification via JWKS (RS256)
+# Set CLERK_JWKS_URL and CLERK_PUBLISHABLE_KEY in environment to enable auth.
+# Without these, the app runs in anonymous mode (backward compatible).
+# ---------------------------------------------------------------------------
+_clerk_jwks_client = None
+_clerk_jwks_lock = threading.Lock()
+
+def _get_jwks_client():
+    """Lazily create a PyJWKClient that auto-refreshes Clerk's public keys."""
+    global _clerk_jwks_client
+    jwks_url = os.getenv("CLERK_JWKS_URL", "").strip()
+    if not jwks_url:
+        return None
+    with _clerk_jwks_lock:
+        if _clerk_jwks_client is None:
+            try:
+                import jwt as _jwt
+                from jwt import PyJWKClient as _PyJWKClient
+                _clerk_jwks_client = _PyJWKClient(jwks_url, cache_keys=True, lifespan=3600)
+            except Exception as exc:
+                log.warning("Failed to initialise JWKS client: %s", exc)
+    return _clerk_jwks_client
+
+
+def _verify_clerk_token(token: str) -> dict | None:
+    """Verify a Clerk JWT and return the payload, or None if invalid."""
+    client = _get_jwks_client()
+    if not client:
+        return None
+    try:
+        import jwt as _jwt
+        signing_key = client.get_signing_key_from_jwt(token)
+        payload = _jwt.decode(
+            token,
+            signing_key.key,
+            algorithms=["RS256"],
+            options={"verify_aud": False},
+        )
+        return payload
+    except Exception:
+        return None
+
+
+def _user_from_request(request: Request) -> dict | None:
+    """Extract and verify the Clerk JWT from the Authorization header.
+    Returns a minimal user dict {user_id, email, name} or None for anonymous."""
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        return None
+    payload = _verify_clerk_token(auth[7:])
+    if not payload:
+        return None
+    return {
+        "user_id": payload.get("sub", ""),
+        "email":   payload.get("email", ""),
+        "name":    payload.get("name", ""),
+    }
+
+
+_user_store = UserStore()
+
+
+# ---------------------------------------------------------------------------
 # Booking confirmation — agents pause here until the user approves/cancels
 # ---------------------------------------------------------------------------
 _pending_confirmations: dict[str, dict] = {}  # session_id -> {event, approved}
@@ -144,11 +211,11 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline'; "
-            "style-src 'self' 'unsafe-inline'; "
-            "connect-src 'self'; "
-            "img-src 'self' data:; "
-            "font-src 'self';"
+            "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://*.clerk.accounts.dev https://clerk.com; "
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+            "connect-src 'self' https://*.clerk.accounts.dev https://clerk.com https://api.clerk.com; "
+            "img-src 'self' data: https://*.clerk.com https://*.gravatar.com; "
+            "font-src 'self' https://fonts.gstatic.com;"
         )
         return response
 
@@ -257,6 +324,23 @@ async def chat(session_id: str, body: ChatRequest, request: Request):
     client_ip = request.client.host if request.client else "unknown"
     if not _check_rate_limit(client_ip):
         raise HTTPException(status_code=429, detail="Too many requests. Please wait a moment.")
+
+    # Enforce plan limits for authenticated users
+    auth_user = _user_from_request(request)
+    if auth_user and auth_user.get("user_id"):
+        uid = auth_user["user_id"]
+        user_rec = _user_store.get(uid)
+        if user_rec:
+            usage = _user_store.get_usage(uid)
+            if not _user_store.within_limit(user_rec, "chat_turns", usage):
+                plan = user_rec["plan"]
+                from memory.users import PLAN_LIMITS
+                cap = PLAN_LIMITS[plan]["chat_turns"]
+                raise HTTPException(
+                    status_code=402,
+                    detail=f"Monthly chat limit reached ({cap} turns on {plan} plan). Upgrade to Pro for unlimited chats.",
+                )
+            _user_store.increment_chat(uid)
 
     try:
         agent = _get_agent(session_id)
@@ -369,8 +453,10 @@ async def save_itinerary(session_id: str, body: ItineraryUpdate):
 # Trips
 # ---------------------------------------------------------------------------
 @app.get("/api/trips/{session_id}")
-async def get_trips(session_id: str):
-    trips = TripStore().get_all_trips()
+async def get_trips(session_id: str, request: Request):
+    auth_user = _user_from_request(request)
+    user_id = auth_user["user_id"] if auth_user else None
+    trips = TripStore().get_all_trips(user_id=user_id)
     return JSONResponse({"trips": trips})
 
 
@@ -391,19 +477,23 @@ async def save_trip(session_id: str, request: Request):
     # Allow the client to supply a custom name; fall back to destination
     name = (body.get("name") or "").strip() or itinerary.get("destination") or "My Trip"
     itinerary["name"] = name
-    trip_id = TripStore().save_trip(itinerary)
+    auth_user = _user_from_request(request)
+    user_id = auth_user["user_id"] if auth_user else None
+    trip_id = TripStore().save_trip(itinerary, user_id=user_id)
     return JSONResponse({"status": "ok", "trip_id": trip_id, "name": name})
 
 
 @app.delete("/api/trips/{session_id}/{trip_id}")
-async def delete_trip(session_id: str, trip_id: str):
+async def delete_trip(session_id: str, trip_id: str, request: Request):
     """Delete a saved trip by ID."""
     if not _session_store.exists(session_id):
         raise HTTPException(status_code=403, detail="Unknown session.")
+    auth_user = _user_from_request(request)
+    user_id = auth_user["user_id"] if auth_user else None
     store = TripStore()
-    if not store.get_trip(trip_id):
+    if not store.get_trip(trip_id, user_id=user_id):
         raise HTTPException(status_code=404, detail="Trip not found.")
-    store.delete_trip(trip_id)
+    store.delete_trip(trip_id, user_id=user_id)
     return JSONResponse({"status": "ok"})
 
 
@@ -411,8 +501,10 @@ async def delete_trip(session_id: str, trip_id: str):
 # Preferences
 # ---------------------------------------------------------------------------
 @app.get("/api/preferences/{session_id}")
-async def get_preferences(session_id: str):
-    return JSONResponse(PreferenceStore().get_all())
+async def get_preferences(session_id: str, request: Request):
+    auth_user = _user_from_request(request)
+    user_id = auth_user["user_id"] if auth_user else None
+    return JSONResponse(PreferenceStore().get_all(user_id=user_id))
 
 
 VALID_PREF_KEYS = {
@@ -430,10 +522,12 @@ class PrefUpdate(BaseModel):
 
 
 @app.post("/api/preferences/{session_id}")
-async def set_preference(session_id: str, body: PrefUpdate):
+async def set_preference(session_id: str, body: PrefUpdate, request: Request):
     if body.key not in VALID_PREF_KEYS:
         raise HTTPException(status_code=400, detail=f"Invalid preference key: {body.key!r}")
-    PreferenceStore().set(body.key, body.value)
+    auth_user = _user_from_request(request)
+    user_id = auth_user["user_id"] if auth_user else None
+    PreferenceStore().set(body.key, body.value, user_id=user_id)
     return JSONResponse({"status": "ok"})
 
 
@@ -868,13 +962,165 @@ def _safe(s: object) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Public configuration — exposes non-secret keys to the frontend
+# ---------------------------------------------------------------------------
+@app.get("/api/config")
+async def api_config():
+    """Return public config the frontend needs (Clerk publishable key, etc.)."""
+    return JSONResponse({
+        "clerk_publishable_key": os.getenv("CLERK_PUBLISHABLE_KEY", ""),
+        "auth_enabled": bool(os.getenv("CLERK_JWKS_URL", "").strip()),
+    })
+
+
+# ---------------------------------------------------------------------------
+# User profile — register / retrieve authenticated user
+# ---------------------------------------------------------------------------
+@app.post("/api/me")
+async def sync_user(request: Request):
+    """Called on login to upsert user record from Clerk JWT claims."""
+    auth_user = _user_from_request(request)
+    if not auth_user or not auth_user["user_id"]:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    user = _user_store.upsert(
+        auth_user["user_id"],
+        email=auth_user.get("email", ""),
+        name=auth_user.get("name", ""),
+    )
+    usage = _user_store.get_usage(user["id"])
+    limits = _user_store.limits_for(user["plan"])
+    return JSONResponse({"user": user, "usage": usage, "limits": limits})
+
+
+@app.get("/api/me")
+async def get_me(request: Request):
+    """Return current user info + usage. Returns null user if anonymous."""
+    auth_user = _user_from_request(request)
+    if not auth_user or not auth_user["user_id"]:
+        return JSONResponse({"user": None, "usage": None, "limits": None})
+    user = _user_store.get(auth_user["user_id"])
+    if not user:
+        return JSONResponse({"user": None, "usage": None, "limits": None})
+    usage = _user_store.get_usage(user["id"])
+    limits = _user_store.limits_for(user["plan"])
+    return JSONResponse({"user": user, "usage": usage, "limits": limits})
+
+
+# ---------------------------------------------------------------------------
 # Session management — server-generated IDs prevent client forgery
 # ---------------------------------------------------------------------------
 @app.post("/api/session/new")
-async def new_session():
+async def new_session(request: Request):
+    auth_user = _user_from_request(request)
+    user_id = auth_user["user_id"] if auth_user else None
+    # Ensure user record exists in DB for authenticated users
+    if user_id:
+        _user_store.upsert(user_id, email=auth_user.get("email", ""), name=auth_user.get("name", ""))
     session_id = secrets.token_urlsafe(32)
-    _session_store.create(session_id)
+    _session_store.create(session_id, user_id=user_id)
     return JSONResponse({"session_id": session_id})
+
+
+# ---------------------------------------------------------------------------
+# Workspaces — collaborative trip planning
+# ---------------------------------------------------------------------------
+class WorkspaceCreate(BaseModel):
+    name: str
+    session_id: str | None = None
+
+
+class WorkspaceInvite(BaseModel):
+    email: str
+    role: str = "editor"
+
+
+@app.get("/api/workspaces")
+async def list_workspaces(request: Request):
+    """List all workspaces for the authenticated user."""
+    auth_user = _user_from_request(request)
+    if not auth_user:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    return JSONResponse({"workspaces": _workspace_store.list_for_user(auth_user["user_id"])})
+
+
+@app.post("/api/workspaces")
+async def create_workspace(body: WorkspaceCreate, request: Request):
+    """Create a new collaborative workspace."""
+    auth_user = _user_from_request(request)
+    if not auth_user:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    _user_store.upsert(auth_user["user_id"], email=auth_user.get("email", ""), name=auth_user.get("name", ""))
+    ws = _workspace_store.create(body.name, auth_user["user_id"], session_id=body.session_id)
+    return JSONResponse({"workspace": ws})
+
+
+@app.get("/api/workspaces/{workspace_id}")
+async def get_workspace(workspace_id: str, request: Request):
+    """Get workspace details + members."""
+    auth_user = _user_from_request(request)
+    if not auth_user:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    ws = _workspace_store.get(workspace_id)
+    if not ws:
+        raise HTTPException(status_code=404, detail="Workspace not found.")
+    role = _workspace_store.user_role(workspace_id, auth_user["user_id"])
+    if not role:
+        raise HTTPException(status_code=403, detail="Not a workspace member.")
+    return JSONResponse({"workspace": ws, "my_role": role})
+
+
+@app.post("/api/workspaces/{workspace_id}/invite")
+async def invite_to_workspace(workspace_id: str, body: WorkspaceInvite, request: Request):
+    """Invite a user by email to the workspace."""
+    auth_user = _user_from_request(request)
+    if not auth_user:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    ws = _workspace_store.get(workspace_id)
+    if not ws:
+        raise HTTPException(status_code=404, detail="Workspace not found.")
+    if ws["owner_id"] != auth_user["user_id"]:
+        raise HTTPException(status_code=403, detail="Only the workspace owner can invite members.")
+    member = _workspace_store.add_member(workspace_id, body.email, body.role)
+    return JSONResponse({"status": "ok", "member": member})
+
+
+@app.delete("/api/workspaces/{workspace_id}/members/{email}")
+async def remove_workspace_member(workspace_id: str, email: str, request: Request):
+    """Remove a member from the workspace."""
+    auth_user = _user_from_request(request)
+    if not auth_user:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    ok = _workspace_store.remove_member(workspace_id, email, auth_user["user_id"])
+    if not ok:
+        raise HTTPException(status_code=403, detail="Cannot remove this member.")
+    return JSONResponse({"status": "ok"})
+
+
+@app.post("/api/workspaces/{workspace_id}/session")
+async def link_workspace_session(workspace_id: str, request: Request):
+    """Link the current planning session to a workspace."""
+    auth_user = _user_from_request(request)
+    if not auth_user:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    body = await request.json()
+    session_id = body.get("session_id", "")
+    role = _workspace_store.user_role(workspace_id, auth_user["user_id"])
+    if not role or role == "viewer":
+        raise HTTPException(status_code=403, detail="Editor access required.")
+    _workspace_store.link_session(workspace_id, session_id)
+    return JSONResponse({"status": "ok"})
+
+
+@app.delete("/api/workspaces/{workspace_id}")
+async def delete_workspace(workspace_id: str, request: Request):
+    """Delete a workspace (owner only)."""
+    auth_user = _user_from_request(request)
+    if not auth_user:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    ok = _workspace_store.delete(workspace_id, auth_user["user_id"])
+    if not ok:
+        raise HTTPException(status_code=403, detail="Only the owner can delete this workspace.")
+    return JSONResponse({"status": "ok"})
 
 
 # ---------------------------------------------------------------------------
