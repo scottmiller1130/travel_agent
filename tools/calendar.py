@@ -24,9 +24,6 @@ def _save_calendar(events: list[dict]) -> None:
 
 def check_availability(start_date: str, end_date: str) -> dict:
     """Check if the user is available for travel during a date range."""
-    if os.getenv("GOOGLE_CALENDAR_API_KEY"):
-        raise NotImplementedError("Real Google Calendar integration not yet wired up")
-
     events = _load_calendar()
     conflicts = []
 
@@ -61,9 +58,6 @@ def add_to_calendar(
     location: str = "",
 ) -> dict:
     """Add a trip or event to the user's calendar."""
-    if os.getenv("GOOGLE_CALENDAR_API_KEY"):
-        raise NotImplementedError("Real Google Calendar integration not yet wired up")
-
     events = _load_calendar()
     event = {
         "id": f"EVT{len(events)+1:04d}",

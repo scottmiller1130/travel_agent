@@ -466,7 +466,7 @@ def _apply_accommodation_type(result: dict, accommodation_type: str) -> dict:
             item["price_per_bed_usd"] = item["price_per_night_usd"]
             nights = item.get("nights", 1)
             guests = item.get("guests", 1)
-            item["total_price_usd"] = item["price_per_night_usd"] * nights * guests
+            item["total_price_usd"] = item["price_per_night_usd"] * nights
             item["accommodation_type"] = label
             item["note"] = "Dorm bed price per person. Mixed or female-only dorms typically available."
             # Adjust amenities for hostel context
