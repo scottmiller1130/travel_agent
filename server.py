@@ -21,7 +21,6 @@ import logging
 import logging.config
 import os
 import secrets
-import shutil
 import sys
 import threading
 import time
@@ -31,21 +30,27 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from dotenv import load_dotenv
+from dotenv import load_dotenv  # noqa: E402
+
 load_dotenv()
 
-from fastapi import FastAPI, Request, Response, HTTPException
-from starlette.middleware.base import BaseHTTPMiddleware
-from fastapi.responses import StreamingResponse, HTMLResponse, JSONResponse, FileResponse
-from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from fastapi import FastAPI, HTTPException, Request, Response  # noqa: E402
+from fastapi.responses import (  # noqa: E402
+    FileResponse,
+    HTMLResponse,
+    JSONResponse,
+    StreamingResponse,
+)
+from fastapi.staticfiles import StaticFiles  # noqa: E402
+from pydantic import BaseModel  # noqa: E402
+from starlette.middleware.base import BaseHTTPMiddleware  # noqa: E402
 
-from agent.core import TravelAgent
-from memory.preferences import PreferenceStore
-from memory.trips import TripStore
-from memory.sessions import SessionStore
-from memory.users import UserStore
-from memory.workspaces import WorkspaceStore
+from agent.core import TravelAgent  # noqa: E402
+from memory.preferences import PreferenceStore  # noqa: E402
+from memory.sessions import SessionStore  # noqa: E402
+from memory.trips import TripStore  # noqa: E402
+from memory.users import UserStore  # noqa: E402
+from memory.workspaces import WorkspaceStore  # noqa: E402
 
 _workspace_store = WorkspaceStore()
 
@@ -520,7 +525,7 @@ async def get_trips(session_id: str, request: Request):
     auth_user = _user_from_request(request)
     user_id = auth_user["user_id"] if auth_user else None
     trips = TripStore().get_all_trips(user_id=user_id)
-    return JSONResponse({"trips": trips})
+    return JSONResponse(trips)
 
 
 @app.post("/api/trips/{session_id}")
@@ -576,7 +581,7 @@ VALID_PREF_KEYS = {
     "dietary_restrictions", "accessibility_needs", "preferred_activities",
     "avoided_activities", "travel_pace", "home_airport", "home_city",
     "currency", "name", "email",
-    "travel_style", "values", "companion_profile", "trip_type",
+    "travel_style", "traveler_profile", "values", "companion_profile", "trip_type",
     "accommodation_preference",
 }
 
@@ -612,8 +617,8 @@ async def create_share_link(session_id: str, request: Request):
 @app.get("/s/{token}", response_class=HTMLResponse)
 async def shared_itinerary(token: str):
     """Render a rich, accordion read-only itinerary view for a share token."""
-    from datetime import date as _dt_date
     import html as _html
+    from datetime import date as _dt_date
 
     data = _session_store.get_session_for_token(token)
     if not data or not data.get("itinerary"):
@@ -680,12 +685,18 @@ async def shared_itinerary(token: str):
     acts_n     = sum(1 for i in all_items if i.get("type") == "activity")
 
     stats = []
-    if num_days:     stats.append(("📅", str(num_days),             "days"))
-    if travelers:    stats.append(("👥", str(travelers),            "traveler(s)"))
-    if flights_n:    stats.append(("✈",  str(flights_n),           "flight(s)"))
-    if hotels_n:     stats.append(("🏨", str(hotels_n),            "hotel night(s)"))
-    if acts_n:       stats.append(("🗺", str(acts_n),              "activities"))
-    if budget_total: stats.append(("💰", f"${budget_total:,.0f}",  "est. total"))
+    if num_days:
+        stats.append(("📅", str(num_days), "days"))
+    if travelers:
+        stats.append(("👥", str(travelers), "traveler(s)"))
+    if flights_n:
+        stats.append(("✈", str(flights_n), "flight(s)"))
+    if hotels_n:
+        stats.append(("🏨", str(hotels_n), "hotel night(s)"))
+    if acts_n:
+        stats.append(("🗺", str(acts_n), "activities"))
+    if budget_total:
+        stats.append(("💰", f"${budget_total:,.0f}", "est. total"))
     if budget_total and travelers and travelers > 1:
         per_person_total = round(budget_total / travelers)
         stats.append(("👤", f"${per_person_total:,.0f}", "per person"))
@@ -1194,7 +1205,8 @@ async def delete_workspace(workspace_id: str, request: Request):
 @app.post("/api/reset/{session_id}")
 async def reset(session_id: str, request: Request):
     auth_user = _user_from_request(request)
-    _require_session_access(session_id, auth_user)
+    if _session_store.exists(session_id):
+        _require_session_access(session_id, auth_user)
     with _cache_lock:
         if session_id in _agent_cache:
             _agent_cache[session_id].reset()
@@ -1263,31 +1275,15 @@ async def health():
 # Automated DB backup — copies sessions.db daily, keeps last 7 snapshots
 # ---------------------------------------------------------------------------
 def _backup_db() -> None:
-    """Copy sessions.db to a timestamped backup and expire old sessions. Runs daily."""
-    from memory.sessions import DB_PATH
-    backup_dir = DB_PATH.parent / "backups"
-    backup_dir.mkdir(parents=True, exist_ok=True)
-
+    """Expire old sessions daily."""
     while True:
         time.sleep(86400)  # sleep 24 hours
         try:
-            # Expire sessions idle for more than 30 days
             deleted = _session_store.expire_old_sessions(days=30)
             if deleted:
                 log.info("Expired %d stale sessions (>30 days idle)", deleted)
         except Exception as exc:
             log.error("Session expiry failed: %s", exc)
-        try:
-            if DB_PATH.exists():
-                stamp = time.strftime("%Y%m%d_%H%M%S")
-                dest = backup_dir / f"sessions_{stamp}.db"
-                shutil.copy2(DB_PATH, dest)
-                # Prune to keep only the 7 most recent backups
-                backups = sorted(backup_dir.glob("sessions_*.db"))
-                for old in backups[:-7]:
-                    old.unlink(missing_ok=True)
-        except Exception as exc:
-            log.error("DB backup failed: %s", exc)
 
 
 threading.Thread(target=_backup_db, daemon=True, name="db-backup").start()

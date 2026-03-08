@@ -12,10 +12,35 @@ import json
 import logging
 import os
 import time
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import TimeoutError as FuturesTimeoutError
 from typing import Callable
 
 import anthropic
+
+from agent.tools_schema import TOOLS
+from memory.preferences import PreferenceStore
+from memory.trips import TripStore
+from memory.users import PLAN_LIMITS, UserStore
+from tools.advisory import get_travel_advisory
+from tools.budget import get_budget_status, log_expense
+from tools.calendar import add_to_calendar, check_availability
+from tools.currency import get_exchange_rate
+from tools.experiences import search_experiences
+from tools.flights import (
+    book_flight,
+    find_cheapest_dates,
+    find_cheapest_month,
+    search_flights,
+)
+from tools.hotels import book_hotel, search_hotels
+from tools.inspiration import get_inspiration
+from tools.maps import get_distance, search_places
+from tools.packing import generate_packing_list
+from tools.search import web_search
+from tools.transport import search_ground_transport
+from tools.visa import get_visa_requirements
+from tools.weather import get_weather
 
 log = logging.getLogger("travel_agent.agent")
 
@@ -94,24 +119,6 @@ TOOL_LABELS = {
     "generate_packing_list": "Building your packing list...",
 }
 
-from memory.preferences import PreferenceStore
-from memory.trips import TripStore
-from memory.users import UserStore, PLAN_LIMITS
-from tools.flights import search_flights, book_flight, find_cheapest_dates, find_cheapest_month
-from tools.hotels import search_hotels, book_hotel
-from tools.experiences import search_experiences
-from tools.inspiration import get_inspiration
-from tools.budget import log_expense, get_budget_status
-from tools.weather import get_weather
-from tools.maps import search_places, get_distance
-from tools.calendar import check_availability, add_to_calendar
-from tools.search import web_search
-from tools.transport import search_ground_transport
-from tools.currency import get_exchange_rate
-from tools.visa import get_visa_requirements
-from tools.advisory import get_travel_advisory
-from tools.packing import generate_packing_list
-from agent.tools_schema import TOOLS
 
 # Actions that require a human confirmation step before proceeding
 CONFIRMATION_REQUIRED = {"book_flight", "book_hotel"}
@@ -286,6 +293,7 @@ class TravelAgent:
         self._current_trip: dict = {}
         self._expenses: list[dict] = []   # in-session expense tracker
         self._progress_callback = None
+        self._system_prompt_cache: str | None = None
 
     def _trim_conversation(self) -> None:
         """Keep conversation within token budget using a sliding window.
@@ -339,49 +347,65 @@ class TravelAgent:
                 return self._extract_text(response.content)
 
             if response.stop_reason == "tool_use":
-                tool_results = []
-                for block in response.content:
-                    if block.type != "tool_use":
-                        continue
+                tool_blocks = [b for b in response.content if b.type == "tool_use"]
 
+                # Notify the UI about every tool that's about to run so the
+                # progress indicators appear all at once before any work starts.
+                for block in tool_blocks:
                     if progress_callback:
                         progress_callback("tool_start", {
                             "tool": block.name,
                             "label": TOOL_LABELS.get(block.name, f"Using {block.name}..."),
                         })
 
-                    t_start = time.monotonic()
+                # Booking tools require a blocking confirmation dialog — run
+                # everything serially in that case to avoid concurrent modals.
+                # Otherwise dispatch all tools in parallel for speed.
+                has_confirmation = any(b.name in CONFIRMATION_REQUIRED for b in tool_blocks)
+                n_workers = 1 if has_confirmation else len(tool_blocks)
+
+                results_map: dict[str, dict] = {}
+                with ThreadPoolExecutor(max_workers=n_workers) as pool:
+                    future_to_block = {
+                        pool.submit(self._dispatch_tool, b.name, b.input): b
+                        for b in tool_blocks
+                    }
                     try:
-                        # Booking tools wait for user confirmation (up to 5 min).
-                        timeout = None if block.name in CONFIRMATION_REQUIRED else TOOL_TIMEOUT_SECONDS
-                        with ThreadPoolExecutor(max_workers=1) as pool:
-                            future = pool.submit(self._dispatch_tool, block.name, block.input)
-                            result = future.result(timeout=timeout)
-                        elapsed = int((time.monotonic() - t_start) * 1000)
-                        log.info("tool %s OK %dms", block.name, elapsed)
+                        for future in as_completed(future_to_block, timeout=TOOL_TIMEOUT_SECONDS):
+                            block = future_to_block[future]
+                            try:
+                                result = future.result()
+                                log.info("tool %s OK", block.name)
+                            except Exception as e:
+                                log.error("tool %s error: %s", block.name, e)
+                                result = {"status": "error", "message": str(e)}
+                            if progress_callback:
+                                progress_callback("tool_done", {"tool": block.name})
+                            results_map[block.id] = result
                     except FuturesTimeoutError:
-                        log.warning("tool %s timed out after %ds", block.name, TOOL_TIMEOUT_SECONDS)
-                        result = {
-                            "status": "error",
-                            "message": f"Tool '{block.name}' timed out after {TOOL_TIMEOUT_SECONDS}s.",
-                        }
-                    except Exception as e:
-                        log.error("tool %s error: %s", block.name, e)
-                        result = {"status": "error", "message": str(e)}
+                        # One or more tools exceeded the timeout; error out any
+                        # that didn't finish and fire their done callbacks.
+                        for future, block in future_to_block.items():
+                            if block.id not in results_map:
+                                log.warning("tool %s timed out after %ds", block.name, TOOL_TIMEOUT_SECONDS)
+                                if progress_callback:
+                                    progress_callback("tool_done", {"tool": block.name})
+                                results_map[block.id] = {
+                                    "status": "error",
+                                    "message": f"Tool '{block.name}' timed out after {TOOL_TIMEOUT_SECONDS}s.",
+                                }
 
-                    if progress_callback:
-                        progress_callback("tool_done", {"tool": block.name})
-
-                    tool_results.append({
+                # Assemble tool_results in original block order so the
+                # conversation remains valid regardless of completion order.
+                tool_results = [
+                    {
                         "type": "tool_result",
-                        "tool_use_id": block.id,
-                        "content": json.dumps(result),
-                    })
+                        "tool_use_id": b.id,
+                        "content": json.dumps(results_map[b.id]),
+                    }
+                    for b in tool_blocks
+                ]
 
-                # Always append tool_results so the conversation stays valid.
-                # An empty tool_results list here would mean stop_reason was
-                # "tool_use" but no tool_use blocks were present — shouldn't
-                # happen, but guard anyway to avoid an orphaned assistant message.
                 if tool_results:
                     self._conversation.append({"role": "user", "content": tool_results})
                 continue
@@ -394,6 +418,7 @@ class TravelAgent:
         """Start a fresh conversation (keeps memory/preferences)."""
         self._conversation = []
         self._current_trip = {}
+        self._system_prompt_cache = None
 
     # ── Persistence helpers ───────────────────────────────────────────────────
 
@@ -414,6 +439,8 @@ class TravelAgent:
         self._current_trip = itinerary or {}
 
     def _build_system_prompt(self) -> str:
+        if self._system_prompt_cache is not None:
+            return self._system_prompt_cache
         prefs_context = self._prefs.as_context_string(user_id=self._user_id)
         trips_context = self._trips.as_context_string(user_id=self._user_id)
         itinerary_context = ""
@@ -424,7 +451,8 @@ class TravelAgent:
                 "You can reference, modify, or extend it based on the user's requests.\n"
                 f"```json\n{json.dumps(self._current_trip, indent=2)}\n```"
             )
-        return f"{SYSTEM_PROMPT}\n\n{prefs_context}\n\n{trips_context}{itinerary_context}"
+        self._system_prompt_cache = f"{SYSTEM_PROMPT}\n\n{prefs_context}\n\n{trips_context}{itinerary_context}"
+        return self._system_prompt_cache
 
     def _dispatch_tool(self, name: str, inputs: dict) -> dict:
         """Route a tool call to the correct implementation."""
@@ -502,16 +530,19 @@ class TravelAgent:
         key = inputs["key"]
         value = inputs["value"]
         self._prefs.set(key, value, user_id=self._user_id)
+        self._system_prompt_cache = None
         return {"status": "success", "message": f"Preference '{key}' saved: {value}"}
 
     def _handle_save_trip(self, inputs: dict) -> dict:
         trip = inputs["trip"]
         trip_id = self._trips.save_trip(trip, user_id=self._user_id)
         self._current_trip = trip
+        self._system_prompt_cache = None
         return {"status": "success", "trip_id": trip_id, "message": "Trip saved."}
 
     def _handle_update_itinerary(self, inputs: dict) -> dict:
         self._current_trip = inputs  # persist so get_itinerary() is always current
+        self._system_prompt_cache = None
         # Auto-save every itinerary push to TripStore so nothing is ever lost.
         # Derive a stable ID from destination + start_date so repeated updates
         # to the same trip overwrite the existing row rather than duplicating.

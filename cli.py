@@ -8,28 +8,29 @@ Usage:
     python cli.py --trips      # View saved trips
 """
 
-import sys
 import os
+import sys
 from pathlib import Path
 
 # Allow running from the repo root
 sys.path.insert(0, str(Path(__file__).parent))
 
-from dotenv import load_dotenv
+from dotenv import load_dotenv  # noqa: E402
+
 load_dotenv()
 
-import click
-from rich.console import Console
-from rich.panel import Panel
-from rich.prompt import Prompt, Confirm
-from rich.markdown import Markdown
-from rich.table import Table
-from rich import box
-from rich.rule import Rule
+import click  # noqa: E402
+from rich import box  # noqa: E402
+from rich.console import Console  # noqa: E402
+from rich.markdown import Markdown  # noqa: E402
+from rich.panel import Panel  # noqa: E402
+from rich.prompt import Confirm, Prompt  # noqa: E402
+from rich.rule import Rule  # noqa: E402
+from rich.table import Table  # noqa: E402
 
-from agent.core import TravelAgent
-from memory.preferences import PreferenceStore
-from memory.trips import TripStore
+from agent.core import TravelAgent  # noqa: E402
+from memory.preferences import PreferenceStore  # noqa: E402
+from memory.trips import TripStore  # noqa: E402
 
 console = Console()
 
@@ -206,7 +207,7 @@ def run_setup(pref_store: PreferenceStore):
             try:
                 pref_store.set(key, cast(value))
             except ValueError:
-                console.print(f"[red]Invalid value, skipping.[/red]")
+                console.print("[red]Invalid value, skipping.[/red]")
     console.print()
 
     # ── Step 3: Travel specifics (profile-aware prompts) ──────────────────────
