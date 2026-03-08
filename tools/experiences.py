@@ -194,6 +194,43 @@ _CATEGORY_DURATIONS = {
 }
 
 
+def _opentripmap_details(xid: str, api_key: str) -> dict:
+    """Fetch place details (description, Wikipedia summary, address) from OpenTripMap."""
+    if not xid:
+        return {}
+    params: dict = {"format": "json"}
+    if api_key:
+        params["apikey"] = api_key
+    try:
+        r = _httpx.get(f"{OPENTRIPMAP_URL}/places/xid/{xid}", params=params, timeout=6)
+        if r.status_code != 200:
+            return {}
+        d = r.json()
+        result = {}
+        # Wikipedia excerpt
+        wiki = d.get("wikipedia_extracts", {})
+        if wiki.get("text"):
+            result["description"] = wiki["text"][:400]
+        elif wiki.get("title"):
+            result["description"] = f"Learn more: {wiki.get('title', '')}"
+        # Address
+        addr = d.get("address", {})
+        if addr:
+            parts = [addr.get("road", ""), addr.get("suburb", ""), addr.get("city", "")]
+            result["address"] = ", ".join(p for p in parts if p)
+        # Opening hours
+        if d.get("opening_hours"):
+            result["opening_hours"] = d["opening_hours"]
+        # Website / Wikipedia URL
+        if d.get("url"):
+            result["url"] = d["url"]
+        elif d.get("wikipedia"):
+            result["url"] = d["wikipedia"]
+        return result
+    except Exception:
+        return {}
+
+
 def _opentripmap_search(destination: str, category: str, max_results: int) -> dict | None:
     """Query OpenTripMap for real attraction names; enrich with estimated data."""
     if not _HTTPX:
@@ -254,7 +291,7 @@ def _opentripmap_search(destination: str, category: str, max_results: int) -> di
         price_var = (hash(xid) % 20 - 10) if xid else 0
         price = max(0, base_price + price_var)
 
-        results.append({
+        entry = {
             "experience_id":  xid,
             "title":          name,
             "category":       label,
@@ -266,7 +303,8 @@ def _opentripmap_search(destination: str, category: str, max_results: int) -> di
             "latitude":       place.get("point", {}).get("lat"),
             "longitude":      place.get("point", {}).get("lon"),
             "source":         "OpenTripMap (real attraction data)",
-        })
+        }
+        results.append(entry)
 
         if len(results) >= max_results:
             break
@@ -274,8 +312,22 @@ def _opentripmap_search(destination: str, category: str, max_results: int) -> di
     if not results:
         return None
 
+    # Enrich top 4 results with detail data (description, address, hours)
+    # Rate-limit: 1 detail call per result with brief pauses
+    for entry in results[:4]:
+        xid = entry.get("experience_id", "")
+        if not xid:
+            continue
+        try:
+            time.sleep(0.15)
+            details = _opentripmap_details(xid, api_key)
+            if details:
+                entry.update(details)
+        except Exception:
+            pass
+
     return {"status": "success", "results": results,
-            "source": "OpenTripMap (real attraction data)"}
+            "source": "OpenTripMap (real attraction data + detail enrichment)"}
 
 
 # ── Curated fallback ──────────────────────────────────────────────────────────

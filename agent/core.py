@@ -67,6 +67,9 @@ def _blocks_to_dicts(content) -> list[dict] | str:
 
 TOOL_LABELS = {
     "search_experiences": "Finding tours & experiences...",
+    "get_inspiration":    "Reading your inspiration source...",
+    "log_expense":        "Logging expense...",
+    "get_budget_status":  "Checking your budget...",
     "search_ground_transport": "Checking trains, buses & car rental...",
     "get_exchange_rate": "Looking up exchange rates...",
     "search_flights": "Searching flights...",
@@ -94,6 +97,8 @@ from memory.users import UserStore, PLAN_LIMITS
 from tools.flights import search_flights, book_flight, find_cheapest_dates, find_cheapest_month
 from tools.hotels import search_hotels, book_hotel
 from tools.experiences import search_experiences
+from tools.inspiration import get_inspiration
+from tools.budget import log_expense, get_budget_status
 from tools.weather import get_weather
 from tools.maps import search_places, get_distance
 from tools.calendar import check_availability, add_to_calendar
@@ -106,13 +111,13 @@ from agent.tools_schema import TOOLS
 CONFIRMATION_REQUIRED = {"book_flight", "book_hotel"}
 
 # Tools counted against the monthly api_calls quota
-METERED_TOOLS = {"search_flights", "search_hotels", "find_cheapest_dates", "find_cheapest_month"}
+METERED_TOOLS = {"search_flights", "search_hotels", "find_cheapest_dates", "find_cheapest_month", "search_experiences"}
 
 MAX_CONVERSATION_MESSAGES = 30  # Summarize when conversation exceeds this length
 KEEP_RECENT_MESSAGES = 16       # Always keep the most recent N messages
 KEEP_INITIAL_MESSAGES = 2       # Always keep the very first user/assistant exchange
 
-SYSTEM_PROMPT = """You are a world-class personal travel concierge. You serve three distinct traveler profiles — and you adapt fluidly to each.
+SYSTEM_PROMPT = """You are a world-class personal travel concierge — the most capable AI travel planner available. You combine the depth of a specialist travel agent with the speed of AI and real data across flights, hotels, experiences, weather, currency, transport, and deal-hunting. You adapt fluidly to three traveler profiles and handle everything from visa research to day-by-day itinerary creation.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 TRAVELER PROFILES
@@ -209,6 +214,23 @@ HOW YOU WORK
     - Food travelers: category="food" for food tours, market visits, cooking classes
     Always include price_usd in itinerary items sourced from search_experiences.
 
+19. **Inspiration import ("Start Anywhere").** When the user shares a URL, blog post, YouTube link, TripAdvisor article, or pastes text/notes, use get_inspiration to extract destinations and activity ideas from it. This is a core feature — turning any inspiration source into a concrete trip plan. After get_inspiration returns content, immediately identify the destinations, ask a quick clarifying question (dates? who's travelling?), then start planning.
+
+20. **Expense tracking.** When the user mentions actual spending during a trip (e.g. "dinner cost $60", "paid $220 for hotel"), use log_expense to track it. Use get_budget_status when they ask how much they've spent or whether they're on budget. Always relate spending back to the per-day budget target.
+
+21. **Local & authentic experiences.** Beyond tourist highlights, surface local gems: neighborhood food markets, family-run guesthouses with character, transport options locals actually use (regional trains, shared vans). For adventure travelers especially, the best experiences are often free or very cheap — focus on those.
+
+22. **Trip pacing by traveler type:**
+    - Adventure: slow is good. One place 5+ days. Day trips from a base. Evening = local bar or night market, not the tourist strip.
+    - Mid-range: rhythm of 2-3 nights per city. Must-sees + one hidden gem per day. Rest built in.
+    - Luxury: fewer destinations, deeper experiences. 3+ nights minimum. Private guides, curated restaurants, pre-booked entrances.
+
+23. **Multi-person trips.** When the user mentions traveling with others (partner, family, group of friends), note it and factor it into: room types, group vs private tours, table booking timing, budget per-person vs total.
+
+24. **Proactive deal alerts.** If the user hasn't fixed their dates, always run find_cheapest_dates or find_cheapest_month in the background for the route. Present the best date as the default recommendation. For luxury, frame as "best travel window" (lowest crowds, best weather) not "cheapest."
+
+25. **Language & local context.** For non-English destinations, include: key phrases, tipping customs, whether credit cards are widely accepted, and any local etiquette that matters (dress codes, haggling culture, tuk-tuk scams to avoid)."""
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 TONE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -252,6 +274,7 @@ class TravelAgent:
         self._confirm = confirm_callback or (lambda msg: False)
         self._conversation: list[dict] = []
         self._current_trip: dict = {}
+        self._expenses: list[dict] = []   # in-session expense tracker
         self._progress_callback = None
 
     def _trim_conversation(self) -> None:
@@ -433,6 +456,9 @@ class TravelAgent:
             "search_hotels": lambda i: search_hotels(**i),
             "book_hotel": lambda i: book_hotel(**i),
             "search_experiences": lambda i: search_experiences(**i),
+            "get_inspiration":    lambda i: get_inspiration(**i),
+            "log_expense":        self._handle_log_expense,
+            "get_budget_status":  self._handle_get_budget_status,
             "get_weather": lambda i: get_weather(**i),
             "search_places": lambda i: search_places(**i),
             "get_distance": lambda i: get_distance(**i),
@@ -500,6 +526,23 @@ class TravelAgent:
         if self._progress_callback and result.get("status") == "success":
             self._progress_callback("month_result", {"month_data": result})
         return result
+
+    def _handle_log_expense(self, inputs: dict) -> dict:
+        result = log_expense(
+            expenses=self._expenses,
+            category=inputs.get("category", "other"),
+            amount_usd=inputs["amount_usd"],
+            description=inputs["description"],
+            date=inputs.get("date"),
+        )
+        # result mutates self._expenses in place via the list reference
+        return result
+
+    def _handle_get_budget_status(self, inputs: dict) -> dict:
+        return get_budget_status(
+            expenses=self._expenses,
+            trip_budget_usd=inputs.get("trip_budget_usd"),
+        )
 
     def _handle_get_trips(self, inputs: dict) -> dict:
         status = inputs.get("status")

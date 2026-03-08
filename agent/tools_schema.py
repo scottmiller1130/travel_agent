@@ -340,6 +340,85 @@ TOOLS: list[dict] = [
         },
     },
     {
+        "name": "get_inspiration",
+        "description": (
+            "Extract travel ideas from any URL, blog post, article, or pasted text. "
+            "Use this when the user shares a link (travel blog, YouTube video, TripAdvisor article, "
+            "Instagram caption) or pastes notes they want to turn into a trip plan. "
+            "Fetches the content, extracts destinations and activity ideas, and returns a "
+            "structured seed for planning. This is the 'Start Anywhere' feature — "
+            "users can start from any inspiration source."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "source": {
+                    "type": "string",
+                    "description": (
+                        "A URL (https://...) to fetch travel content from, OR a block of "
+                        "pasted text/notes to extract trip ideas from."
+                    ),
+                },
+                "trip_type": {
+                    "type": "string",
+                    "description": "Optional trip type hint: luxury, adventure, road_trip, backpacker, family, honeymoon, solo, group, wellness, foodie",
+                },
+            },
+            "required": ["source"],
+        },
+    },
+    {
+        "name": "log_expense",
+        "description": (
+            "Log an actual expense to the trip budget tracker. "
+            "Use this when the user mentions spending money during a trip "
+            "(e.g. 'I paid $45 for dinner', 'flight cost me $320'). "
+            "Tracks running total vs budget."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "category": {
+                    "type": "string",
+                    "enum": ["flights", "hotels", "food", "activities", "transport", "shopping", "other"],
+                    "description": "Expense category",
+                },
+                "amount_usd": {
+                    "type": "number",
+                    "description": "Amount in USD",
+                },
+                "description": {
+                    "type": "string",
+                    "description": "What this expense was for (e.g. 'Dinner at La Boqueria', 'Airbnb night 3')",
+                },
+                "date": {
+                    "type": "string",
+                    "description": "Date of expense YYYY-MM-DD (optional, defaults to today)",
+                },
+            },
+            "required": ["category", "amount_usd", "description"],
+        },
+    },
+    {
+        "name": "get_budget_status",
+        "description": (
+            "Show current trip spending broken down by category. "
+            "Call this when the user asks 'how much have I spent?', 'what's my budget status?', "
+            "or 'am I over budget?'. Returns total spent, by-category breakdown, and "
+            "remaining budget if a budget was set."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "trip_budget_usd": {
+                    "type": "number",
+                    "description": "Total trip budget in USD (optional, to show remaining budget)",
+                },
+            },
+            "required": [],
+        },
+    },
+    {
         "name": "web_search",
         "description": (
             "Search the web for travel information: visa requirements, travel advisories, "
