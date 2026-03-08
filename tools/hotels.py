@@ -324,6 +324,71 @@ def _price_only_hotels(destination, check_in, check_out, guests, rooms,
             "source": "Estimated pricing (set AMADEUS_CLIENT_ID for live rates)"}
 
 
+# ── Accommodation type pricing multipliers ────────────────────────────────────
+
+_ACCOM_CONFIG = {
+    "hotel":      {"osm_types": "hotel|motel",              "price_mult": 1.0,  "label": "Hotel"},
+    "hostel":     {"osm_types": "hostel",                    "price_mult": 0.35, "label": "Hostel (private room)"},
+    "guesthouse": {"osm_types": "guest_house",               "price_mult": 0.45, "label": "Guesthouse"},
+    "dorm":       {"osm_types": "hostel",                    "price_mult": 0.18, "label": "Hostel (dorm bed)"},
+}
+
+
+def _dorm_price(destination: str, rng: random.Random) -> int:
+    """Per-bed dorm price based on destination tier."""
+    tier_map = {
+        "paris": 35, "london": 38, "new york": 45, "tokyo": 32,
+        "dubai": 30, "singapore": 35, "sydney": 34, "zurich": 48,
+        "amsterdam": 32, "san francisco": 42,
+        "barcelona": 24, "rome": 22, "berlin": 20, "madrid": 22,
+        "istanbul": 14, "prague": 14, "lisbon": 20, "athens": 16,
+        "bangkok": 10, "bali": 8, "kuala lumpur": 10,
+        "ho chi minh": 8, "hanoi": 7, "cairo": 10, "marrakech": 12,
+    }
+    d_lower = destination.lower()
+    base = 22  # default
+    for key, price in tier_map.items():
+        if key in d_lower:
+            base = price
+            break
+    return int(base * rng.uniform(0.85, 1.20))
+
+
+def _apply_accommodation_type(result: dict, accommodation_type: str) -> dict:
+    """Post-process results to apply accommodation type pricing and labeling."""
+    cfg = _ACCOM_CONFIG.get(accommodation_type, _ACCOM_CONFIG["hotel"])
+    label = cfg["label"]
+    mult = cfg["price_mult"]
+
+    for item in result.get("results", []):
+        if accommodation_type == "dorm":
+            rng = random.Random(hash(item.get("name", "")) + 1)
+            dest = item.get("destination", "")
+            item["price_per_night_usd"] = _dorm_price(dest, rng)
+            item["price_per_bed_usd"] = item["price_per_night_usd"]
+            nights = item.get("nights", 1)
+            guests = item.get("guests", 1)
+            item["total_price_usd"] = item["price_per_night_usd"] * nights * guests
+            item["accommodation_type"] = label
+            item["note"] = "Dorm bed price per person. Mixed or female-only dorms typically available."
+            # Adjust amenities for hostel context
+            item["amenities"] = list(set(item.get("amenities", [])) |
+                                     {"WiFi", "Shared Kitchen", "Lockers", "Common Room"})
+        elif accommodation_type in ("hostel", "guesthouse"):
+            item["price_per_night_usd"] = max(10, int(item["price_per_night_usd"] * mult))
+            nights = item.get("nights", 1)
+            rooms = item.get("rooms", 1)
+            item["total_price_usd"] = item["price_per_night_usd"] * nights * rooms
+            item["accommodation_type"] = label
+            if accommodation_type == "hostel":
+                item["amenities"] = list(set(item.get("amenities", [])) |
+                                         {"WiFi", "Shared Kitchen", "Common Room"})
+        else:
+            item["accommodation_type"] = label
+
+    return result
+
+
 # ── Public API ────────────────────────────────────────────────────────────────
 
 def search_hotels(
@@ -334,34 +399,48 @@ def search_hotels(
     rooms: int = 1,
     max_results: int = 5,
     max_price_per_night: int | None = None,
+    accommodation_type: str = "hotel",
 ) -> dict:
     """
-    Search hotels. Uses Amadeus if AMADEUS_CLIENT_ID is set;
-    otherwise real hotel names from OpenStreetMap + estimated pricing.
+    Search hotels/hostels/guesthouses. Uses Amadeus if AMADEUS_CLIENT_ID is set;
+    otherwise real property names from OpenStreetMap + estimated pricing.
+
+    accommodation_type: "hotel" (default), "hostel", "guesthouse", "dorm"
     """
     if not _HTTPX:
         return {"status": "error", "message": "httpx not installed"}
 
-    if os.getenv("AMADEUS_CLIENT_ID"):
+    # For non-hotel types, use a higher max_results then filter
+    fetch_count = max_results if accommodation_type == "hotel" else max_results + 5
+
+    if os.getenv("AMADEUS_CLIENT_ID") and accommodation_type == "hotel":
+        # Amadeus only covers standard hotels; skip for hostel/dorm
         try:
             result = _amadeus_hotels(destination, check_in, check_out,
-                                     guests, rooms, max_results, max_price_per_night)
+                                     guests, rooms, fetch_count, max_price_per_night)
             if result:
                 result["query"] = {
                     "destination": destination, "check_in": check_in,
                     "check_out": check_out, "guests": guests, "rooms": rooms,
+                    "accommodation_type": accommodation_type,
                 }
                 result["currency"] = "USD"
+                result = _apply_accommodation_type(result, accommodation_type)
                 return result
         except Exception:
             pass
 
     # OpenStreetMap fallback
     result = _osm_hotels(destination, check_in, check_out, guests, rooms,
-                         max_results, max_price_per_night)
+                         fetch_count, max_price_per_night)
+    result = _apply_accommodation_type(result, accommodation_type)
+    # Trim to requested count after type filtering
+    if "results" in result:
+        result["results"] = result["results"][:max_results]
     result["query"] = {
         "destination": destination, "check_in": check_in,
         "check_out": check_out, "guests": guests, "rooms": rooms,
+        "accommodation_type": accommodation_type,
     }
     result["currency"] = "USD"
     return result

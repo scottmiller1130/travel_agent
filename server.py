@@ -539,6 +539,8 @@ VALID_PREF_KEYS = {
     "dietary_restrictions", "accessibility_needs", "preferred_activities",
     "avoided_activities", "travel_pace", "home_airport", "home_city",
     "currency", "name", "email",
+    "travel_style", "values", "companion_profile", "trip_type",
+    "accommodation_preference",
 }
 
 

@@ -34,6 +34,12 @@ class PreferenceStore:
         "currency": "USD",
         "name": "",
         "email": "",
+        # Traveler profile
+        "travel_style": "",           # budget | mid-range | luxury
+        "values": [],                 # adventure | wellness | culture | relaxation | food | nature
+        "companion_profile": "",      # solo | couple | family | group
+        "trip_type": "",              # leisure | adventure | honeymoon | wellness | backpacking
+        "accommodation_preference":   "",  # hotel | hostel | guesthouse | dorm | mixed
     }
 
     def __init__(self):

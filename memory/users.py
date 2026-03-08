@@ -14,7 +14,7 @@ from memory.db import get_conn
 # ── Plan limits ───────────────────────────────────────────────────────────────
 # -1 means unlimited
 PLAN_LIMITS: dict[str, dict[str, int]] = {
-    "free": {"chat_turns": 20,  "api_calls": 10},
+    "free": {"chat_turns": 20,  "api_calls": 50},
     "pro":  {"chat_turns": -1,  "api_calls": 200},
     "team": {"chat_turns": -1,  "api_calls": 500},
 }
