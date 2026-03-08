@@ -567,7 +567,7 @@ async def create_share_link(session_id: str, request: Request):
     saved = _session_store.load(session_id)
     if not saved or not saved.get("itinerary"):
         raise HTTPException(status_code=404, detail="No itinerary to share for this session.")
-    token = _session_store.create_share_token(session_id)
+    token = _session_store.create_share_token(session_id, saved["itinerary"])
     base_url = str(request.base_url).rstrip("/")
     return JSONResponse({"status": "ok", "share_url": f"{base_url}/s/{token}"})
 
