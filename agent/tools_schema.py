@@ -190,6 +190,34 @@ TOOLS: list[dict] = [
         },
     },
     {
+        "name": "search_experiences",
+        "description": (
+            "Search for bookable tours, activities, and experiences at a destination. "
+            "Use this for: day trips, guided tours, cooking classes, adventure sports, "
+            "museum tickets, food tours, cultural experiences, and nightlife. "
+            "Returns real attraction names (OpenTripMap) or bookable listings (Viator/GetYourGuide "
+            "when keys are set). Always call this when building an itinerary's activity days."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "destination": {"type": "string", "description": "City or destination to search in"},
+                "category": {
+                    "type": "string",
+                    "description": (
+                        "Type of experience: 'attraction', 'tour', 'museum', 'food', 'adventure', "
+                        "'culture', 'history', 'nature', 'sport', 'nightlife', 'shopping'"
+                    ),
+                    "default": "attraction",
+                },
+                "date": {"type": "string", "description": "Travel date YYYY-MM-DD for availability (optional)"},
+                "max_results": {"type": "integer", "description": "Max results to return", "default": 6},
+                "max_price_usd": {"type": "integer", "description": "Max price per person in USD (optional)"},
+            },
+            "required": ["destination"],
+        },
+    },
+    {
         "name": "search_places",
         "description": (
             "Search for places of interest (attractions, restaurants, museums, beaches, etc.) "
@@ -309,6 +337,85 @@ TOOLS: list[dict] = [
                 "location": {"type": "string", "description": "Location of the event"},
             },
             "required": ["title", "start_date", "end_date"],
+        },
+    },
+    {
+        "name": "get_inspiration",
+        "description": (
+            "Extract travel ideas from any URL, blog post, article, or pasted text. "
+            "Use this when the user shares a link (travel blog, YouTube video, TripAdvisor article, "
+            "Instagram caption) or pastes notes they want to turn into a trip plan. "
+            "Fetches the content, extracts destinations and activity ideas, and returns a "
+            "structured seed for planning. This is the 'Start Anywhere' feature — "
+            "users can start from any inspiration source."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "source": {
+                    "type": "string",
+                    "description": (
+                        "A URL (https://...) to fetch travel content from, OR a block of "
+                        "pasted text/notes to extract trip ideas from."
+                    ),
+                },
+                "trip_type": {
+                    "type": "string",
+                    "description": "Optional trip type hint: luxury, adventure, road_trip, backpacker, family, honeymoon, solo, group, wellness, foodie",
+                },
+            },
+            "required": ["source"],
+        },
+    },
+    {
+        "name": "log_expense",
+        "description": (
+            "Log an actual expense to the trip budget tracker. "
+            "Use this when the user mentions spending money during a trip "
+            "(e.g. 'I paid $45 for dinner', 'flight cost me $320'). "
+            "Tracks running total vs budget."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "category": {
+                    "type": "string",
+                    "enum": ["flights", "hotels", "food", "activities", "transport", "shopping", "other"],
+                    "description": "Expense category",
+                },
+                "amount_usd": {
+                    "type": "number",
+                    "description": "Amount in USD",
+                },
+                "description": {
+                    "type": "string",
+                    "description": "What this expense was for (e.g. 'Dinner at La Boqueria', 'Airbnb night 3')",
+                },
+                "date": {
+                    "type": "string",
+                    "description": "Date of expense YYYY-MM-DD (optional, defaults to today)",
+                },
+            },
+            "required": ["category", "amount_usd", "description"],
+        },
+    },
+    {
+        "name": "get_budget_status",
+        "description": (
+            "Show current trip spending broken down by category. "
+            "Call this when the user asks 'how much have I spent?', 'what's my budget status?', "
+            "or 'am I over budget?'. Returns total spent, by-category breakdown, and "
+            "remaining budget if a budget was set."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "trip_budget_usd": {
+                    "type": "number",
+                    "description": "Total trip budget in USD (optional, to show remaining budget)",
+                },
+            },
+            "required": [],
         },
     },
     {

@@ -7,7 +7,10 @@ Priority order:
      → Sign up at https://serpapi.com/
   2. Amadeus GDS API             (set AMADEUS_CLIENT_ID + AMADEUS_CLIENT_SECRET)
      → Free sandbox, no credit card: https://developers.amadeus.com/
-  3. Distance-calculated mock    (always available, realistic but not real fares)
+  3. Travelpayouts / Aviasales   (set TRAVELPAYOUTS_TOKEN)
+     → Free affiliate API with real cached price data from millions of searches.
+     → Sign up at https://www.travelpayouts.com/developers/api (affiliate program, free)
+  4. Distance-calculated mock    (always available, realistic but not real fares)
 """
 
 import math
@@ -479,6 +482,109 @@ def _serpapi_flights(origin_iata: str, dest_iata: str, departure_date: str,
     }
 
 
+# ── Travelpayouts / Aviasales (optional, free) ────────────────────────────────
+# Free affiliate API with cached real price data from millions of searches.
+# Sign up at https://www.travelpayouts.com/developers/api (free, no credit card)
+# After joining, get your token at: https://www.travelpayouts.com/programs/100/tools/api
+
+def _travelpayouts_flights(origin_iata: str, dest_iata: str, departure_date: str,
+                           return_date: str | None, passengers: int,
+                           max_results: int) -> dict | None:
+    """
+    Travelpayouts / Aviasales Data API — plug-and-play when TRAVELPAYOUTS_TOKEN is set.
+
+    Returns cached real-world price data aggregated from millions of actual
+    Aviasales searches. Data is refreshed continuously (max 7 days old).
+    Best used as a third fallback when SerpAPI and Amadeus are both unavailable.
+    Note: prices are cached fares (not guaranteed real-time availability).
+    """
+    token = os.getenv("TRAVELPAYOUTS_TOKEN", "").strip()
+    if not token or not _HTTPX:
+        return None
+
+    # Parse departure date to extract year/month/day components
+    try:
+        dep_dt = datetime.strptime(departure_date, "%Y-%m-%d")
+    except ValueError:
+        return None
+
+    params: dict = {
+        "origin":      origin_iata,
+        "destination": dest_iata,
+        "depart_date": dep_dt.strftime("%Y-%m"),  # YYYY-MM format for month-level query
+        "one_way":     "false" if return_date else "true",
+        "currency":    "usd",
+        "limit":       max_results,
+        "show_to_affiliates": "true",
+        "token":       token,
+    }
+    if return_date:
+        try:
+            ret_dt = datetime.strptime(return_date, "%Y-%m-%d")
+            params["return_date"] = ret_dt.strftime("%Y-%m")
+        except ValueError:
+            pass
+
+    try:
+        r = _httpx.get(
+            "https://api.travelpayouts.com/aviasales/v3/prices_for_dates",
+            params=params,
+            timeout=12,
+        )
+        if r.status_code != 200:
+            return None
+        data = r.json()
+        if not data.get("success"):
+            return None
+        tickets = data.get("data", [])
+        if not tickets:
+            return None
+    except Exception:
+        return None
+
+    results = []
+    for t in tickets[:max_results]:
+        price_usd = t.get("price", 0)
+        if passengers > 1:
+            price_usd = price_usd * passengers  # Travelpayouts returns per-person price
+
+        dep_at = t.get("depart_date", departure_date)
+        arr_at = t.get("return_date") or return_date
+        airline_code = t.get("airline", "")
+        # Convert IATA airline code to readable name (best effort)
+        airline_name = airline_code if airline_code else "Various Airlines"
+
+        results.append({
+            "flight_id":            f"TP_{origin_iata}{dest_iata}_{len(results)+1:02d}",
+            "airline":              airline_name,
+            "flight_number":        t.get("flight_number", ""),
+            "origin":               origin_iata,
+            "destination":          dest_iata,
+            "departure_date":       dep_at,
+            "departure_time":       "",
+            "arrival_time":         "",
+            "duration":             "",
+            "stops":                t.get("number_of_changes", 0),
+            "cabin_class":          "economy",
+            "price_usd":            price_usd,
+            "price_per_person_usd": t.get("price", price_usd),
+            "seats_available":      None,
+            "return_date":          arr_at,
+            "link":                 t.get("link", ""),
+        })
+
+    if not results:
+        return None
+
+    results.sort(key=lambda x: x["price_usd"])
+    return {
+        "status":  "success",
+        "results": results,
+        "currency": "USD",
+        "source":  "Travelpayouts / Aviasales (cached real-world pricing)",
+        "note":    "Prices are from recent search cache — confirm on airline site before booking.",
+    }
+
 
 @ttl_cache(ttl=1800)  # Cache for 30 minutes — prices are estimated anyway
 def search_flights(
@@ -493,9 +599,10 @@ def search_flights(
 ) -> dict:
     """
     Search flights. Priority order:
-      1. Google Flights via SerpAPI (SERPAPI_KEY)   — real fares, best coverage
-      2. Amadeus live API (AMADEUS_CLIENT_ID+SECRET) — airline GDS fares
-      3. Distance-calculated mock pricing            — always-available fallback
+      1. Google Flights via SerpAPI (SERPAPI_KEY)      — real fares, best coverage
+      2. Amadeus live API (AMADEUS_CLIENT_ID+SECRET)   — airline GDS fares
+      3. Travelpayouts / Aviasales (TRAVELPAYOUTS_TOKEN) — cached real-world pricing
+      4. Distance-calculated mock pricing               — always-available fallback
     """
     # Resolve city names → IATA codes once (used by all sources)
     o_res = _find_airport(origin)
@@ -528,6 +635,16 @@ def search_flights(
         try:
             result = _amadeus_flights(origin_iata, dest_iata, departure_date,
                                       return_date, passengers, cabin_class, max_results)
+            if result:
+                return _apply_filters(result)
+        except Exception:
+            pass  # Fall through
+
+    # 3. Travelpayouts / Aviasales — cached real-world price data
+    if _HTTPX and os.getenv("TRAVELPAYOUTS_TOKEN"):
+        try:
+            result = _travelpayouts_flights(origin_iata, dest_iata, departure_date,
+                                            return_date, passengers, max_results)
             if result:
                 return _apply_filters(result)
         except Exception:

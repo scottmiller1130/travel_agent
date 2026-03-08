@@ -1209,9 +1209,14 @@ async def health():
     components["anthropic"] = "ok" if os.getenv("ANTHROPIC_API_KEY") else "unconfigured"
 
     # Optional services
-    components["serpapi"]  = "configured" if os.getenv("SERPAPI_KEY")  else "not_configured"
-    components["amadeus"]  = "configured" if os.getenv("AMADEUS_CLIENT_ID") else "not_configured"
-    components["clerk"]    = "configured" if os.getenv("CLERK_JWKS_URL") else "not_configured"
+    components["serpapi"]       = "configured" if os.getenv("SERPAPI_KEY")           else "not_configured"
+    components["amadeus"]       = "configured" if os.getenv("AMADEUS_CLIENT_ID")     else "not_configured"
+    components["travelpayouts"] = "configured" if os.getenv("TRAVELPAYOUTS_TOKEN")   else "not_configured"
+    components["viator"]        = "configured" if os.getenv("VIATOR_API_KEY")        else "not_configured"
+    components["getyourguide"]  = "configured" if os.getenv("GETYOURGUIDE_API_KEY")  else "not_configured"
+    components["booking_com"]   = "configured" if os.getenv("BOOKING_COM_API_KEY")   else "not_configured"
+    components["hostelworld"]   = "configured" if os.getenv("HOSTELWORLD_API_KEY")   else "not_configured"
+    components["clerk"]         = "configured" if os.getenv("CLERK_JWKS_URL")        else "not_configured"
 
     overall = "ok" if components["database"] == "ok" else "degraded"
     return JSONResponse({"status": overall, "components": components})
