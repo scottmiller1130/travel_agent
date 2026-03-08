@@ -543,6 +543,26 @@
     .upgrade-nudge:hover { border-color: #34d399; }
     .upgrade-nudge .un-title { font-size: 11px; font-weight: 800; color: #065f46; }
     .upgrade-nudge .un-desc  { font-size: 10px; color: #6ee7b7; margin-top: 1px; font-weight: 600; }
+
+    /* ── Styled modals (save trip, share link) ── */
+    .ta-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; z-index: 1000; animation: fadein .18s ease; }
+    .ta-modal { background: #fff; border-radius: 18px; padding: 28px; max-width: 420px; width: 90%; box-shadow: 0 20px 60px rgba(0,0,0,.25); }
+    .ta-modal-icon { font-size: 28px; margin-bottom: 10px; }
+    .ta-modal-title { font-size: 17px; font-weight: 800; color: #0f172a; margin-bottom: 5px; }
+    .ta-modal-desc { font-size: 13px; color: #64748b; margin-bottom: 16px; line-height: 1.5; }
+    .ta-modal-input { width: 100%; padding: 10px 14px; border: 1.5px solid #e2e8f0; border-radius: 10px; font-size: 14px; font-family: inherit; outline: none; color: #0f172a; transition: border-color .15s; background: #f8fafc; }
+    .ta-modal-input:focus { border-color: #0ea5e9; background: #fff; box-shadow: 0 0 0 3px rgba(14,165,233,.12); }
+    .ta-modal-url-row { display: flex; gap: 8px; align-items: center; margin-bottom: 16px; }
+    .ta-modal-url { flex: 1; padding: 9px 12px; border: 1.5px solid #e2e8f0; border-radius: 9px; font-size: 12px; font-family: 'SF Mono','Fira Code',monospace; color: #334155; background: #f8fafc; outline: none; cursor: text; }
+    .ta-modal-footer { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+    .ta-modal-btn { padding: 9px 20px; border-radius: 9px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; transition: all .15s; }
+    .ta-modal-btn.cancel { border: 1.5px solid #e2e8f0; background: transparent; color: #64748b; }
+    .ta-modal-btn.cancel:hover { background: #f8fafc; }
+    .ta-modal-btn.primary { border: none; background: linear-gradient(135deg, #0ea5e9, #0d9488); color: #fff; box-shadow: 0 3px 10px rgba(14,165,233,.35); }
+    .ta-modal-btn.primary:hover { filter: brightness(1.07); }
+    .ta-modal-btn.copy-btn { border: none; background: linear-gradient(135deg, #0ea5e9, #0d9488); color: #fff; box-shadow: 0 3px 10px rgba(14,165,233,.28); flex-shrink: 0; white-space: nowrap; }
+    .ta-modal-btn.copy-btn.copied { background: linear-gradient(135deg, #10b981, #0d9488); }
+    .ta-modal-note { font-size: 11px; color: #94a3b8; margin-top: 8px; }
   </style>
 </head>
 <body>
@@ -777,7 +797,7 @@
 
   async function sendMessage() {
     const text = inputEl.value.trim(); if (!text) return;
-    if (isThinking) { showToast('Agent is thinking — your message is queued.'); messageQueue.push(text); inputEl.value = ''; autoResize(inputEl); return; }
+    if (isThinking) { messageQueue.push(text); inputEl.value = ''; autoResize(inputEl); showToast('Message queued — ' + messageQueue.length + ' waiting. Agent will reply automatically.'); return; }
     isThinking = true; _abortCtrl = new AbortController(); _setStopMode(true);
     inputEl.value = ''; autoResize(inputEl);
     addUserMessage(text); addThinkingMessage();
@@ -934,9 +954,21 @@
     document.getElementById('sidebar-overlay').classList.remove('visible');
     document.getElementById('sidebar-toggle').setAttribute('aria-expanded', 'false');
   }
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSidebar(); });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      closeSidebar();
+      // Close any open ta-modal-overlay (share, save-trip, etc.)
+      document.querySelectorAll('.ta-modal-overlay').forEach(m => m.remove());
+    }
+    // Ctrl+B / Cmd+B — toggle trip board
+    if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
+      e.preventDefault();
+      toggleBoard();
+    }
+  });
 
   function updateItinerary(data) {
+    const isFirstItinerary = !currentItinerary; // true when board is being populated for the first time
     boardPage = 0; // reset to first page whenever a new itinerary arrives
     currentItinerary = JSON.parse(JSON.stringify(data));
     currentItinerary.allIssues = [...(data.issues||[]), ...detectConflicts(currentItinerary.days)];
@@ -944,12 +976,19 @@
     document.getElementById('export-wrap').classList.add('visible');
     renderBoard();
     if (!boardOpen) {
-      const btn = document.getElementById('board-toggle-btn');
-      btn.classList.remove('has-update');
-      // Force reflow so animation restarts
-      void btn.offsetWidth;
-      btn.classList.add('has-update');
-      setTimeout(() => btn.classList.remove('has-update'), 4500);
+      if (isFirstItinerary) {
+        // Auto-open the board the first time an itinerary arrives so users
+        // discover the visual planner without having to find the button.
+        openBoard();
+        showToast('✈ Trip board opened — your itinerary is ready!', 3500);
+      } else {
+        // Subsequent updates: pulse the button to signal a change
+        const btn = document.getElementById('board-toggle-btn');
+        btn.classList.remove('has-update');
+        void btn.offsetWidth; // force reflow so animation restarts
+        btn.classList.add('has-update');
+        setTimeout(() => btn.classList.remove('has-update'), 4500);
+      }
     }
   }
   function renderSeasonBadge(season) {
@@ -1104,7 +1143,14 @@
       '<div class="card-top"><span class="card-icon">'+icon+'</span><div class="card-main"><div class="card-title">'+escapeHtml(item.title)+'</div>'+(item.subtitle?'<div class="card-subtitle">'+escapeHtml(item.subtitle)+'</div>':'')+'</div>'+badge+'</div>'+
       (meta?'<div class="card-meta">'+meta+'</div>':'')+(item.notes?'<div class="card-notes">'+escapeHtml(item.notes)+'</div>':'')+actions+'</div>';
   }
-  function askAlt(title,e){e.stopPropagation();inputEl.value='Please suggest 2–3 alternatives for: '+title;autoResize(inputEl);inputEl.focus();}
+  function askAlt(title,e){
+    e.stopPropagation();
+    inputEl.value='Please suggest 2–3 alternatives for: '+title;
+    autoResize(inputEl);
+    inputEl.focus();
+    // Auto-send so the user doesn't need a second action
+    sendMessage();
+  }
   function toggleLock(id,e){e.stopPropagation();if(lockedCards.has(id)){lockedCards.delete(id);showToast('Card unlocked.');}else{lockedCards.add(id);showToast('Card locked — won\'t move when dragging.');}renderDays(currentItinerary.days);}
 
   function tMin(t){if(!t)return null;const[h,m]=t.split(':').map(Number);return h*60+(m||0);}
@@ -1305,22 +1351,90 @@
     }).catch(() => {}); // fire-and-forget; localStorage is the fallback
   }
 
+  function showSaveTripModal(defaultName, onSave) {
+    const ex = document.getElementById('save-trip-modal');
+    if (ex) ex.remove();
+    const el = document.createElement('div');
+    el.id = 'save-trip-modal';
+    el.className = 'ta-modal-overlay';
+    el.innerHTML = `
+      <div class="ta-modal" role="dialog" aria-modal="true" aria-labelledby="save-trip-title">
+        <div class="ta-modal-icon">💾</div>
+        <div class="ta-modal-title" id="save-trip-title">Save Trip</div>
+        <div class="ta-modal-desc">Give this itinerary a name so you can find it later in your saved trips.</div>
+        <input id="save-trip-name" class="ta-modal-input" type="text" value="${escapeHtml(defaultName)}" maxlength="80" placeholder="e.g. Japan Spring 2025" aria-label="Trip name">
+        <div class="ta-modal-footer">
+          <button class="ta-modal-btn cancel" onclick="document.getElementById('save-trip-modal').remove()">Cancel</button>
+          <button class="ta-modal-btn primary" id="save-trip-confirm">Save Trip</button>
+        </div>
+      </div>`;
+    document.body.appendChild(el);
+    const inp = document.getElementById('save-trip-name');
+    inp.select();
+    inp.focus();
+    document.getElementById('save-trip-confirm').onclick = () => {
+      const name = inp.value.trim() || defaultName;
+      el.remove();
+      onSave(name);
+    };
+    inp.addEventListener('keydown', e => {
+      if (e.key === 'Enter') document.getElementById('save-trip-confirm').click();
+      if (e.key === 'Escape') el.remove();
+    });
+    el.addEventListener('click', e => { if (e.target === el) el.remove(); });
+  }
+
   async function saveTrip() {
     document.getElementById('export-menu').classList.remove('open');
     if (!currentItinerary) { showToast('Plan a trip first before saving.'); return; }
     const dest = currentItinerary.destination || 'My Trip';
-    const name = prompt('Name this trip:', dest);
-    if (name === null) return; // cancelled
-    try {
-      const r = await _apiFetch('/api/trips/' + sessionId, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: name.trim() || dest }),
-      });
-      if (!r.ok) { showToast('Could not save trip — try again.'); return; }
-      showToast('✅ Trip saved: ' + (name.trim() || dest));
-      loadTrips();
-    } catch (err) { showToast('Save failed: ' + err.message); }
+    showSaveTripModal(dest, async (name) => {
+      try {
+        const r = await _apiFetch('/api/trips/' + sessionId, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name }),
+        });
+        if (!r.ok) { showToast('Could not save trip — try again.'); return; }
+        showToast('✅ Trip saved: ' + name);
+        loadTrips();
+      } catch (err) { showToast('Save failed: ' + err.message); }
+    });
+  }
+
+  function showShareModal(url) {
+    const ex = document.getElementById('share-modal');
+    if (ex) ex.remove();
+    const el = document.createElement('div');
+    el.id = 'share-modal';
+    el.className = 'ta-modal-overlay';
+    el.innerHTML = `
+      <div class="ta-modal" role="dialog" aria-modal="true" aria-labelledby="share-modal-title">
+        <div class="ta-modal-icon">🔗</div>
+        <div class="ta-modal-title" id="share-modal-title">Share Itinerary</div>
+        <div class="ta-modal-desc">Anyone with this link can view your itinerary — it's read-only, so they can't make changes.</div>
+        <div class="ta-modal-url-row">
+          <input id="share-url-input" class="ta-modal-url" type="text" readonly aria-label="Share link" onclick="this.select()">
+          <button class="ta-modal-btn copy-btn" id="share-copy-btn" onclick="copyShareUrl()">Copy link</button>
+        </div>
+        <div class="ta-modal-note">Link copied to clipboard automatically.</div>
+        <button class="ta-modal-btn cancel" style="width:100%;margin-top:12px" onclick="document.getElementById('share-modal').remove()">Close</button>
+      </div>`;
+    document.body.appendChild(el);
+    document.getElementById('share-url-input').value = url;
+    navigator.clipboard.writeText(url).catch(() => {});
+    el.addEventListener('click', e => { if (e.target === el) el.remove(); });
+  }
+
+  function copyShareUrl() {
+    const url = document.getElementById('share-url-input').value;
+    navigator.clipboard.writeText(url).then(() => {
+      const btn = document.getElementById('share-copy-btn');
+      if (!btn) return;
+      btn.textContent = 'Copied!';
+      btn.classList.add('copied');
+      setTimeout(() => { btn.textContent = 'Copy link'; btn.classList.remove('copied'); }, 2000);
+    });
   }
 
   async function shareItinerary() {
@@ -1328,10 +1442,9 @@
     if (!currentItinerary) { showToast('Plan a trip first to share it.'); return; }
     try {
       const r = await _apiFetch('/api/share/' + sessionId, { method: 'POST' });
-      if (!r.ok) { showToast('Nothing to share yet — save an itinerary first.'); return; }
+      if (!r.ok) { showToast('Nothing to share yet — plan a trip first.'); return; }
       const d = await r.json();
-      await navigator.clipboard.writeText(d.share_url).catch(() => {});
-      showToast('Share link copied to clipboard! ' + d.share_url, 6000);
+      showShareModal(d.share_url);
     } catch (err) { showToast('Could not create share link: ' + err.message); }
   }
 
@@ -1576,7 +1689,7 @@
         </div>
         <div class="user-actions">
           <button class="user-action-btn" onclick="_clerk&&_clerk.openUserProfile()" title="Account settings">⚙</button>
-          <button class="user-action-btn" onclick="_clerk&&_clerk.signOut().then(()=>location.reload())" title="Sign out">→</button>
+          <button class="user-action-btn" onclick="_clerk&&_clerk.signOut().then(()=>location.reload())" title="Sign out">Sign out</button>
         </div>
       </div>
       ${limits?.chat_turns !== -1 ? `
