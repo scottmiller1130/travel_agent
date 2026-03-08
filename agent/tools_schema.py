@@ -68,6 +68,15 @@ TOOLS: list[dict] = [
                     "description": "Type of accommodation. Use 'hostel' for budget private rooms (~$20-50/night), 'dorm' for shared dorm beds (~$8-45/night per person), 'guesthouse' for family-run stays. Defaults to 'hotel'.",
                     "default": "hotel",
                 },
+                "min_stars": {
+                    "type": "integer",
+                    "description": (
+                        "Minimum hotel star rating filter (1-5). Use 4 or 5 for luxury travelers. "
+                        "Omit for adventure travelers (not relevant for hostels/dorms)."
+                    ),
+                    "minimum": 1,
+                    "maximum": 5,
+                },
             },
             "required": ["destination", "check_in", "check_out"],
         },
@@ -76,7 +85,8 @@ TOOLS: list[dict] = [
         "name": "book_hotel",
         "description": (
             "Book a specific hotel by hotel_id. IMPORTANT: Always ask the user to confirm "
-            "before setting payment_confirmed=true. Show total cost first."
+            "before setting payment_confirmed=true. Show total cost first. "
+            "For luxury travelers, always include room_type and special_requests."
         ),
         "input_schema": {
             "type": "object",
@@ -84,6 +94,28 @@ TOOLS: list[dict] = [
                 "hotel_id": {"type": "string", "description": "The hotel_id from search_hotels results"},
                 "guest_name": {"type": "string", "description": "Full name of the primary guest"},
                 "guest_email": {"type": "string", "description": "Email address for booking confirmation"},
+                "room_type": {
+                    "type": "string",
+                    "description": (
+                        "Room or suite category preference (e.g. 'harbour suite', 'deluxe king', "
+                        "'ocean view double', 'dorm bed', 'private ensuite'). "
+                        "Use for luxury travelers or whenever the user specifies a room preference."
+                    ),
+                },
+                "bed_preference": {
+                    "type": "string",
+                    "enum": ["king", "queen", "twin", "double", "single", "any"],
+                    "description": "Bed type preference. Omit if not relevant.",
+                },
+                "special_requests": {
+                    "type": "string",
+                    "description": (
+                        "Free-text special requests to pass to the hotel "
+                        "(e.g. 'early check-in requested', 'high floor preferred', "
+                        "'quiet room away from elevator', 'anniversary — flowers in room if possible'). "
+                        "Always populate for luxury travelers."
+                    ),
+                },
                 "payment_confirmed": {"type": "boolean", "description": "Set to true only after user explicitly confirms payment", "default": False},
             },
             "required": ["hotel_id", "guest_name", "guest_email"],
@@ -305,8 +337,13 @@ TOOLS: list[dict] = [
             "properties": {
                 "key": {
                     "type": "string",
-                    "description": "Preference key",
+                    "description": (
+                        "Preference key. Use 'traveler_profile' as the primary profile anchor "
+                        "(adventure | mid_range | luxury) — it drives defaults for cabin class, "
+                        "hotel stars, budget, pace, and accommodation type."
+                    ),
                     "enum": [
+                        "traveler_profile",
                         "preferred_airlines", "avoided_airlines", "seat_preference",
                         "cabin_class", "hotel_min_stars", "max_budget_per_day_usd",
                         "dietary_restrictions", "accessibility_needs", "preferred_activities",
