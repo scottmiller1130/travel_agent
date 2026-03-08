@@ -28,7 +28,7 @@ except ImportError:
     _HTTPX = False
 
 # Re-use the shared token cache from flights module
-from tools.flights import _get_amadeus_token, _find_airport, AIRPORTS
+from tools.flights import AIRPORTS, _find_airport, _get_amadeus_token
 
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
 OVERPASS_URL  = "https://overpass-api.de/api/interpreter"
@@ -368,7 +368,8 @@ def _osm_hotels(destination: str, check_in: str, check_out: str,
         if len(bb) == 4:
             s, n, w, e = [float(b) for b in bb]
         else:
-            d = 0.15; s, n, w, e = lat-d, lat+d, lon-d, lon+d
+            d = 0.15
+            s, n, w, e = lat - d, lat + d, lon - d, lon + d
     except Exception:
         return _price_only_hotels(destination, check_in, check_out, guests, rooms,
                                   nights, max_results, max_price)
@@ -407,7 +408,6 @@ out center {max_results * 3};
         if max_price and price_night > max_price:
             continue
 
-        amenities_raw = tags.get("amenity", "")
         amenities = ["WiFi"]
         if tags.get("internet_access"):
             amenities.append("Internet")
@@ -566,7 +566,6 @@ def _apply_accommodation_type(result: dict, accommodation_type: str) -> dict:
             item["price_per_night_usd"] = _dorm_price(dest, rng)
             item["price_per_bed_usd"] = item["price_per_night_usd"]
             nights = item.get("nights", 1)
-            guests = item.get("guests", 1)
             item["total_price_usd"] = item["price_per_night_usd"] * nights
             item["accommodation_type"] = label
             item["note"] = "Dorm bed price per person. Mixed or female-only dorms typically available."

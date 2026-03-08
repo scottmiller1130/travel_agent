@@ -3,8 +3,8 @@ Calendar tool — check availability and add trips to calendar.
 Uses in-memory mock; swap in Google Calendar API when configured.
 """
 
-import os
 import json
+import os
 from datetime import datetime
 from pathlib import Path
 

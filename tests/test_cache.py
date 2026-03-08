@@ -1,7 +1,9 @@
 """Tests for the TTL cache module."""
 
 import time
+
 import pytest
+
 from tools.cache import _global_cache, ttl_cache
 
 

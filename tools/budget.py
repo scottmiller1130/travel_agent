@@ -13,7 +13,6 @@ Tools exposed:
 
 from datetime import datetime
 
-
 _CATEGORIES = {
     "flights":    "✈",
     "hotels":     "🏨",

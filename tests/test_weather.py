@@ -1,8 +1,10 @@
 """Tests for the weather forecast tool."""
 
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
-from tools.weather import get_weather, _mock_forecast, _packing_for_temp
+
+from tools.weather import _mock_forecast, _packing_for_temp, get_weather
 
 try:
     import httpx as _httpx_lib

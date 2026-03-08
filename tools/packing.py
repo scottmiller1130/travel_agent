@@ -176,7 +176,7 @@ def _clothing_count_note(days: int) -> str:
     if days <= 3:
         return f"Pack for {days} days — no laundry needed for a short trip."
     elif days <= 7:
-        return f"Pack for 4–5 days; plan one mid-trip laundry or hand-wash."
+        return "Pack for 4–5 days; plan one mid-trip laundry or hand-wash."
     elif days <= 14:
         return "Pack for 5–7 days; 1–2 laundry trips recommended. Most hostels and hotels offer laundry."
     else:

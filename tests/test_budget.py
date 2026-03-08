@@ -1,8 +1,8 @@
 """Tests for the budget / expense tracker tool."""
 
 import pytest
-from tools.budget import log_expense, get_budget_status
 
+from tools.budget import get_budget_status, log_expense
 
 # ── log_expense ───────────────────────────────────────────────────────────────
 

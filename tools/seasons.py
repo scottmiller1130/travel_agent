@@ -767,13 +767,19 @@ def _hemisphere_fallback(destination: str, month: int) -> dict:
     is_sh = any(w in dest_lower for w in southern)
 
     if is_sh:
-        if month in (12, 1, 2):  season, mult, crowd = "peak",     1.35, "high"
-        elif month in (6, 7, 8): season, mult, crowd = "off",      0.80, "low"
-        else:                    season, mult, crowd = "shoulder",  1.0,  "moderate"
+        if month in (12, 1, 2):
+            season, mult, crowd = "peak", 1.35, "high"
+        elif month in (6, 7, 8):
+            season, mult, crowd = "off", 0.80, "low"
+        else:
+            season, mult, crowd = "shoulder", 1.0, "moderate"
     else:
-        if month in (6, 7, 8):   season, mult, crowd = "peak",     1.35, "high"
-        elif month in (1, 2):    season, mult, crowd = "off",      0.80, "low"
-        else:                    season, mult, crowd = "shoulder",  1.0,  "moderate"
+        if month in (6, 7, 8):
+            season, mult, crowd = "peak", 1.35, "high"
+        elif month in (1, 2):
+            season, mult, crowd = "off", 0.80, "low"
+        else:
+            season, mult, crowd = "shoulder", 1.0, "moderate"
 
     notes_map = {
         "peak":     "Popular travel season. Expect higher prices and more visitors. Book ahead.",

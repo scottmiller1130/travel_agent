@@ -1,9 +1,11 @@
 """Tests for the experiences / activities search tool."""
 
 import os
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
-from tools.experiences import search_experiences, _viator_search, _getyourguide_search
+
+from tools.experiences import _getyourguide_search, _viator_search, search_experiences
 
 try:
     import httpx as _httpx_lib

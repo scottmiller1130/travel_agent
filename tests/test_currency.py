@@ -1,7 +1,9 @@
 """Tests for the currency conversion tool."""
 
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
+
 from tools.cache import _global_cache
 from tools.currency import get_exchange_rate
 

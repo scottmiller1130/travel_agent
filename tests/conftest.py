@@ -1,6 +1,7 @@
 """Shared pytest fixtures for the travel agent test suite."""
 
 import pytest
+
 from tools.cache import _global_cache
 
 

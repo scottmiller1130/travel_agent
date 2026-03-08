@@ -1,8 +1,9 @@
 """Tests for the flight search tool."""
 
 import pytest
+
 from tools.cache import _global_cache
-from tools.flights import search_flights, _find_airport, _haversine
+from tools.flights import _find_airport, _haversine, search_flights
 
 
 def setup_function():

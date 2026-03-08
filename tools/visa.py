@@ -18,7 +18,6 @@ _PASSPORT_API = "https://rough-sun-2523.fly.dev/api/{passport}/{destination}"
 # Common visa-on-arrival / e-visa / free countries for popular passports
 # (US, UK, EU, AU, CA) — used as offline fallback
 _FALLBACK_NOTES = {
-    "TH": "Most Western passports: 30-day visa-on-arrival or 60-day e-visa. Extendable at immigration.",
     "JP": "Most Western passports: 90 days visa-free. No tourist visa required.",
     "VN": "US/EU/UK/AU/CA: 45-day e-visa ($25). Apply at evisa.xuatnhapcanh.gov.vn.",
     "ID": "Most Western passports: 30-day visa-on-arrival (~$35) or free 30-day VOA at major airports.",
@@ -85,7 +84,7 @@ _COUNTRY_TO_ISO = {
     "ho chi minh": "VN", "hanoi": "VN", "bangkok": "TH",
     "tokyo": "JP", "osaka": "JP", "kyoto": "JP",
     "paris": "FR", "rome": "IT", "barcelona": "ES", "lisbon": "PT",
-    "athens": "GR", "istanbul": "TR", "dubai": "AE",
+    "athens": "GR", "istanbul": "TR",
     "cancun": "MX", "havana": "CU", "buenos aires": "AR",
     "cape town": "ZA", "nairobi": "KE",
 }
@@ -208,7 +207,7 @@ def get_visa_requirements(
     if dest_iso:
         # IATA Timatic (industry standard, free lookup for travellers)
         result["official_link"] = (
-            f"https://www.iatatravelcentre.com/passport-visa-health-travel-document-requirements.htm"
+            "https://www.iatatravelcentre.com/passport-visa-health-travel-document-requirements.htm"
         )
         # Country-specific overrides
         _links = {

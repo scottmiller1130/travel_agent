@@ -1,9 +1,11 @@
 """Tests for the hotel search tool."""
 
-import pytest
 import random
-from unittest.mock import patch, MagicMock
-from tools.hotels import search_hotels, _estimate_price
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+from tools.hotels import _estimate_price, search_hotels
 
 try:
     import httpx as _httpx_lib

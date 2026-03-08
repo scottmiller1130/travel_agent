@@ -104,7 +104,7 @@ _DEST_ISO = {
     "nepal": "NP", "sri lanka": "LK", "maldives": "MV",
     "argentina": "AR", "colombia": "CO", "peru": "PE", "chile": "CL",
     "cuba": "CU", "south africa": "ZA", "kenya": "KE", "tanzania": "TZ",
-    "russia": "RU", "ukraine": "UA", "myanmar": "MM", "burma": "MM",
+    "ukraine": "UA", "myanmar": "MM", "burma": "MM",
     "pakistan": "PK", "nigeria": "NG", "ethiopia": "ET",
     "australia": "AU", "new zealand": "NZ", "united states": "US",
     "usa": "US", "united kingdom": "GB", "uk": "GB",
@@ -122,7 +122,7 @@ _DEST_ISO = {
     "havana": "CU", "buenos aires": "AR",
     "cape town": "ZA", "nairobi": "KE",
     "kathmandu": "NP", "colombo": "LK",
-    "dubai": "AE", "abu dhabi": "AE",
+    "abu dhabi": "AE",
 }
 
 

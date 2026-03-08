@@ -17,6 +17,7 @@ import math
 import os
 import random
 import string
+import threading as _threading
 import time
 from datetime import datetime, timedelta
 
@@ -298,7 +299,6 @@ def _deal_reason(d, dest_lat: float = 0.0) -> str:
 
 # ── Amadeus integration (optional) ───────────────────────────────────────────
 
-import threading as _threading
 _amadeus_token    = None
 _amadeus_token_ts = 0.0
 _amadeus_token_lock = _threading.Lock()
@@ -737,7 +737,7 @@ def find_cheapest_dates(
     Returns price_heatmap (all dates → price) for calendar visualization,
     ranked results with deal_reason, and day-of-week analysis.
     """
-    from datetime import date as date_type, timedelta
+    from datetime import date as date_type
 
     o_res = _find_airport(origin)
     d_res = _find_airport(destination)
@@ -882,8 +882,8 @@ def find_cheapest_month(
     day-of-week + seasonal pricing, and overlays season context (peak/shoulder/off).
     Returns months ranked cheapest-first plus a chronological list for charting.
     """
-    from datetime import date as date_type, timedelta
     from calendar import monthrange
+    from datetime import date as date_type
 
     o_res = _find_airport(origin)
     d_res = _find_airport(destination)
@@ -999,8 +999,6 @@ def _amadeus_cheapest_dates(
     trip_duration: int | None,
 ) -> dict | None:
     """Amadeus /v1/shopping/flight-dates — cheapest dates for a route."""
-    from datetime import timedelta
-
     token = _get_amadeus_token()
     if not token:
         return None

@@ -1,6 +1,7 @@
 """Smoke tests for the FastAPI server endpoints."""
 
 import os
+
 import pytest
 
 pytest.importorskip("fastapi", reason="fastapi not installed")
@@ -10,6 +11,7 @@ os.environ.setdefault("ANTHROPIC_API_KEY", "test-key-for-ci")
 os.environ.setdefault("DATABASE_URL", "")
 
 from fastapi.testclient import TestClient
+
 from server import app
 
 client = TestClient(app, raise_server_exceptions=False)
