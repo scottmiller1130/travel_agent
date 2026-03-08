@@ -66,6 +66,7 @@ def _blocks_to_dicts(content) -> list[dict] | str:
     return result
 
 TOOL_LABELS = {
+    "search_experiences": "Finding tours & experiences...",
     "search_ground_transport": "Checking trains, buses & car rental...",
     "get_exchange_rate": "Looking up exchange rates...",
     "search_flights": "Searching flights...",
@@ -92,6 +93,7 @@ from memory.trips import TripStore
 from memory.users import UserStore, PLAN_LIMITS
 from tools.flights import search_flights, book_flight, find_cheapest_dates, find_cheapest_month
 from tools.hotels import search_hotels, book_hotel
+from tools.experiences import search_experiences
 from tools.weather import get_weather
 from tools.maps import search_places, get_distance
 from tools.calendar import check_availability, add_to_calendar
@@ -177,7 +179,7 @@ HOW YOU WORK
    - Adventure/mid-range: use find_cheapest_dates whenever any flexibility exists — even slight. Frame as "cheapest dates." Always use find_cheapest_month when travel month isn't fixed.
    - Luxury: use find_cheapest_dates to find *optimal timing* — frame as "best time to travel" (fewest crowds, best weather, optimal experience). Pass cabin_class="business" or "first".
 
-10. **Pricing transparency.** Note that flight prices are estimated unless Amadeus/SerpAPI keys are configured. Hotel pricing is estimated unless Amadeus keys are set (for hotels) or Booking.com/Hostelworld keys are set (for hostels).
+10. **Pricing transparency.** Note that flight prices are estimated unless Amadeus/SerpAPI/Travelpayouts keys are configured. Hotel pricing is estimated unless Amadeus, Booking.com, Hotellook (Travelpayouts), or Hostelworld keys are set. Experience prices are estimated unless Viator or GetYourGuide keys are set (OpenTripMap provides real attraction names for free).
 
 11. **Multi-city trips.** Populate destinations array in update_itinerary. Group days by city. Search connecting transport (flights OR trains) between each city pair.
 
@@ -198,6 +200,14 @@ HOW YOU WORK
 16. **Slow travel / base-yourself mode.** When an adventure traveler wants to stay 5+ days in one place, reframe around a home base: lead with the best hostel/guesthouse for that duration, then offer day trip options. Don't force a moving itinerary structure.
 
 17. **Visa & entry intel.** When destination involves complex visa rules (Central Asia, the Balkans, Southeast Asia border crossings), proactively use web_search to check current requirements. Surface border crossing practicalities, not just visa policy.
+
+18. **Experiences & activities.** Use search_experiences when building itinerary days — always pull real activity options for each destination. Category guidance:
+    - Adventure: category="adventure" or "nature" — hiking, kayaking, cycling tours
+    - Mid-range: category="tour" or "culture" — city walks, cooking classes, day trips
+    - Luxury: category="culture" or "food" — exclusive tastings, private tours, insider access
+    - Museums/history: category="museum" or "history"
+    - Food travelers: category="food" for food tours, market visits, cooking classes
+    Always include price_usd in itinerary items sourced from search_experiences.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 TONE
@@ -422,6 +432,7 @@ class TravelAgent:
             "book_flight": lambda i: book_flight(**i),
             "search_hotels": lambda i: search_hotels(**i),
             "book_hotel": lambda i: book_hotel(**i),
+            "search_experiences": lambda i: search_experiences(**i),
             "get_weather": lambda i: get_weather(**i),
             "search_places": lambda i: search_places(**i),
             "get_distance": lambda i: get_distance(**i),

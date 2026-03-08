@@ -3,13 +3,15 @@ Hotel search — multi-source with graceful fallback:
 
 1. Hostelworld API (HOSTELWORLD_API_KEY)     → real hostel/dorm inventory & pricing
 2. Booking.com Affiliate API (BOOKING_COM_API_KEY) → broad hotel + hostel coverage
-3. Amadeus Hotel Search (AMADEUS_CLIENT_ID)  → GDS hotel inventory (standard hotels only)
-4. OpenStreetMap + estimated pricing         → always-available fallback
+3. Hotellook / Travelpayouts (TRAVELPAYOUTS_TOKEN) → cached real hotel prices, free
+4. Amadeus Hotel Search (AMADEUS_CLIENT_ID)  → GDS hotel inventory (standard hotels only)
+5. OpenStreetMap + estimated pricing         → always-available fallback
 
 Plug-and-play: set any API key in your environment to unlock that source.
 Get keys:
   Hostelworld API: https://www.hostelworld.com/pwa/developers  (affiliate program)
   Booking.com Affiliate: https://join.booking.com/affiliateprogram/welcome/
+  Hotellook (Travelpayouts): https://www.travelpayouts.com/developers/api (free affiliate)
   Amadeus: https://developers.amadeus.com (free, no credit card)
 """
 
@@ -122,6 +124,105 @@ def _booking_com_search(destination: str, check_in: str, check_out: str,
     # }
 
     return None  # remove this line once implemented
+
+
+# ── Hotellook / Travelpayouts (optional, free) ───────────────────────────────
+# Set TRAVELPAYOUTS_TOKEN to enable real cached hotel price data.
+# Free affiliate signup: https://www.travelpayouts.com/developers/api
+# Covers 250,000+ hotels worldwide with cached real-world pricing.
+
+def _hotellook_search(destination: str, check_in: str, check_out: str,
+                      guests: int, rooms: int, max_results: int,
+                      max_price: int | None) -> dict | None:
+    """
+    Hotellook API (Travelpayouts) — plug-and-play when TRAVELPAYOUTS_TOKEN is set.
+
+    Returns cached real hotel prices aggregated from dozens of OTAs including
+    Booking.com, Hotels.com, Agoda, and direct hotel rates. Free to use with
+    affiliate token. Data refreshed regularly from live searches.
+    """
+    token = os.getenv("TRAVELPAYOUTS_TOKEN", "").strip()
+    if not token or not _HTTPX:
+        return None
+
+    try:
+        from datetime import datetime as _dt
+        nights = max(1, (_dt.strptime(check_out, "%Y-%m-%d") -
+                         _dt.strptime(check_in,  "%Y-%m-%d")).days)
+    except Exception:
+        nights = 1
+
+    try:
+        r = _httpx.get(
+            "https://engine.hotellook.com/api/v2/cache.json",
+            params={
+                "location":  destination,
+                "checkIn":   check_in,
+                "checkOut":  check_out,
+                "adults":    guests,
+                "currency":  "USD",
+                "limit":     max_results * 2,
+                "token":     token,
+            },
+            timeout=12,
+        )
+        if r.status_code != 200:
+            return None
+        hotels_raw = r.json()
+        if not hotels_raw:
+            return None
+    except Exception:
+        return None
+
+    results = []
+    for h in hotels_raw:
+        price_night = h.get("priceFrom")
+        if price_night is None:
+            continue
+        price_night = round(float(price_night), 2)
+        if max_price and price_night > max_price:
+            continue
+
+        stars = h.get("stars")
+        try:
+            stars = int(stars) if stars else None
+        except (ValueError, TypeError):
+            stars = None
+
+        results.append({
+            "hotel_id":            str(h.get("id", "")),
+            "name":                h.get("name", "Hotel"),
+            "destination":         destination,
+            "stars":               stars,
+            "rating":              h.get("rating"),
+            "review_count":        h.get("ratingCount"),
+            "check_in":            check_in,
+            "check_out":           check_out,
+            "guests":              guests,
+            "rooms":               rooms,
+            "price_per_night_usd": price_night,
+            "total_price_usd":     round(price_night * nights * rooms, 2),
+            "nights":              nights,
+            "amenities":           [],
+            "free_cancellation":   None,
+            "neighborhood":        h.get("location", {}).get("name", "") if isinstance(h.get("location"), dict) else "",
+            "latitude":            h.get("location", {}).get("lat") if isinstance(h.get("location"), dict) else None,
+            "longitude":           h.get("location", {}).get("lon") if isinstance(h.get("location"), dict) else None,
+            "source":              "Hotellook / Travelpayouts (cached real pricing)",
+        })
+        if len(results) >= max_results:
+            break
+
+    if not results:
+        return None
+
+    results.sort(key=lambda x: x["price_per_night_usd"])
+    return {
+        "status":  "success",
+        "results": results,
+        "source":  "Hotellook / Travelpayouts (cached real hotel pricing)",
+        "note":    "Prices from recent OTA cache — confirm availability on booking site.",
+    }
 
 
 # ── Amadeus hotel search ──────────────────────────────────────────────────────
@@ -506,8 +607,9 @@ def search_hotels(
     Source priority (each source is tried in order; first success wins):
     1. Hostelworld API   — real hostel/dorm inventory (HOSTELWORLD_API_KEY)
     2. Booking.com API   — full spectrum hotel/hostel coverage (BOOKING_COM_API_KEY)
-    3. Amadeus GDS       — standard hotel inventory (AMADEUS_CLIENT_ID, hotels only)
-    4. OpenStreetMap     — always-available fallback with estimated pricing
+    3. Hotellook         — 250k+ hotels, cached OTA pricing (TRAVELPAYOUTS_TOKEN)
+    4. Amadeus GDS       — standard hotel inventory (AMADEUS_CLIENT_ID, hotels only)
+    5. OpenStreetMap     — always-available fallback with estimated pricing
 
     accommodation_type: "hotel" (default), "hostel", "guesthouse", "dorm"
     min_stars: minimum star rating filter (for luxury travelers; e.g. 4 or 5)
@@ -554,7 +656,27 @@ def search_hotels(
     except Exception:
         pass
 
-    # 3. Amadeus — standard hotels only
+    # 3. Hotellook / Travelpayouts — broad OTA coverage, free with affiliate token
+    if accommodation_type in ("hotel", "guesthouse"):
+        try:
+            result = _hotellook_search(destination, check_in, check_out,
+                                       guests, rooms, fetch_count, max_price_per_night)
+            if result:
+                if min_stars and "results" in result:
+                    result["results"] = [
+                        h for h in result["results"]
+                        if (h.get("stars") or 0) >= min_stars
+                    ]
+                result["query"] = query_meta
+                result["currency"] = "USD"
+                result = _apply_accommodation_type(result, accommodation_type)
+                if "results" in result:
+                    result["results"] = result["results"][:max_results]
+                return result
+        except Exception:
+            pass
+
+    # 4. Amadeus — standard hotels only
     if os.getenv("AMADEUS_CLIENT_ID") and accommodation_type == "hotel":
         try:
             result = _amadeus_hotels(destination, check_in, check_out,

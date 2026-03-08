@@ -190,6 +190,34 @@ TOOLS: list[dict] = [
         },
     },
     {
+        "name": "search_experiences",
+        "description": (
+            "Search for bookable tours, activities, and experiences at a destination. "
+            "Use this for: day trips, guided tours, cooking classes, adventure sports, "
+            "museum tickets, food tours, cultural experiences, and nightlife. "
+            "Returns real attraction names (OpenTripMap) or bookable listings (Viator/GetYourGuide "
+            "when keys are set). Always call this when building an itinerary's activity days."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "destination": {"type": "string", "description": "City or destination to search in"},
+                "category": {
+                    "type": "string",
+                    "description": (
+                        "Type of experience: 'attraction', 'tour', 'museum', 'food', 'adventure', "
+                        "'culture', 'history', 'nature', 'sport', 'nightlife', 'shopping'"
+                    ),
+                    "default": "attraction",
+                },
+                "date": {"type": "string", "description": "Travel date YYYY-MM-DD for availability (optional)"},
+                "max_results": {"type": "integer", "description": "Max results to return", "default": 6},
+                "max_price_usd": {"type": "integer", "description": "Max price per person in USD (optional)"},
+            },
+            "required": ["destination"],
+        },
+    },
+    {
         "name": "search_places",
         "description": (
             "Search for places of interest (attractions, restaurants, museums, beaches, etc.) "
