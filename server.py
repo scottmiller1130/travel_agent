@@ -266,11 +266,13 @@ def _get_agent(session_id: str, user_id: str | None = None) -> TravelAgent:
             # Keep user_id in sync if it was just established (e.g. user logged in)
             if user_id and not agent._user_id:
                 agent._user_id = user_id
+                agent._user_store = _user_store
             return agent
 
         agent = TravelAgent(
             confirm_callback=_make_confirm_callback(session_id),
             user_id=user_id,
+            user_store=_user_store,
         )
 
         # Restore persisted state if available

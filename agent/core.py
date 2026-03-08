@@ -89,6 +89,7 @@ TOOL_LABELS = {
 
 from memory.preferences import PreferenceStore
 from memory.trips import TripStore
+from memory.users import UserStore, PLAN_LIMITS
 from tools.flights import search_flights, book_flight, find_cheapest_dates, find_cheapest_month
 from tools.hotels import search_hotels, book_hotel
 from tools.weather import get_weather
@@ -101,6 +102,9 @@ from agent.tools_schema import TOOLS
 
 # Actions that require a human confirmation step before proceeding
 CONFIRMATION_REQUIRED = {"book_flight", "book_hotel"}
+
+# Tools counted against the monthly api_calls quota
+METERED_TOOLS = {"search_flights", "search_hotels", "find_cheapest_dates", "find_cheapest_month"}
 
 MAX_CONVERSATION_MESSAGES = 30  # Summarize when conversation exceeds this length
 KEEP_RECENT_MESSAGES = 16       # Always keep the most recent N messages
@@ -145,6 +149,7 @@ class TravelAgent:
         self,
         confirm_callback: Callable[[str], bool] | None = None,
         user_id: str | None = None,
+        user_store: UserStore | None = None,
     ):
         """
         Args:
@@ -154,12 +159,17 @@ class TravelAgent:
             user_id: Clerk user ID for per-user data isolation.
                      When set, preferences and trips are scoped to this user only.
                      When None, operates in anonymous/global mode (backward compat).
+            user_store: Shared UserStore instance for quota enforcement. When provided
+                        and user_id is set, metered tools (search_flights, search_hotels,
+                        find_cheapest_dates, find_cheapest_month) will be gated by the
+                        user's monthly api_calls limit.
         """
         api_key = os.getenv("ANTHROPIC_API_KEY")
         if not api_key:
             raise ValueError("ANTHROPIC_API_KEY is not set. Please add it to your Railway environment variables.")
         self._client = anthropic.Anthropic(api_key=api_key)
         self._user_id: str | None = user_id
+        self._user_store: UserStore | None = user_store
         self._prefs = PreferenceStore()
         self._trips = TripStore()
         self._confirm = confirm_callback or (lambda msg: False)
@@ -308,6 +318,23 @@ class TravelAgent:
 
     def _dispatch_tool(self, name: str, inputs: dict) -> dict:
         """Route a tool call to the correct implementation."""
+
+        # --- Metered tools: check + increment monthly api_calls quota ---
+        if name in METERED_TOOLS and self._user_store and self._user_id:
+            user_rec = self._user_store.get(self._user_id)
+            if user_rec:
+                usage = self._user_store.get_usage(self._user_id)
+                if not self._user_store.within_limit(user_rec, "api_calls", usage):
+                    plan = user_rec["plan"]
+                    cap  = PLAN_LIMITS[plan]["api_calls"]
+                    return {
+                        "status": "error",
+                        "message": (
+                            f"Monthly search limit reached ({cap} searches on {plan} plan). "
+                            "Please upgrade to Pro for 200 searches/month, or Team for 500."
+                        ),
+                    }
+                self._user_store.increment_api(self._user_id)
 
         # --- Booking tools: require explicit user confirmation ---
         if name in CONFIRMATION_REQUIRED and inputs.get("payment_confirmed"):
