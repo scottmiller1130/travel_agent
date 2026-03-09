@@ -1791,9 +1791,6 @@
       return;
     }
 
-    // Show sign-in button immediately while Clerk loads
-    renderUserPanel(null, null, null);
-
     try {
       // Load Clerk JS SDK
       await new Promise((resolve, reject) => {
@@ -1836,7 +1833,7 @@
           try {
             const r = await fetch('/api/me', { method: 'POST', headers: hdrs });
             const d = await r.json();
-            renderUserPanel(d.user, d.usage, d.limits);
+            if (d.user) renderUserPanel(d.user, d.usage, d.limits); // only update if server returned a user
           } catch(_) {} // keep the Clerk-data render above
         } else {
           renderUserPanel(null, null, null);
