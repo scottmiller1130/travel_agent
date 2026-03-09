@@ -148,16 +148,44 @@ if not _ANTHROPIC_API_KEY:
 
 # ---------------------------------------------------------------------------
 # Auth — Clerk JWT verification via JWKS (RS256)
-# Set CLERK_JWKS_URL and CLERK_PUBLISHABLE_KEY in environment to enable auth.
-# Without these, the app runs in anonymous mode (backward compatible).
+# Set CLERK_PUBLISHABLE_KEY (required for frontend) to enable auth.
+# CLERK_JWKS_URL is optional — derived automatically from CLERK_PUBLISHABLE_KEY.
+# Without CLERK_PUBLISHABLE_KEY, the app runs in anonymous mode.
 # ---------------------------------------------------------------------------
 _clerk_jwks_client = None
 _clerk_jwks_lock = threading.Lock()
+
+
+def _jwks_url_from_publishable_key(pk: str) -> str | None:
+    """Derive the Clerk JWKS URL from the publishable key.
+
+    Clerk publishable keys are formatted as pk_[test|live]_BASE64 where
+    BASE64 decodes to the frontend API hostname (e.g. happy-cat-0.clerk.accounts.dev).
+    """
+    try:
+        import base64 as _b64
+        # Split on last '_' to isolate the encoded portion
+        _, _, encoded = pk.rpartition("_")
+        if not encoded:
+            return None
+        # Standard base64 (add padding if needed)
+        padded = encoded + "=" * (-len(encoded) % 4)
+        frontend_api = _b64.b64decode(padded).decode("utf-8").rstrip("$")
+        if not frontend_api.startswith("http"):
+            frontend_api = "https://" + frontend_api
+        return f"{frontend_api}/.well-known/jwks.json"
+    except Exception:
+        return None
+
 
 def _get_jwks_client():
     """Lazily create a PyJWKClient that auto-refreshes Clerk's public keys."""
     global _clerk_jwks_client
     jwks_url = os.getenv("CLERK_JWKS_URL", "").strip()
+    if not jwks_url:
+        # Derive from publishable key so only one env var is required
+        pk = os.getenv("CLERK_PUBLISHABLE_KEY", "").strip()
+        jwks_url = _jwks_url_from_publishable_key(pk) if pk else ""
     if not jwks_url:
         return None
     with _clerk_jwks_lock:
@@ -166,6 +194,7 @@ def _get_jwks_client():
                 import jwt as _jwt
                 from jwt import PyJWKClient as _PyJWKClient
                 _clerk_jwks_client = _PyJWKClient(jwks_url, cache_keys=True, lifespan=3600)
+                log.info("Clerk JWKS client initialised: %s", jwks_url)
             except Exception as exc:
                 log.warning("Failed to initialise JWKS client: %s", exc)
     return _clerk_jwks_client
@@ -1067,9 +1096,12 @@ def _safe(s: object) -> str:
 @app.get("/api/config")
 async def api_config():
     """Return public config the frontend needs (Clerk publishable key, etc.)."""
+    pk = os.getenv("CLERK_PUBLISHABLE_KEY", "")
     return JSONResponse({
-        "clerk_publishable_key": os.getenv("CLERK_PUBLISHABLE_KEY", ""),
-        "auth_enabled": bool(os.getenv("CLERK_JWKS_URL", "").strip()),
+        "clerk_publishable_key": pk,
+        # Auth is enabled whenever a publishable key is present — CLERK_JWKS_URL
+        # is now optional (derived automatically from the publishable key).
+        "auth_enabled": bool(pk.strip()),
     })
 
 
