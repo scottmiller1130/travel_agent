@@ -1766,8 +1766,10 @@
         document.head.appendChild(s);
       });
 
-      _clerk = new window.Clerk(cfg.clerk_publishable_key);
-      await _clerk.load();
+      // When loaded via data-clerk-publishable-key, Clerk auto-initializes
+      // and exposes the ready instance (not a constructor) on window.Clerk
+      await window.Clerk.load();
+      _clerk = window.Clerk;
 
       _clerk.addListener(async ({ user }) => {
         if (user) {
