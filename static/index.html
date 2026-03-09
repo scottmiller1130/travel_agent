@@ -1753,7 +1753,9 @@
   async function authHeaders() {
     if (!_clerk) return {};
     try {
-      _clerkToken = await _clerk.session?.getToken() || null;
+      // _clerk.session is the active session; fall back to first active session
+      const session = _clerk.session || _clerk.client?.activeSessions?.[0];
+      _clerkToken = await session?.getToken() || null;
     } catch(_) {}
     return _clerkToken ? { 'Authorization': 'Bearer ' + _clerkToken } : {};
   }
