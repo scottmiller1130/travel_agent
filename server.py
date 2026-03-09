@@ -242,10 +242,10 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             "default-src 'self'; "
             "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://*.clerk.accounts.dev https://clerk.com; "
             "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
-            "connect-src 'self' https://*.clerk.accounts.dev https://clerk.com https://api.clerk.com; "
+            "connect-src 'self' https://*.clerk.accounts.dev https://clerk.com https://api.clerk.com https://clerk-telemetry.com; "
             "img-src 'self' data: https://*.clerk.com https://*.gravatar.com; "
             "font-src 'self' https://fonts.gstatic.com; "
-            "worker-src 'self';"
+            "worker-src 'self' blob:;"
         )
         return response
 
