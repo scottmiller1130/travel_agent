@@ -147,10 +147,20 @@ if not _ANTHROPIC_API_KEY:
     sys.exit(1)
 
 # ---------------------------------------------------------------------------
-# Auth — Clerk JWT verification via JWKS (RS256)
-# Set CLERK_PUBLISHABLE_KEY (required for frontend) to enable auth.
-# CLERK_JWKS_URL is optional — derived automatically from CLERK_PUBLISHABLE_KEY.
-# Without CLERK_PUBLISHABLE_KEY, the app runs in anonymous mode.
+# Auth — Clerk JWT verification
+#
+# Only CLERK_PUBLISHABLE_KEY is required.  The server tries verification
+# methods in this order, stopping at the first that works:
+#
+#   1. CLERK_JWT_VERIFICATION_KEY  — RSA public key (PEM).  Copy from
+#      Clerk Dashboard → API Keys → "Show JWT Public Key".
+#      Fastest and most reliable: no outbound network calls.
+#
+#   2. CLERK_JWKS_URL  — explicit JWKS URL.  Fetched once and cached.
+#
+#   3. Auto-derived JWKS URL from CLERK_PUBLISHABLE_KEY (fallback).
+#
+# Without CLERK_PUBLISHABLE_KEY the app runs in anonymous mode.
 # ---------------------------------------------------------------------------
 _clerk_jwks_client = None
 _clerk_jwks_lock = threading.Lock()
@@ -159,22 +169,33 @@ _clerk_jwks_lock = threading.Lock()
 def _jwks_url_from_publishable_key(pk: str) -> str | None:
     """Derive the Clerk JWKS URL from the publishable key.
 
-    Clerk publishable keys are formatted as pk_[test|live]_BASE64 where
-    BASE64 decodes to the frontend API hostname (e.g. happy-cat-0.clerk.accounts.dev).
+    Format: pk_[test|live]_<base64(frontend_api_host + "$")>
+    The prefix is always exactly 8 characters (pk_test_ or pk_live_).
     """
     try:
         import base64 as _b64
-        # Split on last '_' to isolate the encoded portion
-        _, _, encoded = pk.rpartition("_")
+        if not (pk.startswith("pk_test_") or pk.startswith("pk_live_")):
+            return None
+        encoded = pk[8:]  # everything after the 8-char prefix
         if not encoded:
             return None
-        # Standard base64 (add padding if needed)
+        # Clerk uses standard base64; add padding to make length a multiple of 4
         padded = encoded + "=" * (-len(encoded) % 4)
-        frontend_api = _b64.b64decode(padded).decode("utf-8").rstrip("$")
+        # Try urlsafe first (handles both base64 and base64url)
+        try:
+            frontend_api = _b64.urlsafe_b64decode(padded).decode("utf-8")
+        except Exception:
+            frontend_api = _b64.b64decode(padded).decode("utf-8")
+        frontend_api = frontend_api.rstrip("$").strip()
+        if not frontend_api:
+            return None
         if not frontend_api.startswith("http"):
             frontend_api = "https://" + frontend_api
-        return f"{frontend_api}/.well-known/jwks.json"
-    except Exception:
+        url = f"{frontend_api}/.well-known/jwks.json"
+        log.info("Derived Clerk JWKS URL from publishable key: %s", url)
+        return url
+    except Exception as exc:
+        log.warning("Could not derive JWKS URL from publishable key: %s", exc)
         return None
 
 
@@ -183,7 +204,6 @@ def _get_jwks_client():
     global _clerk_jwks_client
     jwks_url = os.getenv("CLERK_JWKS_URL", "").strip()
     if not jwks_url:
-        # Derive from publishable key so only one env var is required
         pk = os.getenv("CLERK_PUBLISHABLE_KEY", "").strip()
         jwks_url = _jwks_url_from_publishable_key(pk) if pk else ""
     if not jwks_url:
@@ -201,21 +221,54 @@ def _get_jwks_client():
 
 
 def _verify_clerk_token(token: str) -> dict | None:
-    """Verify a Clerk JWT and return the payload, or None if invalid."""
+    """Verify a Clerk JWT and return the payload, or None if invalid.
+
+    Tries static PEM key first (CLERK_JWT_VERIFICATION_KEY), then JWKS.
+    A 30-second leeway is applied to handle minor server clock drift.
+    """
+    import jwt as _jwt  # noqa: PLC0415
+
+    # ── Method 1: static RSA public key (no network) ───────────────────────
+    pem = os.getenv("CLERK_JWT_VERIFICATION_KEY", "").strip()
+    if pem:
+        # Railway / Heroku variables sometimes collapse PEM newlines into spaces
+        if "\n" not in pem and "-----" in pem:
+            pem = pem.replace(" ", "\n").replace("\nBEGIN\n", " BEGIN ").replace(
+                "\nEND\n", " END "
+            )
+        try:
+            payload = _jwt.decode(
+                token,
+                pem,
+                algorithms=["RS256"],
+                options={"verify_aud": False},
+                leeway=30,
+            )
+            return payload
+        except Exception as exc:
+            log.warning("Clerk static-key verification failed: %s", exc)
+            return None  # key was explicitly set but failed — don't fall through
+
+    # ── Method 2: JWKS (fetched from Clerk's servers) ──────────────────────
     client = _get_jwks_client()
     if not client:
+        log.warning(
+            "Clerk auth skipped: set CLERK_JWT_VERIFICATION_KEY or CLERK_JWKS_URL "
+            "(or ensure CLERK_PUBLISHABLE_KEY is valid so the URL can be derived)."
+        )
         return None
     try:
-        import jwt as _jwt
         signing_key = client.get_signing_key_from_jwt(token)
         payload = _jwt.decode(
             token,
             signing_key.key,
             algorithms=["RS256"],
             options={"verify_aud": False},
+            leeway=30,
         )
         return payload
-    except Exception:
+    except Exception as exc:
+        log.warning("Clerk JWKS token verification failed: %s", exc)
         return None
 
 
@@ -1099,9 +1152,45 @@ async def api_config():
     pk = os.getenv("CLERK_PUBLISHABLE_KEY", "")
     return JSONResponse({
         "clerk_publishable_key": pk,
-        # Auth is enabled whenever a publishable key is present — CLERK_JWKS_URL
-        # is now optional (derived automatically from the publishable key).
         "auth_enabled": bool(pk.strip()),
+    })
+
+
+@app.get("/api/auth-status")
+async def auth_status(request: Request):
+    """Diagnostic endpoint — returns auth configuration and verifies the
+    caller's token if one is supplied.  Safe to expose: reveals no secrets."""
+    pk = os.getenv("CLERK_PUBLISHABLE_KEY", "")
+    has_static_key = bool(os.getenv("CLERK_JWT_VERIFICATION_KEY", "").strip())
+    has_jwks_url   = bool(os.getenv("CLERK_JWKS_URL", "").strip())
+    derived_url    = _jwks_url_from_publishable_key(pk) if pk else None
+    effective_url  = os.getenv("CLERK_JWKS_URL", "").strip() or derived_url or ""
+
+    token_status = "no_token"
+    token_error  = None
+    auth_user    = None
+    raw_token    = None
+    auth_header  = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        raw_token = auth_header[7:][:20] + "…"   # log first 20 chars only
+        result = _user_from_request(request)
+        if result:
+            token_status = "valid"
+            auth_user    = result.get("user_id", "")
+        else:
+            token_status = "invalid"
+
+    return JSONResponse({
+        "auth_enabled":     bool(pk.strip()),
+        "has_publishable_key": bool(pk.strip()),
+        "has_static_pem_key":  has_static_key,
+        "has_explicit_jwks_url": has_jwks_url,
+        "derived_jwks_url":  derived_url,
+        "effective_jwks_url": effective_url or None,
+        "token_received":   bool(raw_token),
+        "token_prefix":     raw_token,
+        "token_status":     token_status,
+        "verified_user_id": auth_user,
     })
 
 

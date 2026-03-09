@@ -2010,6 +2010,9 @@
     if (!_currentUser || !_clerk) { showToast('Please sign in to create a group.'); return; }
     const name = document.getElementById('cg-name-input')?.value.trim();
     if (!name) { showToast('Enter a group name.'); return; }
+    // Verify we can actually get a token before sending the request
+    const token = await _clerk.session?.getToken() || await _clerk.client?.activeSessions?.[0]?.getToken();
+    if (!token) { showToast('Could not get auth token — please refresh the page and sign in again.'); return; }
     try {
       const r = await _apiFetch('/api/groups', {
         method: 'POST',
@@ -2017,7 +2020,20 @@
         body: JSON.stringify({ name }),
       });
       const d = await r.json();
-      if (!r.ok) { showToast(r.status === 401 ? 'Session expired — please refresh and sign in again.' : (d.detail || 'Could not create group.')); return; }
+      if (!r.ok) {
+        if (r.status === 401) {
+          // Fetch auth diagnostic to give a precise error
+          _apiFetch('/api/auth-status').then(s => s.json()).then(s => {
+            const hint = s.has_static_pem_key ? 'PEM key set but rejected.'
+              : s.effective_jwks_url ? `JWKS URL: ${s.effective_jwks_url}`
+              : 'No CLERK_JWT_VERIFICATION_KEY or JWKS URL configured.';
+            showToast(`Auth failed (401). ${hint}`);
+          }).catch(() => showToast('Authentication failed (401). Check server auth config.'));
+        } else {
+          showToast(d.detail || 'Could not create group.');
+        }
+        return;
+      }
       document.getElementById('create-group-modal')?.remove();
       await loadGroups();
       if (d.group) showGroupModal(d.group.id);
