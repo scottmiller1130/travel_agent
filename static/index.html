@@ -583,9 +583,27 @@
     .ta-modal-btn.copy-btn { border: none; background: linear-gradient(135deg, #0ea5e9, #0d9488); color: #fff; box-shadow: 0 3px 10px rgba(14,165,233,.28); flex-shrink: 0; white-space: nowrap; }
     .ta-modal-btn.copy-btn.copied { background: linear-gradient(135deg, #10b981, #0d9488); }
     .ta-modal-note { font-size: 11px; color: #94a3b8; margin-top: 8px; }
+
+    /* ── Login screen ── */
+    #login-screen { position: fixed; inset: 0; z-index: 9999; background: linear-gradient(145deg, #0369a1 0%, #0ea5e9 50%, #0d9488 100%); display: flex; align-items: center; justify-content: center; }
+    #login-screen.hidden { display: none; }
+    #login-card { background: #fff; border-radius: 24px; padding: 44px 40px 36px; box-shadow: 0 32px 80px rgba(0,0,0,.22); max-width: 420px; width: 90%; text-align: center; }
+    .login-plane { font-size: 52px; margin-bottom: 14px; line-height: 1; display: block; }
+    #login-card h2 { font-size: 28px; font-weight: 900; color: #0f172a; letter-spacing: -.5px; margin-bottom: 6px; }
+    #login-card .login-sub { font-size: 14px; color: #64748b; margin-bottom: 28px; line-height: 1.5; }
+    #clerk-sign-in-container { min-height: 60px; }
   </style>
 </head>
 <body>
+
+<div id="login-screen">
+  <div id="login-card">
+    <span class="login-plane">✈</span>
+    <h2>Travel Agent</h2>
+    <p class="login-sub">Your personal AI travel concierge.<br>Sign in to start planning.</p>
+    <div id="clerk-sign-in-container"></div>
+  </div>
+</div>
 
 <a class="skip-link" href="#messages">Skip to conversation</a>
 <div id="sidebar-overlay" onclick="closeSidebar()"></div>
@@ -1714,7 +1732,7 @@
         </div>
         <div class="user-actions">
           <button class="user-action-btn" onclick="_clerk&&_clerk.openUserProfile()" title="Account settings">⚙</button>
-          <button class="user-action-btn" onclick="_clerk&&_clerk.signOut().then(()=>location.reload())" title="Sign out">Sign out</button>
+          <button class="user-action-btn" onclick="_clerk&&_clerk.signOut()" title="Sign out">Sign out</button>
         </div>
       </div>
       ${limits?.chat_turns !== -1 ? `
@@ -1771,8 +1789,22 @@
       await window.Clerk.load();
       _clerk = window.Clerk;
 
+      const loginScreen = document.getElementById('login-screen');
+      const signInContainer = document.getElementById('clerk-sign-in-container');
+
+      function showApp() {
+        loginScreen.classList.add('hidden');
+        try { _clerk.unmountSignIn(signInContainer); } catch(_) {}
+      }
+
+      function showLogin() {
+        loginScreen.classList.remove('hidden');
+        _clerk.mountSignIn(signInContainer);
+      }
+
       _clerk.addListener(async ({ user }) => {
         if (user) {
+          showApp();
           // Sync user to our DB and render profile
           const hdrs = await authHeaders();
           try {
@@ -1782,11 +1814,14 @@
           } catch(_) { renderUserPanel(null, null, null); }
         } else {
           renderUserPanel(null, null, null);
+          showLogin();
         }
       });
 
-      if (!_clerk.user) {
-        renderUserPanel(null, null, null);
+      if (_clerk.user) {
+        showApp();
+      } else {
+        showLogin();
       }
     } catch(e) {
       console.warn('Clerk failed to load:', e);
