@@ -596,8 +596,6 @@
     #header-user-chip { display: flex; align-items: center; gap: 8px; background: rgba(14,165,233,.1); border: 1.5px solid rgba(14,165,233,.25); border-radius: 20px; padding: 5px 12px 5px 8px; cursor: default; }
     #header-user-chip .huc-avatar { width: 26px; height: 26px; border-radius: 50%; background: linear-gradient(135deg, var(--sky), var(--teal)); color: #fff; font-size: 11px; font-weight: 800; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
     #header-user-chip .huc-name { font-size: 12px; font-weight: 600; color: var(--text-2); max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    #header-user-chip .huc-signout { font-size: 11px; font-weight: 600; color: var(--text-4); background: none; border: none; cursor: pointer; padding: 2px 4px; border-radius: 6px; transition: color .15s, background .15s; }
-    #header-user-chip .huc-signout:hover { color: var(--rose); background: var(--rose-l); }
   </style>
 </head>
 <body>
@@ -1760,7 +1758,7 @@
       chip.innerHTML = `
         <div class="huc-avatar">${initial}</div>
         <span class="huc-name">${escapeHtml(user.name || user.email || 'Account')}</span>
-        <button class="huc-signout" onclick="_clerk&&_clerk.signOut()" title="Sign out">Sign out</button>`;
+`;
     }
   }
 
