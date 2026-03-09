@@ -1769,7 +1769,10 @@
   async function initAuth() {
     let cfg;
     try { cfg = await (await fetch('/api/config')).json(); } catch(_) { return; }
-    if (!cfg.auth_enabled || !cfg.clerk_publishable_key) return;
+    if (!cfg.auth_enabled || !cfg.clerk_publishable_key) {
+      document.getElementById('login-screen').classList.add('hidden');
+      return;
+    }
 
     // Show sign-in button immediately while Clerk loads
     renderUserPanel(null, null, null);
@@ -1825,7 +1828,7 @@
       }
     } catch(e) {
       console.warn('Clerk failed to load:', e);
-      // sign-in panel already rendered above; leave it as-is
+      document.getElementById('login-screen').classList.add('hidden');
     }
   }
 
