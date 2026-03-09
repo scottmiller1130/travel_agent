@@ -46,6 +46,7 @@ from pydantic import BaseModel  # noqa: E402
 from starlette.middleware.base import BaseHTTPMiddleware  # noqa: E402
 
 from agent.core import TravelAgent  # noqa: E402
+from memory.backup import BackupStore  # noqa: E402
 from memory.preferences import PreferenceStore  # noqa: E402
 from memory.sessions import SessionStore  # noqa: E402
 from memory.trips import TripStore  # noqa: E402
@@ -110,6 +111,29 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 
 
 app.add_middleware(RequestLoggingMiddleware)
+
+# ---------------------------------------------------------------------------
+# Weekly backup — snapshots all trips into trip_backups table on startup and
+# every 7 days thereafter.  Keeps the last 8 snapshots (~2 months rolling).
+# ---------------------------------------------------------------------------
+_BACKUP_INTERVAL_SECS = 7 * 24 * 60 * 60  # 1 week
+
+
+async def _weekly_backup_loop():
+    await asyncio.sleep(60)  # Give the server 60 s to finish starting up
+    while True:
+        try:
+            info = BackupStore().create_backup()
+            log.info("Weekly trip backup complete: %s", info)
+        except Exception as exc:
+            log.error("Weekly trip backup failed: %s", exc)
+        await asyncio.sleep(_BACKUP_INTERVAL_SECS)
+
+
+@app.on_event("startup")
+async def _start_backup_loop():
+    asyncio.create_task(_weekly_backup_loop())
+
 
 # ---------------------------------------------------------------------------
 # Startup validation — fail fast if required environment variables are missing
@@ -1235,6 +1259,29 @@ async def booking_cancel(session_id: str):
         pending["approved"] = False
         pending["event"].set()
     return JSONResponse({"status": "ok"})
+
+
+# ---------------------------------------------------------------------------
+# Backups — list snapshots and trigger a manual backup
+# ---------------------------------------------------------------------------
+@app.get("/api/admin/backups")
+async def list_backups(request: Request):
+    """Return metadata for all stored trip backups (no trip data, just counts/dates)."""
+    auth_user = _user_from_request(request)
+    if not auth_user:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    backups = BackupStore().list_backups()
+    return JSONResponse({"backups": backups})
+
+
+@app.post("/api/admin/backups")
+async def trigger_backup(request: Request):
+    """Manually trigger a trip backup immediately."""
+    auth_user = _user_from_request(request)
+    if not auth_user:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    info = BackupStore().create_backup()
+    return JSONResponse({"status": "ok", **info})
 
 
 # ---------------------------------------------------------------------------
