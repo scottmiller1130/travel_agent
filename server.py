@@ -1224,6 +1224,170 @@ async def delete_workspace(workspace_id: str, request: Request):
 
 
 # ---------------------------------------------------------------------------
+# Groups — persistent membership spaces where members share trip visibility
+# ---------------------------------------------------------------------------
+class GroupCreate(BaseModel):
+    name: str
+
+
+class GroupInvite(BaseModel):
+    email: str
+    role: str = "viewer"
+
+
+def _require_group_member(group_id: str, user_id: str):
+    """Return (group, role) or raise 404/403."""
+    group = _workspace_store.get(group_id)
+    if not group or group.get("type") != "group":
+        raise HTTPException(status_code=404, detail="Group not found.")
+    role = _workspace_store.user_role(group_id, user_id)
+    if not role:
+        raise HTTPException(status_code=403, detail="Not a group member.")
+    return group, role
+
+
+@app.post("/api/groups")
+async def create_group(body: GroupCreate, request: Request):
+    """Create a new group."""
+    auth_user = _user_from_request(request)
+    if not auth_user:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    _user_store.upsert(
+        auth_user["user_id"],
+        email=auth_user.get("email", ""),
+        name=auth_user.get("name", ""),
+    )
+    group = _workspace_store.create(body.name, auth_user["user_id"], ws_type="group")
+    return JSONResponse({"group": group})
+
+
+@app.get("/api/groups")
+async def list_groups(request: Request):
+    """List all groups the authenticated user has joined."""
+    auth_user = _user_from_request(request)
+    if not auth_user:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    groups = _workspace_store.list_for_user(auth_user["user_id"], ws_type="group")
+    return JSONResponse({"groups": groups})
+
+
+@app.get("/api/groups/pending")
+async def list_pending_group_invites(request: Request):
+    """Return pending group invites for the authenticated user's email."""
+    auth_user = _user_from_request(request)
+    if not auth_user:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    email = auth_user.get("email", "").strip().lower()
+    if not email:
+        return JSONResponse({"invites": []})
+    # Filter to groups only
+    all_pending = _workspace_store.get_pending_invites_for_email(email)
+    invites = [i for i in all_pending if i.get("type") == "group"]
+    return JSONResponse({"invites": invites})
+
+
+@app.get("/api/groups/{group_id}")
+async def get_group(group_id: str, request: Request):
+    """Get group details and member list."""
+    auth_user = _user_from_request(request)
+    if not auth_user:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    group, role = _require_group_member(group_id, auth_user["user_id"])
+    return JSONResponse({"group": group, "my_role": role})
+
+
+@app.post("/api/groups/{group_id}/invite")
+async def invite_to_group(group_id: str, body: GroupInvite, request: Request):
+    """Invite a user by email to the group (owner only, rate-limited)."""
+    auth_user = _user_from_request(request)
+    if not auth_user:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    group = _workspace_store.get(group_id)
+    if not group or group.get("type") != "group":
+        raise HTTPException(status_code=404, detail="Group not found.")
+    if group["owner_id"] != auth_user["user_id"]:
+        raise HTTPException(status_code=403, detail="Only the group owner can invite members.")
+    email = body.email.strip().lower()
+    if not email or "@" not in email:
+        raise HTTPException(status_code=400, detail="Invalid email address.")
+    if email == auth_user.get("email", "").strip().lower():
+        raise HTTPException(status_code=400, detail="You cannot invite yourself.")
+    try:
+        _workspace_store.check_and_log_invite(auth_user["user_id"], group_id, email)
+    except ValueError as exc:
+        raise HTTPException(status_code=429, detail=str(exc))
+    member = _workspace_store.add_member(group_id, email, body.role)
+    return JSONResponse({"status": "ok", "member": member})
+
+
+@app.post("/api/groups/{group_id}/join")
+async def join_group(group_id: str, request: Request):
+    """Join a group by claiming a pending email invite."""
+    auth_user = _user_from_request(request)
+    if not auth_user:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    email = auth_user.get("email", "").strip().lower()
+    if not email:
+        raise HTTPException(status_code=400, detail="Account email required to join groups.")
+    group = _workspace_store.get(group_id)
+    if not group or group.get("type") != "group":
+        raise HTTPException(status_code=404, detail="Group not found.")
+    ok = _workspace_store.join(group_id, auth_user["user_id"], email)
+    if not ok:
+        raise HTTPException(status_code=403, detail="No pending invite found for your email.")
+    return JSONResponse({"status": "ok"})
+
+
+@app.get("/api/groups/{group_id}/trips")
+async def get_group_trips(group_id: str, request: Request):
+    """Return saved trips for all joined members of the group."""
+    auth_user = _user_from_request(request)
+    if not auth_user:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    group, _role = _require_group_member(group_id, auth_user["user_id"])
+    # Only include members who have actually joined (user_id is set)
+    member_ids = [m["user_id"] for m in group["members"] if m["user_id"]]
+    trip_store = TripStore()
+    all_trips = []
+    for uid in member_ids:
+        for trip in trip_store.get_all_trips(user_id=uid):
+            trip["_member_user_id"] = uid
+            all_trips.append(trip)
+    all_trips.sort(key=lambda t: t.get("updated_at", ""), reverse=True)
+    return JSONResponse({"trips": all_trips})
+
+
+@app.delete("/api/groups/{group_id}/members/{email:path}")
+async def remove_group_member(group_id: str, email: str, request: Request):
+    """Remove a member from the group (owner only)."""
+    auth_user = _user_from_request(request)
+    if not auth_user:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    group = _workspace_store.get(group_id)
+    if not group or group.get("type") != "group":
+        raise HTTPException(status_code=404, detail="Group not found.")
+    ok = _workspace_store.remove_member(group_id, email, auth_user["user_id"])
+    if not ok:
+        raise HTTPException(status_code=403, detail="Cannot remove this member.")
+    return JSONResponse({"status": "ok"})
+
+
+@app.delete("/api/groups/{group_id}")
+async def delete_group(group_id: str, request: Request):
+    """Delete a group (owner only)."""
+    auth_user = _user_from_request(request)
+    if not auth_user:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    group = _workspace_store.get(group_id)
+    if not group or group.get("type") != "group":
+        raise HTTPException(status_code=404, detail="Group not found.")
+    ok = _workspace_store.delete(group_id, auth_user["user_id"])
+    if not ok:
+        raise HTTPException(status_code=403, detail="Only the owner can delete this group.")
+    return JSONResponse({"status": "ok"})
+
+
+# ---------------------------------------------------------------------------
 # Reset conversation (keeps trips and preferences)
 # ---------------------------------------------------------------------------
 @app.post("/api/reset/{session_id}")

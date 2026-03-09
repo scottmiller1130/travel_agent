@@ -51,8 +51,9 @@ FastAPI (server.py)
         ├─ preferences       anonymous/global defaults
         ├─ user_preferences  per-user overrides
         ├─ trips             saved trip history  (per-user)
-        ├─ workspaces        collaborative planning spaces
+        ├─ workspaces        collaborative planning spaces + groups (type column)
         ├─ workspace_members roles: owner / editor / viewer
+        ├─ invite_logs       DB-backed rate-limit log for outgoing invites
         └─ share_tokens      read-only itinerary share links
 ```
 
@@ -129,6 +130,15 @@ The server is the entry point for all web traffic. It manages:
 | `GET` | `/api/workspaces` | Required | List user's workspaces |
 | `POST` | `/api/workspaces` | Required | Create workspace |
 | `POST` | `/api/workspaces/{id}/invite` | Required | Invite member by email |
+| `GET` | `/api/groups` | Required | List groups the user has joined |
+| `POST` | `/api/groups` | Required | Create a new group |
+| `GET` | `/api/groups/pending` | Required | Pending group invites for the user's email |
+| `GET` | `/api/groups/{id}` | Required | Group details + member list |
+| `POST` | `/api/groups/{id}/invite` | Required | Invite member by email (rate-limited) |
+| `POST` | `/api/groups/{id}/join` | Required | Claim a pending invite |
+| `GET` | `/api/groups/{id}/trips` | Required | All trips from joined members |
+| `DELETE` | `/api/groups/{id}/members/{email}` | Required | Remove a member |
+| `DELETE` | `/api/groups/{id}` | Required | Delete group (owner only) |
 
 **SSE event types emitted during a chat:**
 
@@ -178,6 +188,8 @@ agent.chat(message)
 | Context injection | User preferences and recent trips injected into system prompt every turn — Claude stays informed without re-asking |
 | Full conversation history | Entire conversation sent to Claude each turn; no external retrieval needed for session-length context |
 | Per-session in-memory agent cache | Avoids re-parsing long conversation histories on repeated requests |
+| Groups as `workspaces` with `type='group'` | Reuses existing membership infrastructure; `type` column distinguishes persistent trip-sharing groups from session-linked planning workspaces |
+| DB-backed invite rate limiting (`invite_logs`) | In-memory limits reset on restart; DB-backed limits persist across deployments and scale to multiple instances |
 
 ---
 
@@ -288,24 +300,36 @@ trips (
     created_at TEXT
 )
 
--- Collaborative workspaces
+-- Collaborative workspaces and groups
+-- type = 'workspace' (session-linked planning) | 'group' (persistent trip sharing)
 workspaces (
     id         TEXT PRIMARY KEY,     -- "WS" + token_urlsafe(10)
     name       TEXT NOT NULL,
     owner_id   TEXT NOT NULL,
-    session_id TEXT,
+    session_id TEXT,                 -- NULL for groups; linked session for workspaces
+    type       TEXT DEFAULT 'workspace',
     created_at TEXT,
     updated_at TEXT
 )
 
--- Workspace membership
+-- Workspace / group membership
 workspace_members (
     workspace_id  TEXT NOT NULL,
-    user_id       TEXT,              -- NULL until invite is claimed
+    user_id       TEXT,              -- NULL until invite is claimed via /join
     invited_email TEXT NOT NULL,
     role          TEXT DEFAULT 'editor',  -- owner | editor | viewer
     joined_at     TEXT,
     PRIMARY KEY (workspace_id, invited_email)
+)
+
+-- Invite rate-limit log (DB-backed; survives restarts)
+-- Limits: 20 total invites/day per user; 3 invites to same email/day per user
+invite_logs (
+    id            SERIAL PRIMARY KEY,
+    inviter_id    TEXT NOT NULL,
+    workspace_id  TEXT NOT NULL,
+    invited_email TEXT NOT NULL,
+    created_at    TEXT NOT NULL
 )
 
 -- Read-only share tokens
@@ -635,6 +659,9 @@ Internet
 | SQL injection | Parameterized queries throughout (`%s` placeholders via psycopg2) |
 | XSS | CSP restricts script/style sources; `marked.js` output is sandboxed |
 | Agent data isolation | `TravelAgent(user_id=uid)` — preferences and trips scoped per user |
+| Invite spam prevention | DB-backed `invite_logs` table; 20 invites/day per user (total), 3/day to the same email |
+| Invite email integrity | Invite matching uses the Clerk-verified email from the JWT, not a self-reported value |
+| Group trip visibility | Only members with `joined_at` set (i.e. who claimed their invite) can see other members' trips |
 
 ---
 
