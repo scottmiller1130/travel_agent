@@ -7,6 +7,7 @@ Nominatim usage policy: max 1 req/sec, include a User-Agent.
 """
 
 import math
+import threading
 import time
 
 try:
@@ -18,6 +19,31 @@ except ImportError:
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
 OVERPASS_URL  = "https://overpass-api.de/api/interpreter"
 HEADERS       = {"User-Agent": "TravelAgentApp/1.0 (travel-agent-demo)"}
+
+# Shared connection pool — reused across all calls in the process
+_client: "_httpx.Client | None" = None
+_client_lock = threading.Lock()
+
+def _get_client() -> "_httpx.Client":
+    global _client
+    if _client is None:
+        with _client_lock:
+            if _client is None:
+                _client = _httpx.Client(headers=HEADERS, timeout=10)
+    return _client
+
+# Thread-safe Nominatim rate limiter (max 1 req/sec per their ToS)
+_nom_lock      = threading.Lock()
+_nom_last_call = 0.0
+
+def _nominatim_throttle() -> None:
+    """Block the calling thread just long enough to honour the 1 req/sec limit."""
+    global _nom_last_call
+    with _nom_lock:
+        gap = time.monotonic() - _nom_last_call
+        if gap < 1.0:
+            time.sleep(1.0 - gap)
+        _nom_last_call = time.monotonic()
 
 # Map our category names to OSM tags
 OSM_CATEGORY_MAP = {
@@ -38,8 +64,8 @@ OSM_CATEGORY_MAP = {
 def _geocode_city(city: str) -> dict | None:
     """Return bounding box and center for a city."""
     try:
-        time.sleep(0.3)  # Respect Nominatim rate limit
-        r = _httpx.get(NOMINATIM_URL, headers=HEADERS, params={
+        _nominatim_throttle()
+        r = _get_client().get(NOMINATIM_URL, params={
             "q": city, "format": "json", "limit": 1,
             "featuretype": "city,town,village",
             "addressdetails": 0,
@@ -80,7 +106,7 @@ def _overpass_pois(bbox: list[float], osm_filter: str, limit: int) -> list[dict]
 out center {limit * 2};
 """.strip()
 
-    r = _httpx.post(OVERPASS_URL, data={"data": query}, timeout=15)
+    r = _get_client().post(OVERPASS_URL, data={"data": query}, timeout=15)
     r.raise_for_status()
     elements = r.json().get("elements", [])
 
@@ -186,7 +212,6 @@ def get_distance(origin: str, destination: str, mode: str = "transit") -> dict:
         return {"status": "error", "message": "httpx not installed"}
 
     origin_loc = _geocode_city(origin)
-    time.sleep(0.3)
     dest_loc   = _geocode_city(destination)
 
     if not origin_loc:
