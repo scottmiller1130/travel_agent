@@ -429,7 +429,8 @@
     <div class="card" style="padding:18px 20px">
       <div style="font-size:13px;color:var(--text-2);line-height:1.9">
         <div><code style="background:var(--bg);padding:1px 6px;border-radius:4px;font-size:12px">ANTHROPIC_API_KEY</code> — Required. Claude API access.</div>
-        <div style="margin-top:6px"><code style="background:var(--bg);padding:1px 6px;border-radius:4px;font-size:12px">ADMIN_USER_IDS</code> — Comma-separated Clerk user IDs with admin access.</div>
+        <div style="margin-top:6px"><code style="background:var(--bg);padding:1px 6px;border-radius:4px;font-size:12px">ADMIN_SECRET</code> — Any secret string. Admin portal will prompt for it on first visit (no Clerk required).</div>
+        <div style="margin-top:6px"><code style="background:var(--bg);padding:1px 6px;border-radius:4px;font-size:12px">ADMIN_USER_IDS</code> — Comma-separated Clerk user IDs with admin access (when Clerk is configured).</div>
         <div style="margin-top:6px"><code style="background:var(--bg);padding:1px 6px;border-radius:4px;font-size:12px">DATABASE_URL</code> — PostgreSQL connection string (Supabase).</div>
         <div style="margin-top:6px"><code style="background:var(--bg);padding:1px 6px;border-radius:4px;font-size:12px">CLERK_JWKS_URL</code> / <code style="background:var(--bg);padding:1px 6px;border-radius:4px;font-size:12px">CLERK_PUBLISHABLE_KEY</code> — Optional. Enable user auth.</div>
       </div>
@@ -442,8 +443,19 @@
 <div id="auth-gate" class="show">
   <div class="auth-card">
     <div class="auth-icon">🔒</div>
-    <h2>Admin Access Required</h2>
-    <p id="auth-msg">Checking your credentials…</p>
+    <h2 id="auth-title">Admin Access</h2>
+    <p id="auth-msg" style="margin-bottom:16px">Checking credentials…</p>
+    <div id="auth-secret-form" style="display:none">
+      <input id="auth-secret-input" type="password"
+        placeholder="Enter ADMIN_SECRET…"
+        style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;margin-bottom:10px;outline:none"
+        onkeydown="if(event.key==='Enter')submitSecret()"
+      />
+      <button class="btn btn-primary" style="width:100%;justify-content:center;padding:10px" onclick="submitSecret()">
+        Sign in
+      </button>
+      <div id="auth-secret-err" style="color:var(--red);font-size:12px;margin-top:8px;display:none"></div>
+    </div>
   </div>
 </div>
 
@@ -455,47 +467,80 @@
   let _currentPanel = 'overview';
 
   // ── Auth ──────────────────────────────────────────────────────────────────
+  const SECRET_KEY = 'admin_secret';
+
+  function getSecret() { return sessionStorage.getItem(SECRET_KEY) || ''; }
+  function setSecret(s) { sessionStorage.setItem(SECRET_KEY, s); }
+  function clearSecret() { sessionStorage.removeItem(SECRET_KEY); }
+
+  function authHeaders() {
+    const headers = {};
+    // Secret-key path (no Clerk needed)
+    const secret = getSecret();
+    if (secret) headers['X-Admin-Secret'] = secret;
+    // Clerk JWT path (if Clerk is configured)
+    const token = localStorage.getItem('__clerk_db_jwt') ||
+                  localStorage.getItem('clerk-session') ||
+                  sessionStorage.getItem('clerk-session-token') || '';
+    if (token) headers['Authorization'] = 'Bearer ' + token;
+    return headers;
+  }
+
   async function checkAuth() {
-    try {
-      const r = await fetch('/api/me', { headers: authHeaders() });
-      if (!r.ok) {
-        showAuthGate('You must be signed in to access the admin portal.');
-        return false;
-      }
-      const d = await r.json();
-      if (!d || !d.user) {
-        showAuthGate('You must be signed in to access the admin portal.');
-        return false;
-      }
-      // Probe an admin endpoint
-      const probe = await fetch('/api/admin/stats', { headers: authHeaders() });
-      if (probe.status === 401) { showAuthGate('You must be signed in to access the admin portal.'); return false; }
-      if (probe.status === 403) { showAuthGate('Your account does not have admin access. Ask the developer to add your user ID to ADMIN_USER_IDS.'); return false; }
-      if (probe.status === 503) { showAuthGate('Admin access is not configured. Set ADMIN_USER_IDS in your Railway environment variables.'); return false; }
-      // Show user pill
-      const u = d.user;
-      document.getElementById('user-avatar').textContent = (u.name || u.email || '?')[0].toUpperCase();
-      document.getElementById('user-label').textContent  = u.name || u.email || 'Admin';
-      document.getElementById('user-pill').style.display = 'flex';
-      document.getElementById('auth-gate').classList.remove('show');
+    const probe = await fetch('/api/admin/stats', { headers: authHeaders() }).catch(() => null);
+    if (!probe) { showAuthGate('Could not connect to server.'); return false; }
+
+    if (probe.ok) {
+      unlockUI();
       return true;
-    } catch (e) {
-      showAuthGate('Could not connect to server: ' + e.message);
+    }
+    if (probe.status === 503) {
+      showAuthGate('Admin is not configured. Set ADMIN_SECRET in your Railway environment variables, then redeploy.');
       return false;
     }
+    // 401 — need credentials
+    showSecretForm();
+    return false;
   }
 
   function showAuthGate(msg) {
     document.getElementById('auth-msg').textContent = msg;
+    document.getElementById('auth-secret-form').style.display = 'none';
     document.getElementById('auth-gate').classList.add('show');
   }
 
-  function authHeaders() {
-    // Works with Clerk session token stored in localStorage under common keys
-    const token = localStorage.getItem('__clerk_db_jwt') ||
-                  localStorage.getItem('clerk-session') ||
-                  sessionStorage.getItem('clerk-session-token') || '';
-    return token ? { 'Authorization': 'Bearer ' + token } : {};
+  function showSecretForm() {
+    document.getElementById('auth-title').textContent = 'Admin Sign In';
+    document.getElementById('auth-msg').textContent = 'Enter the ADMIN_SECRET you set in Railway Variables.';
+    document.getElementById('auth-secret-form').style.display = 'block';
+    document.getElementById('auth-gate').classList.add('show');
+    setTimeout(() => document.getElementById('auth-secret-input').focus(), 100);
+  }
+
+  async function submitSecret() {
+    const val = document.getElementById('auth-secret-input').value.trim();
+    if (!val) return;
+    setSecret(val);
+    const probe = await fetch('/api/admin/stats', { headers: authHeaders() }).catch(() => null);
+    if (probe && probe.ok) {
+      document.getElementById('auth-gate').classList.remove('show');
+      unlockUI();
+      loadOverview();
+    } else {
+      clearSecret();
+      const errEl = document.getElementById('auth-secret-err');
+      errEl.textContent = 'Incorrect secret — try again.';
+      errEl.style.display = 'block';
+      document.getElementById('auth-secret-input').value = '';
+      document.getElementById('auth-secret-input').focus();
+    }
+  }
+
+  function unlockUI() {
+    document.getElementById('auth-gate').classList.remove('show');
+    document.getElementById('user-avatar').textContent = '🔑';
+    document.getElementById('user-label').textContent  = 'Admin';
+    document.getElementById('user-pill').style.display = 'flex';
   }
 
   async function apiFetch(url, opts = {}) {

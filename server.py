@@ -1262,27 +1262,49 @@ async def booking_cancel(session_id: str):
 
 
 # ---------------------------------------------------------------------------
-# Admin — gated by ADMIN_USER_IDS env var (comma-separated Clerk user IDs).
-# Set this in Railway Variables before using any /api/admin/* or /admin routes.
+# Admin — two auth modes (either is sufficient):
+#
+#   1. ADMIN_SECRET (recommended without Clerk): set any secret string in
+#      Railway Variables; the admin UI will prompt for it on first visit and
+#      store it in sessionStorage.  Header: X-Admin-Secret: <value>
+#
+#   2. ADMIN_USER_IDS (when Clerk is configured): comma-separated Clerk user
+#      IDs.  The admin UI uses the Clerk JWT automatically.
+#
+# At least one must be set or all /api/admin/* routes return 503.
 # ---------------------------------------------------------------------------
 _ADMIN_IDS: set[str] = {
     uid.strip() for uid in os.getenv("ADMIN_USER_IDS", "").split(",") if uid.strip()
 }
+_ADMIN_SECRET: str = os.getenv("ADMIN_SECRET", "").strip()
 
 
 def _require_admin(request: Request) -> dict:
-    """Raise 401/403 unless the caller is a configured admin. Returns user dict."""
-    if not _ADMIN_IDS:
+    """
+    Accept the request if EITHER:
+      - X-Admin-Secret header matches ADMIN_SECRET, OR
+      - Bearer JWT belongs to a user ID in ADMIN_USER_IDS
+    Returns a minimal user-like dict so callers can inspect identity.
+    """
+    if not _ADMIN_IDS and not _ADMIN_SECRET:
         raise HTTPException(
             status_code=503,
-            detail="Admin access is not configured. Set ADMIN_USER_IDS in environment.",
+            detail="Admin access is not configured. Set ADMIN_SECRET (or ADMIN_USER_IDS) in environment.",
         )
-    auth_user = _user_from_request(request)
-    if not auth_user:
-        raise HTTPException(status_code=401, detail="Authentication required.")
-    if auth_user["user_id"] not in _ADMIN_IDS:
-        raise HTTPException(status_code=403, detail="Admin access required.")
-    return auth_user
+
+    # ── Secret-key path (works without Clerk) ──────────────────────────────
+    if _ADMIN_SECRET:
+        provided = request.headers.get("X-Admin-Secret", "")
+        if provided and secrets.compare_digest(provided, _ADMIN_SECRET):
+            return {"user_id": "__admin_secret__", "email": "admin"}
+
+    # ── Clerk JWT path ──────────────────────────────────────────────────────
+    if _ADMIN_IDS:
+        auth_user = _user_from_request(request)
+        if auth_user and auth_user["user_id"] in _ADMIN_IDS:
+            return auth_user
+
+    raise HTTPException(status_code=401, detail="Admin authentication required.")
 
 
 @app.get("/admin")
