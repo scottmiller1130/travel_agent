@@ -527,6 +527,7 @@
     <span class="badge">💰 Budgets</span>
     <span class="badge">📅 Itineraries</span>
     <span class="badge">💱 Currency</span>
+    <span class="badge">👥 Groups</span>
     <span class="badge">👥 Workspaces</span>
     <span class="badge">🔗 Share Links</span>
   </div>
@@ -551,6 +552,7 @@
     <a href="#multi">🌍 Multi-Destination</a>
     <a href="#currency">💱 Currency</a>
     <a href="#weather">🌤 Weather</a>
+    <a href="#groups">👥 Groups</a>
     <a href="#workspaces">👥 Workspaces</a>
     <a href="#export">📤 Export &amp; Share</a>
     <a href="#preferences">⚙️ Preferences</a>
@@ -625,7 +627,11 @@
       </ul>
 
       <h3><span class="emoji-h">🔒</span> Your data is private</h3>
-      <p>All trips, preferences, and itineraries are scoped to your user ID. Other users can never see your data. The only way to share an itinerary is to explicitly generate a share link (see <a href="#export" style="color:var(--sky-d)">Export &amp; Share</a>).</p>
+      <p>All trips, preferences, and itineraries are scoped to your user ID. Other users can never see your data unless you explicitly share it. There are two ways to share:</p>
+      <ul style="padding-left:20px;color:var(--text-2);margin-bottom:12px">
+        <li style="margin-bottom:6px"><strong>Groups</strong> — join a group to share your saved trip history with other group members (see <a href="#groups" style="color:var(--sky-d)">Groups</a>).</li>
+        <li style="margin-bottom:6px"><strong>Share link</strong> — generate a public read-only link to a specific itinerary (see <a href="#export" style="color:var(--sky-d)">Export &amp; Share</a>).</li>
+      </ul>
     </section>
 
     <!-- ── PLANS ── -->
@@ -644,6 +650,7 @@
           <tr><td>Trip history</td><td class="result">✓</td><td class="result">✓</td><td class="result">✓</td></tr>
           <tr><td>Preferences sync</td><td class="result">✓</td><td class="result">✓</td><td class="result">✓</td></tr>
           <tr><td>Shareable links</td><td class="result">✓</td><td class="result">✓</td><td class="result">✓</td></tr>
+          <tr><td>Groups (shared trip feed)</td><td class="result">✓</td><td class="result">✓</td><td class="result">✓</td></tr>
           <tr><td>Collaborative workspaces</td><td style="color:var(--text-3)">—</td><td class="result">✓</td><td class="result">✓</td></tr>
           <tr><td>Workspace members</td><td style="color:var(--text-3)">—</td><td>Up to 5</td><td>Unlimited</td></tr>
         </tbody>
@@ -1043,6 +1050,57 @@
       </div>
 
       <p>Ask the agent <strong>"Is June a good time to visit Santorini?"</strong> for a full breakdown including crowd levels, weather, and typical prices.</p>
+    </section>
+
+    <!-- ── GROUPS ── -->
+    <section class="section" id="groups">
+      <span class="section-tag tag-purple">👥 Groups</span>
+      <h2>Groups — Shared Trip Feed</h2>
+      <p class="lead">Create a group, invite friends or family, and everyone's saved trips appear in a shared feed. Great for travel clubs, family holidays, or keeping tabs on what trips your friends are planning. Groups are available on all plans.</p>
+
+      <h3><span class="emoji-h">🏗</span> Creating a group</h3>
+      <ol class="steps">
+        <li><p>In the sidebar, find the <strong>Groups</strong> section (visible after signing in).</p></li>
+        <li><p>Click the <strong>＋</strong> button next to "Groups".</p></li>
+        <li><p>Give your group a name — e.g. "Family Vacations" or "Work Trips 2025".</p></li>
+        <li><p>Click <strong>Create</strong>. You're the group owner.</p></li>
+      </ol>
+
+      <h3><span class="emoji-h">✉️</span> Inviting members</h3>
+      <ol class="steps">
+        <li><p>Click your group in the sidebar to open the group panel.</p></li>
+        <li><p>Click <strong>+ Invite</strong> and enter the email address of the person you want to add.</p></li>
+        <li><p>Click <strong>Send Invite</strong>. The invite is stored against their email address.</p></li>
+        <li><p>When they next log in, a <strong>🔔 pending invite</strong> notification appears in their sidebar. They click <strong>Join</strong> to accept.</p></li>
+      </ol>
+
+      <div class="info">
+        <span class="info-icon">ℹ️</span>
+        <div>Invites are matched to the email address verified by Clerk — not a self-reported value. This prevents users from accepting invites that weren't meant for them.</div>
+      </div>
+
+      <h3><span class="emoji-h">🗺</span> Viewing group trips</h3>
+      <p>Once members have joined, open the group from the sidebar. The <strong>Group Trips</strong> panel shows all saved trips from every joined member, sorted by most recently updated. Anyone in the group can view all trips — but cannot edit or delete another member's trips.</p>
+
+      <h3><span class="emoji-h">🔑</span> Owner controls</h3>
+      <ul style="padding-left:20px;color:var(--text-2);margin-bottom:12px">
+        <li style="margin-bottom:6px">Remove a member by clicking <strong>✕</strong> next to their name</li>
+        <li style="margin-bottom:6px">Delete the group entirely (removes all shared access)</li>
+        <li style="margin-bottom:6px">Only the owner can send invites</li>
+      </ul>
+
+      <h3><span class="emoji-h">🛡</span> Invite limits</h3>
+      <p>To prevent spam, group invites are rate-limited:</p>
+      <ul style="padding-left:20px;color:var(--text-2);margin-bottom:12px">
+        <li style="margin-bottom:6px"><strong>20 invites per day</strong> (total across all your groups)</li>
+        <li style="margin-bottom:6px"><strong>3 invites per day</strong> to the same email address</li>
+      </ul>
+      <p>If you hit a limit, try again the following day. The counter resets every 24 hours.</p>
+
+      <div class="tip">
+        <span class="tip-icon">💡</span>
+        <div><strong>Groups vs. Workspaces:</strong> Groups are for <em>sharing saved trip history</em> — everyone sees what trips each member has planned. Workspaces are for <em>planning a specific trip together</em> — members edit the same itinerary in real time. You can use both independently.</div>
+      </div>
     </section>
 
     <!-- ── WORKSPACES ── -->

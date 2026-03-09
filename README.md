@@ -8,7 +8,7 @@
 
 Travel Agent is a production-ready SaaS platform that lets users plan complete trips through an AI chat interface. Users describe where they want to go, and the agent searches live flight and hotel data, builds day-by-day itineraries, tracks budgets, and generates shareable trip plans — all without leaving the chat.
 
-**Built for teams and individuals.** Users can create collaborative workspaces to plan group trips together, with role-based access and shared itineraries.
+**Built for teams and individuals.** Users can create collaborative workspaces to plan group trips together, with role-based access and shared itineraries. Groups let friends and colleagues see each other's saved trips in one place.
 
 ---
 
@@ -34,6 +34,7 @@ Travel Agent is a production-ready SaaS platform that lets users plan complete t
 - **User accounts** — Clerk-powered auth (email/password, Google OAuth, magic links)
 - **Per-user data isolation** — sessions, preferences, and trips scoped to each user
 - **Collaborative workspaces** — invite team members by email, owner/editor/viewer roles
+- **Groups** — persistent membership spaces where all joined members can see each other's saved trips; invite-spam prevention with DB-backed rate limiting (20 invites/day per user)
 - **Plan limits** — Free / Pro / Team tiers with monthly usage metering
 - **Shareable links** — read-only rendered itinerary URLs for anyone
 - **Booking confirmation** — agent pauses and waits for user approval before any purchase
@@ -113,8 +114,9 @@ FastAPI (server.py)
         ├─ preferences       anonymous/global defaults
         ├─ user_preferences  per-user overrides
         ├─ trips             saved trip history  (per-user)
-        ├─ workspaces        collaborative planning spaces
+        ├─ workspaces        collaborative planning spaces + groups
         ├─ workspace_members roles: owner / editor / viewer
+        ├─ invite_logs       rate-limit log for outgoing invites
         └─ share_tokens      read-only itinerary share links
 ```
 
@@ -178,6 +180,22 @@ FastAPI (server.py)
 | `DELETE` | `/api/workspaces/{id}/members/{email}` | Remove member |
 | `POST` | `/api/workspaces/{id}/session` | Link planning session to workspace |
 | `DELETE` | `/api/workspaces/{id}` | Delete workspace (owner only) |
+
+### Group Endpoints (auth required)
+
+Groups are persistent membership spaces where all joined members can view each other's saved trips. Invites are rate-limited at the database level to prevent spam.
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/groups` | List groups the user has joined |
+| `POST` | `/api/groups` | Create a new group |
+| `GET` | `/api/groups/pending` | List pending group invites for the user's email |
+| `GET` | `/api/groups/{id}` | Get group details + member list |
+| `POST` | `/api/groups/{id}/invite` | Invite a member by email (owner only; rate-limited) |
+| `POST` | `/api/groups/{id}/join` | Join a group by claiming a pending email invite |
+| `GET` | `/api/groups/{id}/trips` | Get saved trips for all joined members |
+| `DELETE` | `/api/groups/{id}/members/{email}` | Remove a member (owner only) |
+| `DELETE` | `/api/groups/{id}` | Delete group (owner only) |
 
 ---
 
@@ -263,6 +281,8 @@ Without this key, the app uses Amadeus GDS (if configured) or distance-calculate
 - **Session ownership** enforced on every `/api/*/{session_id}` endpoint
 - **JWT verification** via Clerk JWKS (RS256, no shared secrets)
 - **Per-user rate limiting** (40 req/min authenticated, 20 req/min anonymous)
+- **Invite rate limiting** — DB-backed, 20 invites/day per user total and 3/day to the same email; persists across restarts
+- **Invite email from JWT** — invite matching uses the Clerk-verified email, not a self-reported value
 - **Parameterized queries** throughout — no SQL injection surface
 - **CSRF**: stateless JWT auth eliminates CSRF for API calls
 - **Security headers**: CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy
@@ -274,7 +294,7 @@ Without this key, the app uses Amadeus GDS (if configured) or distance-calculate
 
 ### Next (Phase 2)
 - [ ] Stripe subscriptions + webhook for plan upgrades
-- [ ] Email notifications for workspace invites (Resend / SendGrid)
+- [ ] Email notifications for workspace and group invites (Resend / SendGrid)
 - [ ] Redis agent cache for multi-instance deployments
 - [ ] Admin dashboard: user list, revenue, usage metrics
 - [ ] Alembic migrations (replace ad-hoc ALTER TABLE)
