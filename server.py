@@ -1262,24 +1262,166 @@ async def booking_cancel(session_id: str):
 
 
 # ---------------------------------------------------------------------------
-# Backups — list snapshots and trigger a manual backup
+# Admin — gated by ADMIN_USER_IDS env var (comma-separated Clerk user IDs).
+# Set this in Railway Variables before using any /api/admin/* or /admin routes.
 # ---------------------------------------------------------------------------
-@app.get("/api/admin/backups")
-async def list_backups(request: Request):
-    """Return metadata for all stored trip backups (no trip data, just counts/dates)."""
+_ADMIN_IDS: set[str] = {
+    uid.strip() for uid in os.getenv("ADMIN_USER_IDS", "").split(",") if uid.strip()
+}
+
+
+def _require_admin(request: Request) -> dict:
+    """Raise 401/403 unless the caller is a configured admin. Returns user dict."""
+    if not _ADMIN_IDS:
+        raise HTTPException(
+            status_code=503,
+            detail="Admin access is not configured. Set ADMIN_USER_IDS in environment.",
+        )
     auth_user = _user_from_request(request)
     if not auth_user:
         raise HTTPException(status_code=401, detail="Authentication required.")
+    if auth_user["user_id"] not in _ADMIN_IDS:
+        raise HTTPException(status_code=403, detail="Admin access required.")
+    return auth_user
+
+
+@app.get("/admin")
+async def admin_ui():
+    """Serve the admin dashboard HTML."""
+    admin_path = Path(__file__).parent / "static" / "admin.html"
+    if not admin_path.exists():
+        raise HTTPException(status_code=404, detail="Admin UI not found.")
+    return Response(content=admin_path.read_text(), media_type="text/html")
+
+
+@app.get("/api/admin/stats")
+async def admin_stats(request: Request):
+    """Dashboard overview metrics."""
+    _require_admin(request)
+    from memory.db import get_conn
+    from datetime import datetime as _dt, timedelta as _td
+    month = _dt.now().strftime("%Y-%m")
+    with get_conn() as conn:
+        cur = conn.cursor()
+
+        cur.execute("SELECT COUNT(*) FROM users")
+        total_users = cur.fetchone()[0]
+
+        cur.execute("SELECT plan, COUNT(*) FROM users GROUP BY plan")
+        by_plan = {r[0]: r[1] for r in cur.fetchall()}
+
+        cur.execute("SELECT COUNT(*) FROM trips")
+        total_trips = cur.fetchone()[0]
+
+        cur.execute("SELECT status, COUNT(*) FROM trips GROUP BY status")
+        trips_by_status = {r[0]: r[1] for r in cur.fetchall()}
+
+        cur.execute("SELECT COUNT(*) FROM sessions")
+        total_sessions = cur.fetchone()[0]
+
+        cutoff_7d = (_dt.now() - _td(days=7)).isoformat()
+        cur.execute("SELECT COUNT(*) FROM sessions WHERE updated_at > %s", (cutoff_7d,))
+        active_sessions_7d = cur.fetchone()[0]
+
+        cur.execute("SELECT SUM(chat_turns), SUM(api_calls) FROM usage WHERE month = %s", (month,))
+        row = cur.fetchone()
+        monthly_chats = row[0] or 0
+        monthly_api   = row[1] or 0
+
+    backups = BackupStore().list_backups()
+    return JSONResponse({
+        "users":    {"total": total_users, "by_plan": by_plan},
+        "trips":    {"total": total_trips, "by_status": trips_by_status},
+        "sessions": {"total": total_sessions, "active_7d": active_sessions_7d},
+        "usage":    {"month": month, "chat_turns": monthly_chats, "api_calls": monthly_api},
+        "backups":  {"count": len(backups), "latest": backups[0] if backups else None},
+    })
+
+
+@app.get("/api/admin/users")
+async def admin_list_users(request: Request):
+    """List all users with current-month usage."""
+    _require_admin(request)
+    users = UserStore().list_all()
+    return JSONResponse({"users": users})
+
+
+@app.patch("/api/admin/users/{user_id}/plan")
+async def admin_set_plan(user_id: str, request: Request):
+    """Change a user's subscription plan."""
+    _require_admin(request)
+    body = await request.json()
+    plan = body.get("plan", "").strip()
+    if plan not in ("free", "pro", "team"):
+        raise HTTPException(status_code=422, detail="plan must be free, pro, or team.")
+    UserStore().set_plan(user_id, plan)
+    return JSONResponse({"status": "ok", "user_id": user_id, "plan": plan})
+
+
+@app.delete("/api/admin/users/{user_id}")
+async def admin_delete_user(user_id: str, request: Request):
+    """Delete a user and all associated records."""
+    admin = _require_admin(request)
+    if user_id == admin["user_id"]:
+        raise HTTPException(status_code=400, detail="Cannot delete your own admin account.")
+    UserStore().delete(user_id)
+    return JSONResponse({"status": "ok"})
+
+
+@app.get("/api/admin/trips")
+async def admin_list_trips(request: Request):
+    """List all trips across all users."""
+    _require_admin(request)
+    trips = TripStore().get_all_admin()
+    return JSONResponse({"trips": trips})
+
+
+@app.delete("/api/admin/trips/{trip_id}")
+async def admin_delete_trip(trip_id: str, request: Request):
+    """Delete any trip regardless of owner."""
+    _require_admin(request)
+    TripStore().admin_delete(trip_id)
+    return JSONResponse({"status": "ok"})
+
+
+@app.get("/api/admin/sessions")
+async def admin_list_sessions(request: Request):
+    """List all sessions with metadata."""
+    _require_admin(request)
+    sessions = _session_store.list_sessions()
+    return JSONResponse({"sessions": sessions})
+
+
+@app.delete("/api/admin/sessions/{session_id}")
+async def admin_delete_session(session_id: str, request: Request):
+    """Force-delete a session."""
+    _require_admin(request)
+    _session_store.delete(session_id)
+    return JSONResponse({"status": "ok"})
+
+
+@app.get("/api/admin/backups")
+async def list_backups(request: Request):
+    """Return metadata for all stored trip backups."""
+    _require_admin(request)
     backups = BackupStore().list_backups()
     return JSONResponse({"backups": backups})
+
+
+@app.get("/api/admin/backups/{backup_id}")
+async def get_backup(backup_id: int, request: Request):
+    """Return the full trip snapshot for a backup."""
+    _require_admin(request)
+    snapshot = BackupStore().get_backup(backup_id)
+    if snapshot is None:
+        raise HTTPException(status_code=404, detail="Backup not found.")
+    return JSONResponse({"trips": snapshot})
 
 
 @app.post("/api/admin/backups")
 async def trigger_backup(request: Request):
     """Manually trigger a trip backup immediately."""
-    auth_user = _user_from_request(request)
-    if not auth_user:
-        raise HTTPException(status_code=401, detail="Authentication required.")
+    _require_admin(request)
     info = BackupStore().create_backup()
     return JSONResponse({"status": "ok", **info})
 

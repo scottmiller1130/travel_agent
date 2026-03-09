@@ -181,3 +181,39 @@ class UserStore:
 
     def limits_for(self, plan: str) -> dict:
         return PLAN_LIMITS.get(plan, PLAN_LIMITS["free"])
+
+    def list_all(self) -> list[dict]:
+        """Return all users with their current-month usage (admin only)."""
+        self._ensure_db()
+        month = datetime.now().strftime("%Y-%m")
+        with get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT u.id, u.email, u.name, u.plan, u.created_at, u.updated_at,
+                       COALESCE(ug.chat_turns, 0), COALESCE(ug.api_calls, 0)
+                FROM users u
+                LEFT JOIN usage ug ON ug.user_id = u.id AND ug.month = %s
+                ORDER BY u.created_at DESC
+            """, (month,))
+            rows = cur.fetchall()
+        return [
+            {
+                "id":         r[0],
+                "email":      r[1] or "",
+                "name":       r[2] or "",
+                "plan":       r[3],
+                "created_at": r[4],
+                "updated_at": r[5],
+                "usage":      {"chat_turns": r[6], "api_calls": r[7], "month": month},
+            }
+            for r in rows
+        ]
+
+    def delete(self, user_id: str) -> None:
+        """Remove a user and all associated records (admin only)."""
+        self._ensure_db()
+        with get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("DELETE FROM usage            WHERE user_id = %s", (user_id,))
+            cur.execute("DELETE FROM user_preferences WHERE user_id = %s", (user_id,))
+            cur.execute("DELETE FROM users            WHERE id      = %s", (user_id,))

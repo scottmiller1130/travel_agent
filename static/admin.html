@@ -1,0 +1,890 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Travel Agent — Admin</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --sky:      #0ea5e9;
+      --sky-d:    #0284c7;
+      --sky-l:    #e0f2fe;
+      --teal:     #0d9488;
+      --teal-d:   #0f766e;
+      --green:    #22c55e;
+      --green-l:  #dcfce7;
+      --amber:    #f59e0b;
+      --amber-l:  #fef3c7;
+      --red:      #ef4444;
+      --red-l:    #fee2e2;
+      --indigo:   #6366f1;
+      --indigo-l: #e0e7ff;
+      --bg:       #f8fafc;
+      --surface:  #ffffff;
+      --border:   #e2e8f0;
+      --text:     #0f172a;
+      --text-2:   #475569;
+      --text-3:   #94a3b8;
+      --shadow:   0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.06);
+      --shadow-md:0 4px 6px rgba(0,0,0,.07), 0 2px 4px rgba(0,0,0,.06);
+      --radius:   10px;
+      --sidebar-w:220px;
+      --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+
+    body { font-family: var(--font); background: var(--bg); color: var(--text); display: flex; min-height: 100vh; }
+
+    /* ── Sidebar ── */
+    #sidebar {
+      width: var(--sidebar-w); min-height: 100vh; background: var(--text);
+      display: flex; flex-direction: column; position: fixed; top: 0; left: 0; z-index: 10;
+    }
+    .sb-logo {
+      padding: 20px 18px 16px;
+      border-bottom: 1px solid rgba(255,255,255,.1);
+    }
+    .sb-logo .logo-line { display: flex; align-items: center; gap: 8px; }
+    .sb-logo .logo-icon { font-size: 20px; }
+    .sb-logo .logo-text { font-size: 15px; font-weight: 700; color: #fff; }
+    .sb-logo .logo-sub  { font-size: 10px; color: rgba(255,255,255,.45); letter-spacing: .06em; text-transform: uppercase; margin-top: 3px; }
+    .sb-nav { flex: 1; padding: 12px 10px; display: flex; flex-direction: column; gap: 2px; }
+    .sb-nav a {
+      display: flex; align-items: center; gap: 9px; padding: 8px 10px; border-radius: 7px;
+      font-size: 13px; font-weight: 500; color: rgba(255,255,255,.65); text-decoration: none;
+      cursor: pointer; transition: all .15s;
+    }
+    .sb-nav a:hover { background: rgba(255,255,255,.08); color: #fff; }
+    .sb-nav a.active { background: rgba(14,165,233,.25); color: #7dd3fc; }
+    .sb-nav a .nav-icon { font-size: 15px; width: 20px; text-align: center; }
+    .sb-nav .nav-section {
+      font-size: 10px; font-weight: 700; color: rgba(255,255,255,.3);
+      letter-spacing: .08em; text-transform: uppercase; padding: 14px 10px 4px;
+    }
+    .sb-footer {
+      padding: 14px 16px; border-top: 1px solid rgba(255,255,255,.1);
+      font-size: 11px; color: rgba(255,255,255,.35);
+    }
+    .sb-footer a { color: rgba(255,255,255,.45); text-decoration: none; }
+    .sb-footer a:hover { color: #fff; }
+
+    /* ── Main ── */
+    #main { margin-left: var(--sidebar-w); flex: 1; display: flex; flex-direction: column; }
+
+    .topbar {
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      padding: 14px 28px; display: flex; align-items: center; justify-content: space-between;
+      position: sticky; top: 0; z-index: 5;
+    }
+    .topbar h1 { font-size: 17px; font-weight: 700; }
+    .topbar .breadcrumb { font-size: 12px; color: var(--text-3); margin-top: 2px; }
+    .topbar-right { display: flex; align-items: center; gap: 10px; }
+    .user-pill {
+      display: flex; align-items: center; gap: 7px; background: var(--bg);
+      border: 1px solid var(--border); border-radius: 20px; padding: 5px 12px 5px 7px;
+      font-size: 12px; color: var(--text-2);
+    }
+    .user-pill .avatar {
+      width: 22px; height: 22px; border-radius: 50%; background: var(--sky);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 700; color: #fff;
+    }
+
+    /* ── Panels ── */
+    .panel { display: none; padding: 28px; flex: 1; }
+    .panel.active { display: block; }
+
+    /* ── Stat cards ── */
+    .stat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 16px; margin-bottom: 28px; }
+    .stat-card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 18px 20px; box-shadow: var(--shadow);
+    }
+    .stat-card .stat-label { font-size: 11px; font-weight: 700; color: var(--text-3); text-transform: uppercase; letter-spacing: .06em; }
+    .stat-card .stat-value { font-size: 32px; font-weight: 800; color: var(--text); margin: 6px 0 4px; line-height: 1; }
+    .stat-card .stat-sub   { font-size: 12px; color: var(--text-2); }
+    .stat-card .stat-icon  { font-size: 22px; float: right; margin-top: -4px; opacity: .7; }
+
+    /* ── Section headers ── */
+    .section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+    .section-header h2 { font-size: 14px; font-weight: 700; }
+
+    /* ── Tables ── */
+    .card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden;
+    }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    thead th {
+      background: var(--bg); padding: 10px 14px; text-align: left;
+      font-size: 11px; font-weight: 700; color: var(--text-3);
+      text-transform: uppercase; letter-spacing: .05em;
+      border-bottom: 1px solid var(--border);
+    }
+    tbody tr { border-bottom: 1px solid var(--border); transition: background .1s; }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: #f8fafc; }
+    tbody td { padding: 10px 14px; color: var(--text-2); vertical-align: middle; }
+    tbody td.bold { color: var(--text); font-weight: 600; }
+    .mono { font-family: ui-monospace, monospace; font-size: 11px; color: var(--text-3); }
+
+    /* ── Badges ── */
+    .badge {
+      display: inline-flex; align-items: center; gap: 3px;
+      padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 700;
+    }
+    .badge-free    { background: #f1f5f9; color: #64748b; }
+    .badge-pro     { background: var(--green-l); color: var(--teal-d); }
+    .badge-team    { background: var(--indigo-l); color: var(--indigo); }
+    .badge-planned { background: var(--sky-l); color: var(--sky-d); }
+    .badge-completed { background: var(--green-l); color: var(--teal-d); }
+    .badge-ok      { background: var(--green-l); color: var(--teal-d); }
+    .badge-error   { background: var(--red-l); color: var(--red); }
+    .badge-configured { background: var(--sky-l); color: var(--sky-d); }
+    .badge-not_configured { background: #f1f5f9; color: var(--text-3); }
+    .badge-unconfigured { background: var(--amber-l); color: #92400e; }
+    .badge-degraded { background: var(--amber-l); color: #92400e; }
+
+    /* ── Buttons ── */
+    .btn {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600;
+      border: none; cursor: pointer; transition: all .15s;
+    }
+    .btn-primary { background: var(--sky); color: #fff; }
+    .btn-primary:hover { background: var(--sky-d); }
+    .btn-danger  { background: var(--red-l); color: var(--red); }
+    .btn-danger:hover  { background: #fca5a5; }
+    .btn-ghost   { background: var(--bg); color: var(--text-2); border: 1px solid var(--border); }
+    .btn-ghost:hover   { background: var(--border); }
+    .btn-sm { padding: 4px 9px; font-size: 11px; }
+
+    /* ── Plan selector inline ── */
+    .plan-select {
+      appearance: none; background: var(--bg); border: 1px solid var(--border);
+      border-radius: 6px; padding: 3px 8px; font-size: 12px; font-weight: 600;
+      cursor: pointer; color: var(--text-2);
+    }
+    .plan-select:focus { outline: 2px solid var(--sky); }
+
+    /* ── Search/filter bar ── */
+    .filter-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+    .filter-bar input, .filter-bar select {
+      padding: 7px 12px; border: 1px solid var(--border); border-radius: 6px;
+      font-size: 13px; background: var(--surface); color: var(--text);
+    }
+    .filter-bar input { flex: 1; }
+    .filter-bar input:focus, .filter-bar select:focus { outline: 2px solid var(--sky); border-color: var(--sky); }
+
+    /* ── Health grid ── */
+    .health-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+    .health-item {
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 14px 16px; display: flex; align-items: center; justify-content: space-between;
+      box-shadow: var(--shadow);
+    }
+    .health-item .h-name { font-size: 13px; font-weight: 600; }
+    .health-item .h-sub  { font-size: 11px; color: var(--text-3); margin-top: 2px; }
+
+    /* ── Empty state ── */
+    .empty { text-align: center; padding: 48px 20px; color: var(--text-3); font-size: 14px; }
+    .empty .empty-icon { font-size: 36px; margin-bottom: 10px; }
+
+    /* ── Toast ── */
+    #toast {
+      position: fixed; bottom: 24px; right: 24px; z-index: 999;
+      background: var(--text); color: #fff; padding: 10px 18px;
+      border-radius: 8px; font-size: 13px; font-weight: 500;
+      box-shadow: var(--shadow-md); opacity: 0; pointer-events: none;
+      transition: opacity .25s;
+    }
+    #toast.show { opacity: 1; }
+
+    /* ── Loading spinner ── */
+    .spinner {
+      width: 18px; height: 18px; border: 2.5px solid var(--border);
+      border-top-color: var(--sky); border-radius: 50%; animation: spin .7s linear infinite;
+      display: inline-block;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Auth gate ── */
+    #auth-gate {
+      display: none; position: fixed; inset: 0; background: var(--bg);
+      align-items: center; justify-content: center; z-index: 100;
+    }
+    #auth-gate.show { display: flex; }
+    .auth-card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+      padding: 40px 48px; text-align: center; box-shadow: var(--shadow-md); max-width: 380px;
+    }
+    .auth-card .auth-icon { font-size: 36px; margin-bottom: 12px; }
+    .auth-card h2 { font-size: 20px; font-weight: 800; margin-bottom: 8px; }
+    .auth-card p  { font-size: 14px; color: var(--text-2); line-height: 1.6; }
+
+    /* ── Backup items ── */
+    .backup-list { display: flex; flex-direction: column; gap: 10px; }
+    .backup-item {
+      display: flex; align-items: center; justify-content: space-between;
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 14px 18px; box-shadow: var(--shadow);
+    }
+    .backup-item .b-meta { font-size: 13px; }
+    .backup-item .b-date { font-weight: 600; color: var(--text); }
+    .backup-item .b-count { font-size: 12px; color: var(--text-3); margin-top: 3px; }
+  </style>
+</head>
+<body>
+
+<!-- ── Sidebar ── -->
+<nav id="sidebar">
+  <div class="sb-logo">
+    <div class="logo-line">
+      <span class="logo-icon">✈️</span>
+      <span class="logo-text">Travel Agent</span>
+    </div>
+    <div class="logo-sub">Admin Portal</div>
+  </div>
+
+  <div class="sb-nav">
+    <div class="nav-section">Dashboard</div>
+    <a class="active" onclick="show('overview')" id="nav-overview">
+      <span class="nav-icon">📊</span> Overview
+    </a>
+
+    <div class="nav-section">Data</div>
+    <a onclick="show('users')" id="nav-users">
+      <span class="nav-icon">👤</span> Users
+    </a>
+    <a onclick="show('trips')" id="nav-trips">
+      <span class="nav-icon">🗺️</span> Trips
+    </a>
+    <a onclick="show('sessions')" id="nav-sessions">
+      <span class="nav-icon">💬</span> Sessions
+    </a>
+
+    <div class="nav-section">Operations</div>
+    <a onclick="show('backups')" id="nav-backups">
+      <span class="nav-icon">💾</span> Backups
+    </a>
+    <a onclick="show('system')" id="nav-system">
+      <span class="nav-icon">⚙️</span> System
+    </a>
+
+    <div class="nav-section">App</div>
+    <a href="/" target="_blank">
+      <span class="nav-icon">↗️</span> Open App
+    </a>
+  </div>
+
+  <div class="sb-footer">
+    Admin Portal · <a href="https://github.com/anthropics/claude-code/issues" target="_blank">Report issue</a>
+  </div>
+</nav>
+
+<!-- ── Main ── -->
+<div id="main">
+  <div class="topbar">
+    <div>
+      <h1 id="page-title">Overview</h1>
+      <div class="breadcrumb" id="page-sub">System health and key metrics</div>
+    </div>
+    <div class="topbar-right">
+      <div id="user-pill" class="user-pill" style="display:none">
+        <div class="avatar" id="user-avatar">?</div>
+        <span id="user-label">Loading…</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Overview ── -->
+  <div class="panel active" id="panel-overview">
+    <div class="stat-grid" id="stat-grid">
+      <div class="stat-card"><span class="stat-icon">⏳</span><div class="stat-label">Loading</div><div class="stat-value">—</div></div>
+    </div>
+
+    <div class="section-header"><h2>Usage This Month</h2></div>
+    <div class="card" style="padding:20px 24px;margin-bottom:28px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px" id="usage-grid">
+        <div><div style="font-size:11px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:.06em">Chat Turns</div><div style="font-size:28px;font-weight:800;margin-top:4px" id="stat-chats">—</div></div>
+        <div><div style="font-size:11px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:.06em">API Calls</div><div style="font-size:28px;font-weight:800;margin-top:4px" id="stat-api">—</div></div>
+      </div>
+    </div>
+
+    <div class="section-header"><h2>Recent Backups</h2><button class="btn btn-primary btn-sm" onclick="runBackup()">▶ Run Backup Now</button></div>
+    <div id="overview-backups" class="card" style="padding:16px 20px;color:var(--text-3);font-size:13px">Loading…</div>
+  </div>
+
+  <!-- ── Users ── -->
+  <div class="panel" id="panel-users">
+    <div class="filter-bar">
+      <input type="text" id="user-search" placeholder="Search by name or email…" oninput="filterUsers()">
+      <select id="user-plan-filter" onchange="filterUsers()">
+        <option value="">All plans</option>
+        <option value="free">Free</option>
+        <option value="pro">Pro</option>
+        <option value="team">Team</option>
+      </select>
+      <button class="btn btn-ghost btn-sm" onclick="loadUsers()">↻ Refresh</button>
+    </div>
+    <div class="card">
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>User</th><th>Plan</th><th>Chats (mo)</th><th>API (mo)</th><th>Joined</th><th>Actions</th>
+          </tr></thead>
+          <tbody id="users-body"><tr><td colspan="6" class="empty">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+    <div id="users-count" style="font-size:12px;color:var(--text-3);margin-top:10px"></div>
+  </div>
+
+  <!-- ── Trips ── -->
+  <div class="panel" id="panel-trips">
+    <div class="filter-bar">
+      <input type="text" id="trip-search" placeholder="Search by destination…" oninput="filterTrips()">
+      <select id="trip-status-filter" onchange="filterTrips()">
+        <option value="">All statuses</option>
+        <option value="planned">Planned</option>
+        <option value="completed">Completed</option>
+      </select>
+      <button class="btn btn-ghost btn-sm" onclick="loadTrips()">↻ Refresh</button>
+    </div>
+    <div class="card">
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Destination</th><th>Dates</th><th>Status</th><th>User</th><th>Saved</th><th>Actions</th>
+          </tr></thead>
+          <tbody id="trips-body"><tr><td colspan="6" class="empty">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+    <div id="trips-count" style="font-size:12px;color:var(--text-3);margin-top:10px"></div>
+  </div>
+
+  <!-- ── Sessions ── -->
+  <div class="panel" id="panel-sessions">
+    <div class="filter-bar">
+      <input type="text" id="session-search" placeholder="Search by session ID or user ID…" oninput="filterSessions()">
+      <button class="btn btn-ghost btn-sm" onclick="loadSessions()">↻ Refresh</button>
+    </div>
+    <div class="card">
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Session ID</th><th>User</th><th>Created</th><th>Last Active</th><th>Actions</th>
+          </tr></thead>
+          <tbody id="sessions-body"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+    <div id="sessions-count" style="font-size:12px;color:var(--text-3);margin-top:10px"></div>
+  </div>
+
+  <!-- ── Backups ── -->
+  <div class="panel" id="panel-backups">
+    <div class="section-header" style="margin-bottom:20px">
+      <div>
+        <h2>Trip Snapshots</h2>
+        <div style="font-size:12px;color:var(--text-3);margin-top:3px">
+          Automatic weekly backups · last 8 kept · stored in PostgreSQL
+        </div>
+      </div>
+      <button class="btn btn-primary" onclick="runBackup()">▶ Run Backup Now</button>
+    </div>
+    <div id="backups-list" class="backup-list">
+      <div style="color:var(--text-3);font-size:13px">Loading…</div>
+    </div>
+  </div>
+
+  <!-- ── System ── -->
+  <div class="panel" id="panel-system">
+    <div class="section-header" style="margin-bottom:20px">
+      <h2>Component Health</h2>
+      <button class="btn btn-ghost btn-sm" onclick="loadHealth()">↻ Refresh</button>
+    </div>
+    <div id="health-grid" class="health-grid">
+      <div style="color:var(--text-3);font-size:13px">Loading…</div>
+    </div>
+
+    <div class="section-header" style="margin-top:32px;margin-bottom:16px"><h2>Plan Limits Reference</h2></div>
+    <div class="card">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Plan</th><th>Chat Turns / Month</th><th>API Calls / Month</th></tr></thead>
+          <tbody>
+            <tr><td><span class="badge badge-free">Free</span></td><td>20</td><td>50</td></tr>
+            <tr><td><span class="badge badge-pro">Pro</span></td><td>Unlimited</td><td>200</td></tr>
+            <tr><td><span class="badge badge-team">Team</span></td><td>Unlimited</td><td>500</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="section-header" style="margin-top:32px;margin-bottom:16px"><h2>Environment Variables</h2></div>
+    <div class="card" style="padding:18px 20px">
+      <div style="font-size:13px;color:var(--text-2);line-height:1.9">
+        <div><code style="background:var(--bg);padding:1px 6px;border-radius:4px;font-size:12px">ANTHROPIC_API_KEY</code> — Required. Claude API access.</div>
+        <div style="margin-top:6px"><code style="background:var(--bg);padding:1px 6px;border-radius:4px;font-size:12px">ADMIN_USER_IDS</code> — Comma-separated Clerk user IDs with admin access.</div>
+        <div style="margin-top:6px"><code style="background:var(--bg);padding:1px 6px;border-radius:4px;font-size:12px">DATABASE_URL</code> — PostgreSQL connection string (Supabase).</div>
+        <div style="margin-top:6px"><code style="background:var(--bg);padding:1px 6px;border-radius:4px;font-size:12px">CLERK_JWKS_URL</code> / <code style="background:var(--bg);padding:1px 6px;border-radius:4px;font-size:12px">CLERK_PUBLISHABLE_KEY</code> — Optional. Enable user auth.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<div id="auth-gate" class="show">
+  <div class="auth-card">
+    <div class="auth-icon">🔒</div>
+    <h2>Admin Access Required</h2>
+    <p id="auth-msg">Checking your credentials…</p>
+  </div>
+</div>
+
+<script>
+  // ── State ──────────────────────────────────────────────────────────────────
+  let _users    = [];
+  let _trips    = [];
+  let _sessions = [];
+  let _currentPanel = 'overview';
+
+  // ── Auth ──────────────────────────────────────────────────────────────────
+  async function checkAuth() {
+    try {
+      const r = await fetch('/api/me', { headers: authHeaders() });
+      if (!r.ok) {
+        showAuthGate('You must be signed in to access the admin portal.');
+        return false;
+      }
+      const d = await r.json();
+      if (!d || !d.user) {
+        showAuthGate('You must be signed in to access the admin portal.');
+        return false;
+      }
+      // Probe an admin endpoint
+      const probe = await fetch('/api/admin/stats', { headers: authHeaders() });
+      if (probe.status === 401) { showAuthGate('You must be signed in to access the admin portal.'); return false; }
+      if (probe.status === 403) { showAuthGate('Your account does not have admin access. Ask the developer to add your user ID to ADMIN_USER_IDS.'); return false; }
+      if (probe.status === 503) { showAuthGate('Admin access is not configured. Set ADMIN_USER_IDS in your Railway environment variables.'); return false; }
+      // Show user pill
+      const u = d.user;
+      document.getElementById('user-avatar').textContent = (u.name || u.email || '?')[0].toUpperCase();
+      document.getElementById('user-label').textContent  = u.name || u.email || 'Admin';
+      document.getElementById('user-pill').style.display = 'flex';
+      document.getElementById('auth-gate').classList.remove('show');
+      return true;
+    } catch (e) {
+      showAuthGate('Could not connect to server: ' + e.message);
+      return false;
+    }
+  }
+
+  function showAuthGate(msg) {
+    document.getElementById('auth-msg').textContent = msg;
+    document.getElementById('auth-gate').classList.add('show');
+  }
+
+  function authHeaders() {
+    // Works with Clerk session token stored in localStorage under common keys
+    const token = localStorage.getItem('__clerk_db_jwt') ||
+                  localStorage.getItem('clerk-session') ||
+                  sessionStorage.getItem('clerk-session-token') || '';
+    return token ? { 'Authorization': 'Bearer ' + token } : {};
+  }
+
+  async function apiFetch(url, opts = {}) {
+    const r = await fetch(url, { ...opts, headers: { ...authHeaders(), ...(opts.headers || {}) } });
+    if (!r.ok) {
+      const body = await r.json().catch(() => ({ detail: r.statusText }));
+      throw new Error(body.detail || r.statusText);
+    }
+    return r.json();
+  }
+
+  // ── Navigation ─────────────────────────────────────────────────────────────
+  const PAGE_META = {
+    overview: { title: 'Overview',  sub: 'System health and key metrics' },
+    users:    { title: 'Users',     sub: 'Manage user accounts and plans' },
+    trips:    { title: 'Trips',     sub: 'All saved trips across all users' },
+    sessions: { title: 'Sessions',  sub: 'Active and recent chat sessions' },
+    backups:  { title: 'Backups',   sub: 'Weekly trip snapshots' },
+    system:   { title: 'System',    sub: 'Health check and configuration' },
+  };
+
+  function show(panel) {
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.sb-nav a').forEach(a => a.classList.remove('active'));
+    document.getElementById('panel-' + panel).classList.add('active');
+    document.getElementById('nav-' + panel)?.classList.add('active');
+    const meta = PAGE_META[panel] || {};
+    document.getElementById('page-title').textContent = meta.title || panel;
+    document.getElementById('page-sub').textContent   = meta.sub   || '';
+    _currentPanel = panel;
+    // Lazy-load data
+    if (panel === 'overview')  loadOverview();
+    if (panel === 'users')     loadUsers();
+    if (panel === 'trips')     loadTrips();
+    if (panel === 'sessions')  loadSessions();
+    if (panel === 'backups')   loadBackups();
+    if (panel === 'system')    loadHealth();
+  }
+
+  // ── Toast ──────────────────────────────────────────────────────────────────
+  let _toastTimer;
+  function toast(msg, duration = 3000) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.classList.add('show');
+    clearTimeout(_toastTimer);
+    _toastTimer = setTimeout(() => el.classList.remove('show'), duration);
+  }
+
+  // ── Helpers ────────────────────────────────────────────────────────────────
+  function esc(s) {
+    if (s == null) return '';
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function fmtDate(iso) {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    return isNaN(d) ? iso : d.toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
+  }
+
+  function fmtDateTime(iso) {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    return isNaN(d) ? iso : d.toLocaleDateString('en-US', { month:'short', day:'numeric' }) +
+           ' ' + d.toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit' });
+  }
+
+  function planBadge(plan) {
+    return `<span class="badge badge-${esc(plan)}">${esc((plan||'free').toUpperCase())}</span>`;
+  }
+
+  function statusBadge(s) {
+    return `<span class="badge badge-${esc(s)}">${esc(s||'—')}</span>`;
+  }
+
+  function confirmDanger(msg) {
+    return window.confirm(msg);
+  }
+
+  // ── Overview ───────────────────────────────────────────────────────────────
+  async function loadOverview() {
+    try {
+      const d = await apiFetch('/api/admin/stats');
+      const bp = d.users.by_plan || {};
+      const bs = d.trips.by_status || {};
+      document.getElementById('stat-grid').innerHTML = `
+        <div class="stat-card">
+          <span class="stat-icon">👤</span>
+          <div class="stat-label">Total Users</div>
+          <div class="stat-value">${d.users.total}</div>
+          <div class="stat-sub">${bp.pro||0} Pro · ${bp.team||0} Team · ${bp.free||0} Free</div>
+        </div>
+        <div class="stat-card">
+          <span class="stat-icon">🗺️</span>
+          <div class="stat-label">Saved Trips</div>
+          <div class="stat-value">${d.trips.total}</div>
+          <div class="stat-sub">${bs.planned||0} planned · ${bs.completed||0} completed</div>
+        </div>
+        <div class="stat-card">
+          <span class="stat-icon">💬</span>
+          <div class="stat-label">Sessions</div>
+          <div class="stat-value">${d.sessions.total}</div>
+          <div class="stat-sub">${d.sessions.active_7d} active last 7 days</div>
+        </div>
+        <div class="stat-card">
+          <span class="stat-icon">💾</span>
+          <div class="stat-label">Backups</div>
+          <div class="stat-value">${d.backups.count}</div>
+          <div class="stat-sub">${d.backups.latest ? 'Last: ' + fmtDate(d.backups.latest.created_at) : 'None yet'}</div>
+        </div>
+      `;
+      document.getElementById('stat-chats').textContent = d.usage.chat_turns.toLocaleString();
+      document.getElementById('stat-api').textContent   = d.usage.api_calls.toLocaleString();
+
+      // Backups preview
+      const backups = await apiFetch('/api/admin/backups');
+      const blist = (backups.backups || []).slice(0, 3);
+      document.getElementById('overview-backups').innerHTML = blist.length
+        ? blist.map(b => `
+            <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px">
+              <span style="font-weight:600">${fmtDateTime(b.created_at)}</span>
+              <span style="color:var(--text-3)">${b.trip_count} trips</span>
+            </div>`).join('')
+        : '<div style="color:var(--text-3);font-size:13px">No backups yet — click "Run Backup Now"</div>';
+    } catch (e) {
+      toast('Failed to load stats: ' + e.message);
+    }
+  }
+
+  // ── Users ──────────────────────────────────────────────────────────────────
+  async function loadUsers() {
+    document.getElementById('users-body').innerHTML = '<tr><td colspan="6" style="padding:20px;text-align:center"><span class="spinner"></span></td></tr>';
+    try {
+      const d = await apiFetch('/api/admin/users');
+      _users = d.users || [];
+      renderUsers();
+    } catch (e) {
+      document.getElementById('users-body').innerHTML = `<tr><td colspan="6" class="empty">Error: ${esc(e.message)}</td></tr>`;
+    }
+  }
+
+  function filterUsers() {
+    renderUsers();
+  }
+
+  function renderUsers() {
+    const q    = document.getElementById('user-search').value.toLowerCase();
+    const plan = document.getElementById('user-plan-filter').value;
+    let rows = _users.filter(u => {
+      if (plan && u.plan !== plan) return false;
+      if (q && !((u.name||'').toLowerCase().includes(q) || (u.email||'').toLowerCase().includes(q))) return false;
+      return true;
+    });
+    document.getElementById('users-count').textContent = `${rows.length} of ${_users.length} users`;
+    if (!rows.length) {
+      document.getElementById('users-body').innerHTML = `<tr><td colspan="6"><div class="empty"><div class="empty-icon">👤</div>No users found</div></td></tr>`;
+      return;
+    }
+    document.getElementById('users-body').innerHTML = rows.map(u => {
+      const lim = u.plan === 'free' ? 20 : -1;
+      const chatPct = lim > 0 ? Math.min(100, Math.round(u.usage.chat_turns / lim * 100)) : 0;
+      const barColor = chatPct >= 90 ? 'var(--red)' : chatPct >= 70 ? 'var(--amber)' : 'var(--teal)';
+      return `
+        <tr>
+          <td class="bold">
+            <div>${esc(u.name || '—')}</div>
+            <div class="mono">${esc(u.email)}</div>
+          </td>
+          <td>
+            <select class="plan-select" onchange="setPlan('${esc(u.id)}', this.value)">
+              <option value="free"  ${u.plan==='free'  ? 'selected':''}>Free</option>
+              <option value="pro"   ${u.plan==='pro'   ? 'selected':''}>Pro</option>
+              <option value="team"  ${u.plan==='team'  ? 'selected':''}>Team</option>
+            </select>
+          </td>
+          <td>
+            <div style="display:flex;align-items:center;gap:8px">
+              <div style="flex:1;height:5px;background:var(--border);border-radius:3px;min-width:60px">
+                <div style="width:${chatPct}%;height:100%;background:${barColor};border-radius:3px"></div>
+              </div>
+              <span style="font-size:12px">${u.usage.chat_turns}${lim>0?'/'+lim:''}</span>
+            </div>
+          </td>
+          <td style="font-size:12px">${u.usage.api_calls}</td>
+          <td style="font-size:12px;color:var(--text-3)">${fmtDate(u.created_at)}</td>
+          <td>
+            <button class="btn btn-danger btn-sm" onclick="deleteUser('${esc(u.id)}', '${esc(u.email || u.name)}')">Delete</button>
+          </td>
+        </tr>`;
+    }).join('');
+  }
+
+  async function setPlan(userId, plan) {
+    try {
+      await apiFetch(`/api/admin/users/${encodeURIComponent(userId)}/plan`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ plan }),
+      });
+      const u = _users.find(x => x.id === userId);
+      if (u) u.plan = plan;
+      toast(`Plan updated to ${plan}`);
+    } catch (e) {
+      toast('Failed: ' + e.message);
+      renderUsers(); // revert UI
+    }
+  }
+
+  async function deleteUser(userId, label) {
+    if (!confirmDanger(`Delete user "${label}"? This removes their account, usage history, and preferences. Their saved trips are NOT deleted.`)) return;
+    try {
+      await apiFetch(`/api/admin/users/${encodeURIComponent(userId)}`, { method: 'DELETE' });
+      _users = _users.filter(u => u.id !== userId);
+      renderUsers();
+      toast('User deleted.');
+    } catch (e) {
+      toast('Failed: ' + e.message);
+    }
+  }
+
+  // ── Trips ──────────────────────────────────────────────────────────────────
+  async function loadTrips() {
+    document.getElementById('trips-body').innerHTML = '<tr><td colspan="6" style="padding:20px;text-align:center"><span class="spinner"></span></td></tr>';
+    try {
+      const d = await apiFetch('/api/admin/trips');
+      _trips = d.trips || [];
+      renderTrips();
+    } catch (e) {
+      document.getElementById('trips-body').innerHTML = `<tr><td colspan="6" class="empty">Error: ${esc(e.message)}</td></tr>`;
+    }
+  }
+
+  function filterTrips() { renderTrips(); }
+
+  function renderTrips() {
+    const q      = document.getElementById('trip-search').value.toLowerCase();
+    const status = document.getElementById('trip-status-filter').value;
+    let rows = _trips.filter(t => {
+      if (status && t.status !== status) return false;
+      if (q && !(t.destination||'').toLowerCase().includes(q)) return false;
+      return true;
+    });
+    document.getElementById('trips-count').textContent = `${rows.length} of ${_trips.length} trips`;
+    if (!rows.length) {
+      document.getElementById('trips-body').innerHTML = `<tr><td colspan="6"><div class="empty"><div class="empty-icon">🗺️</div>No trips found</div></td></tr>`;
+      return;
+    }
+    document.getElementById('trips-body').innerHTML = rows.map(t => `
+      <tr>
+        <td class="bold">${esc(t.destination || '—')}</td>
+        <td style="font-size:12px;white-space:nowrap">
+          ${t.start_date ? esc(t.start_date) : ''}${t.start_date && t.end_date ? ' → ' : ''}${t.end_date ? esc(t.end_date) : '—'}
+        </td>
+        <td>${statusBadge(t.status)}</td>
+        <td class="mono">${t.user_id ? esc(t.user_id.slice(0,16))+'…' : '<span style="color:var(--text-3)">anonymous</span>'}</td>
+        <td style="font-size:12px;color:var(--text-3)">${fmtDate(t.updated_at)}</td>
+        <td>
+          <button class="btn btn-danger btn-sm" onclick="deleteTrip('${esc(t.id)}', '${esc(t.destination)}')">Delete</button>
+        </td>
+      </tr>`).join('');
+  }
+
+  async function deleteTrip(tripId, dest) {
+    if (!confirmDanger(`Permanently delete trip to "${dest}"? This cannot be undone.`)) return;
+    try {
+      await apiFetch(`/api/admin/trips/${encodeURIComponent(tripId)}`, { method: 'DELETE' });
+      _trips = _trips.filter(t => t.id !== tripId);
+      renderTrips();
+      toast('Trip deleted.');
+    } catch (e) {
+      toast('Failed: ' + e.message);
+    }
+  }
+
+  // ── Sessions ───────────────────────────────────────────────────────────────
+  async function loadSessions() {
+    document.getElementById('sessions-body').innerHTML = '<tr><td colspan="5" style="padding:20px;text-align:center"><span class="spinner"></span></td></tr>';
+    try {
+      const d = await apiFetch('/api/admin/sessions');
+      _sessions = d.sessions || [];
+      renderSessions();
+    } catch (e) {
+      document.getElementById('sessions-body').innerHTML = `<tr><td colspan="5" class="empty">Error: ${esc(e.message)}</td></tr>`;
+    }
+  }
+
+  function filterSessions() { renderSessions(); }
+
+  function renderSessions() {
+    const q = document.getElementById('session-search').value.toLowerCase();
+    let rows = _sessions.filter(s => {
+      if (!q) return true;
+      return (s.id||'').toLowerCase().includes(q) || (s.user_id||'').toLowerCase().includes(q);
+    });
+    document.getElementById('sessions-count').textContent = `${rows.length} of ${_sessions.length} sessions`;
+    if (!rows.length) {
+      document.getElementById('sessions-body').innerHTML = `<tr><td colspan="5"><div class="empty"><div class="empty-icon">💬</div>No sessions found</div></td></tr>`;
+      return;
+    }
+    document.getElementById('sessions-body').innerHTML = rows.map(s => `
+      <tr>
+        <td class="mono">${esc(s.id)}</td>
+        <td class="mono">${s.user_id ? esc(s.user_id.slice(0,20))+'…' : '<span style="color:var(--text-3)">anonymous</span>'}</td>
+        <td style="font-size:12px;color:var(--text-3)">${fmtDateTime(s.created_at)}</td>
+        <td style="font-size:12px;color:var(--text-3)">${fmtDateTime(s.updated_at)}</td>
+        <td>
+          <button class="btn btn-danger btn-sm" onclick="deleteSession('${esc(s.id)}')">Delete</button>
+        </td>
+      </tr>`).join('');
+  }
+
+  async function deleteSession(sessionId) {
+    if (!confirmDanger('Force-delete this session? The user will lose their current conversation.')) return;
+    try {
+      await apiFetch(`/api/admin/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' });
+      _sessions = _sessions.filter(s => s.id !== sessionId);
+      renderSessions();
+      toast('Session deleted.');
+    } catch (e) {
+      toast('Failed: ' + e.message);
+    }
+  }
+
+  // ── Backups ────────────────────────────────────────────────────────────────
+  async function loadBackups() {
+    document.getElementById('backups-list').innerHTML = '<div style="color:var(--text-3);font-size:13px">Loading…</div>';
+    try {
+      const d = await apiFetch('/api/admin/backups');
+      const backups = d.backups || [];
+      if (!backups.length) {
+        document.getElementById('backups-list').innerHTML = `
+          <div class="empty"><div class="empty-icon">💾</div>No backups yet — click "Run Backup Now"</div>`;
+        return;
+      }
+      document.getElementById('backups-list').innerHTML = backups.map((b, i) => `
+        <div class="backup-item">
+          <div class="b-meta">
+            <div class="b-date">${fmtDateTime(b.created_at)} ${i===0 ? '<span style="font-size:11px;background:var(--sky-l);color:var(--sky-d);padding:1px 7px;border-radius:10px;font-weight:700;margin-left:6px">Latest</span>' : ''}</div>
+            <div class="b-count">${b.trip_count} trip${b.trip_count !== 1 ? 's' : ''} · Backup #${b.id}</div>
+          </div>
+          <span style="font-size:12px;color:var(--text-3)">Slot ${i+1} of 8</span>
+        </div>`).join('');
+    } catch (e) {
+      document.getElementById('backups-list').innerHTML = `<div class="empty">Error: ${esc(e.message)}</div>`;
+    }
+  }
+
+  async function runBackup() {
+    toast('Running backup…');
+    try {
+      const d = await apiFetch('/api/admin/backups', { method: 'POST' });
+      toast(`Backup complete — ${d.trip_count} trips saved.`);
+      if (_currentPanel === 'backups')  loadBackups();
+      if (_currentPanel === 'overview') loadOverview();
+    } catch (e) {
+      toast('Backup failed: ' + e.message);
+    }
+  }
+
+  // ── Health ─────────────────────────────────────────────────────────────────
+  async function loadHealth() {
+    document.getElementById('health-grid').innerHTML = '<div style="color:var(--text-3);font-size:13px">Loading…</div>';
+    try {
+      const d = await apiFetch('/api/health');
+      const STATUS_LABELS = {
+        ok: 'OK', error: 'Error', degraded: 'Degraded',
+        configured: 'Configured', not_configured: 'Not Set', unconfigured: 'Not Set',
+      };
+      document.getElementById('health-grid').innerHTML = Object.entries(d.components || {}).map(([name, status]) => `
+        <div class="health-item">
+          <div>
+            <div class="h-name">${esc(name.replace(/_/g,' ').replace(/\b\w/g, c => c.toUpperCase()))}</div>
+            <div class="h-sub">${name}</div>
+          </div>
+          <span class="badge badge-${esc(status)}">${esc(STATUS_LABELS[status] || status)}</span>
+        </div>`).join('');
+    } catch (e) {
+      document.getElementById('health-grid').innerHTML = `<div class="empty">Error: ${esc(e.message)}</div>`;
+    }
+  }
+
+  // ── Boot ───────────────────────────────────────────────────────────────────
+  (async () => {
+    const ok = await checkAuth();
+    if (ok) {
+      loadOverview();
+    }
+  })();
+</script>
+</body>
+</html>
