@@ -1822,16 +1822,22 @@
         _clerk.mountSignIn(signInContainer);
       }
 
+      function clerkUserInfo(u) {
+        const name = u.firstName ? (u.firstName + (u.lastName ? ' ' + u.lastName : '')) : null;
+        const email = u.emailAddresses?.[0]?.emailAddress || null;
+        return { name, email, plan: 'free' };
+      }
+
       _clerk.addListener(async ({ user }) => {
         if (user) {
           showApp();
-          // Sync user to our DB and render profile
+          renderUserPanel(clerkUserInfo(user), null, null); // immediate render from Clerk data
           const hdrs = await authHeaders();
           try {
             const r = await fetch('/api/me', { method: 'POST', headers: hdrs });
             const d = await r.json();
             renderUserPanel(d.user, d.usage, d.limits);
-          } catch(_) { renderUserPanel(null, null, null); }
+          } catch(_) {} // keep the Clerk-data render above
         } else {
           renderUserPanel(null, null, null);
           showLogin();
@@ -1840,6 +1846,7 @@
 
       if (_clerk.user) {
         showApp();
+        renderUserPanel(clerkUserInfo(_clerk.user), null, null);
       } else {
         showLogin();
       }
