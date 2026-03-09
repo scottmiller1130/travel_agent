@@ -170,9 +170,37 @@ class PreferenceStore:
                 )
 
     def set_many(self, updates: dict, user_id: str | None = None) -> None:
-        """Set multiple preferences at once."""
-        for key, value in updates.items():
-            self.set(key, value, user_id=user_id)
+        """Set multiple preferences at once in a single DB round-trip."""
+        if not updates:
+            return
+        self._ensure_db()
+        now = datetime.now().isoformat()
+        with get_conn() as conn:
+            cur = conn.cursor()
+            if user_id:
+                values = [(user_id, k, json.dumps(v), now) for k, v in updates.items()]
+                cur.executemany(
+                    """
+                    INSERT INTO user_preferences (user_id, key, value, updated_at)
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (user_id, key) DO UPDATE SET
+                        value      = EXCLUDED.value,
+                        updated_at = EXCLUDED.updated_at
+                    """,
+                    values,
+                )
+            else:
+                values = [(k, json.dumps(v), now) for k, v in updates.items()]
+                cur.executemany(
+                    """
+                    INSERT INTO preferences (key, value, updated_at)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (key) DO UPDATE SET
+                        value      = EXCLUDED.value,
+                        updated_at = EXCLUDED.updated_at
+                    """,
+                    values,
+                )
 
     def get_all(self, user_id: str | None = None) -> dict:
         """Return all preferences merged with defaults."""
