@@ -525,7 +525,7 @@ async def get_trips(session_id: str, request: Request):
     auth_user = _user_from_request(request)
     user_id = auth_user["user_id"] if auth_user else None
     trips = TripStore().get_all_trips(user_id=user_id)
-    return JSONResponse(trips)
+    return JSONResponse({"trips": trips})
 
 
 @app.post("/api/trips/{session_id}")
