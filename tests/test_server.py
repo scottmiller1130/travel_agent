@@ -57,7 +57,8 @@ def test_get_trips_returns_list():
     response = client.get("/api/trips/ci-session-no-trips")
     assert response.status_code == 200
     data = response.json()
-    assert isinstance(data, list)
+    assert "trips" in data
+    assert isinstance(data["trips"], list)
 
 
 # ── Reset ─────────────────────────────────────────────────────────────────────

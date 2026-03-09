@@ -46,6 +46,7 @@ from pydantic import BaseModel  # noqa: E402
 from starlette.middleware.base import BaseHTTPMiddleware  # noqa: E402
 
 from agent.core import TravelAgent  # noqa: E402
+from memory.backup import BackupStore  # noqa: E402
 from memory.preferences import PreferenceStore  # noqa: E402
 from memory.sessions import SessionStore  # noqa: E402
 from memory.trips import TripStore  # noqa: E402
@@ -110,6 +111,29 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 
 
 app.add_middleware(RequestLoggingMiddleware)
+
+# ---------------------------------------------------------------------------
+# Weekly backup — snapshots all trips into trip_backups table on startup and
+# every 7 days thereafter.  Keeps the last 8 snapshots (~2 months rolling).
+# ---------------------------------------------------------------------------
+_BACKUP_INTERVAL_SECS = 7 * 24 * 60 * 60  # 1 week
+
+
+async def _weekly_backup_loop():
+    await asyncio.sleep(60)  # Give the server 60 s to finish starting up
+    while True:
+        try:
+            info = BackupStore().create_backup()
+            log.info("Weekly trip backup complete: %s", info)
+        except Exception as exc:
+            log.error("Weekly trip backup failed: %s", exc)
+        await asyncio.sleep(_BACKUP_INTERVAL_SECS)
+
+
+@app.on_event("startup")
+async def _start_backup_loop():
+    asyncio.create_task(_weekly_backup_loop())
+
 
 # ---------------------------------------------------------------------------
 # Startup validation — fail fast if required environment variables are missing
@@ -525,7 +549,7 @@ async def get_trips(session_id: str, request: Request):
     auth_user = _user_from_request(request)
     user_id = auth_user["user_id"] if auth_user else None
     trips = TripStore().get_all_trips(user_id=user_id)
-    return JSONResponse(trips)
+    return JSONResponse({"trips": trips})
 
 
 @app.post("/api/trips/{session_id}")
@@ -1235,6 +1259,193 @@ async def booking_cancel(session_id: str):
         pending["approved"] = False
         pending["event"].set()
     return JSONResponse({"status": "ok"})
+
+
+# ---------------------------------------------------------------------------
+# Admin — two auth modes (either is sufficient):
+#
+#   1. ADMIN_SECRET (recommended without Clerk): set any secret string in
+#      Railway Variables; the admin UI will prompt for it on first visit and
+#      store it in sessionStorage.  Header: X-Admin-Secret: <value>
+#
+#   2. ADMIN_USER_IDS (when Clerk is configured): comma-separated Clerk user
+#      IDs.  The admin UI uses the Clerk JWT automatically.
+#
+# At least one must be set or all /api/admin/* routes return 503.
+# ---------------------------------------------------------------------------
+_ADMIN_IDS: set[str] = {
+    uid.strip() for uid in os.getenv("ADMIN_USER_IDS", "").split(",") if uid.strip()
+}
+_ADMIN_SECRET: str = os.getenv("ADMIN_SECRET", "").strip()
+
+
+def _require_admin(request: Request) -> dict:
+    """
+    Accept the request if EITHER:
+      - X-Admin-Secret header matches ADMIN_SECRET, OR
+      - Bearer JWT belongs to a user ID in ADMIN_USER_IDS
+    Returns a minimal user-like dict so callers can inspect identity.
+    """
+    if not _ADMIN_IDS and not _ADMIN_SECRET:
+        raise HTTPException(
+            status_code=503,
+            detail="Admin access is not configured. Set ADMIN_SECRET (or ADMIN_USER_IDS) in environment.",
+        )
+
+    # ── Secret-key path (works without Clerk) ──────────────────────────────
+    if _ADMIN_SECRET:
+        provided = request.headers.get("X-Admin-Secret", "")
+        if provided and secrets.compare_digest(provided, _ADMIN_SECRET):
+            return {"user_id": "__admin_secret__", "email": "admin"}
+
+    # ── Clerk JWT path ──────────────────────────────────────────────────────
+    if _ADMIN_IDS:
+        auth_user = _user_from_request(request)
+        if auth_user and auth_user["user_id"] in _ADMIN_IDS:
+            return auth_user
+
+    raise HTTPException(status_code=401, detail="Admin authentication required.")
+
+
+@app.get("/admin")
+async def admin_ui():
+    """Serve the admin dashboard HTML."""
+    admin_path = Path(__file__).parent / "static" / "admin.html"
+    if not admin_path.exists():
+        raise HTTPException(status_code=404, detail="Admin UI not found.")
+    return Response(content=admin_path.read_text(), media_type="text/html")
+
+
+@app.get("/api/admin/stats")
+async def admin_stats(request: Request):
+    """Dashboard overview metrics."""
+    _require_admin(request)
+    from memory.db import get_conn
+    from datetime import datetime as _dt, timedelta as _td
+    month = _dt.now().strftime("%Y-%m")
+    with get_conn() as conn:
+        cur = conn.cursor()
+
+        cur.execute("SELECT COUNT(*) FROM users")
+        total_users = cur.fetchone()[0]
+
+        cur.execute("SELECT plan, COUNT(*) FROM users GROUP BY plan")
+        by_plan = {r[0]: r[1] for r in cur.fetchall()}
+
+        cur.execute("SELECT COUNT(*) FROM trips")
+        total_trips = cur.fetchone()[0]
+
+        cur.execute("SELECT status, COUNT(*) FROM trips GROUP BY status")
+        trips_by_status = {r[0]: r[1] for r in cur.fetchall()}
+
+        cur.execute("SELECT COUNT(*) FROM sessions")
+        total_sessions = cur.fetchone()[0]
+
+        cutoff_7d = (_dt.now() - _td(days=7)).isoformat()
+        cur.execute("SELECT COUNT(*) FROM sessions WHERE updated_at > %s", (cutoff_7d,))
+        active_sessions_7d = cur.fetchone()[0]
+
+        cur.execute("SELECT SUM(chat_turns), SUM(api_calls) FROM usage WHERE month = %s", (month,))
+        row = cur.fetchone()
+        monthly_chats = row[0] or 0
+        monthly_api   = row[1] or 0
+
+    backups = BackupStore().list_backups()
+    return JSONResponse({
+        "users":    {"total": total_users, "by_plan": by_plan},
+        "trips":    {"total": total_trips, "by_status": trips_by_status},
+        "sessions": {"total": total_sessions, "active_7d": active_sessions_7d},
+        "usage":    {"month": month, "chat_turns": monthly_chats, "api_calls": monthly_api},
+        "backups":  {"count": len(backups), "latest": backups[0] if backups else None},
+    })
+
+
+@app.get("/api/admin/users")
+async def admin_list_users(request: Request):
+    """List all users with current-month usage."""
+    _require_admin(request)
+    users = UserStore().list_all()
+    return JSONResponse({"users": users})
+
+
+@app.patch("/api/admin/users/{user_id}/plan")
+async def admin_set_plan(user_id: str, request: Request):
+    """Change a user's subscription plan."""
+    _require_admin(request)
+    body = await request.json()
+    plan = body.get("plan", "").strip()
+    if plan not in ("free", "pro", "team"):
+        raise HTTPException(status_code=422, detail="plan must be free, pro, or team.")
+    UserStore().set_plan(user_id, plan)
+    return JSONResponse({"status": "ok", "user_id": user_id, "plan": plan})
+
+
+@app.delete("/api/admin/users/{user_id}")
+async def admin_delete_user(user_id: str, request: Request):
+    """Delete a user and all associated records."""
+    admin = _require_admin(request)
+    if user_id == admin["user_id"]:
+        raise HTTPException(status_code=400, detail="Cannot delete your own admin account.")
+    UserStore().delete(user_id)
+    return JSONResponse({"status": "ok"})
+
+
+@app.get("/api/admin/trips")
+async def admin_list_trips(request: Request):
+    """List all trips across all users."""
+    _require_admin(request)
+    trips = TripStore().get_all_admin()
+    return JSONResponse({"trips": trips})
+
+
+@app.delete("/api/admin/trips/{trip_id}")
+async def admin_delete_trip(trip_id: str, request: Request):
+    """Delete any trip regardless of owner."""
+    _require_admin(request)
+    TripStore().admin_delete(trip_id)
+    return JSONResponse({"status": "ok"})
+
+
+@app.get("/api/admin/sessions")
+async def admin_list_sessions(request: Request):
+    """List all sessions with metadata."""
+    _require_admin(request)
+    sessions = _session_store.list_sessions()
+    return JSONResponse({"sessions": sessions})
+
+
+@app.delete("/api/admin/sessions/{session_id}")
+async def admin_delete_session(session_id: str, request: Request):
+    """Force-delete a session."""
+    _require_admin(request)
+    _session_store.delete(session_id)
+    return JSONResponse({"status": "ok"})
+
+
+@app.get("/api/admin/backups")
+async def list_backups(request: Request):
+    """Return metadata for all stored trip backups."""
+    _require_admin(request)
+    backups = BackupStore().list_backups()
+    return JSONResponse({"backups": backups})
+
+
+@app.get("/api/admin/backups/{backup_id}")
+async def get_backup(backup_id: int, request: Request):
+    """Return the full trip snapshot for a backup."""
+    _require_admin(request)
+    snapshot = BackupStore().get_backup(backup_id)
+    if snapshot is None:
+        raise HTTPException(status_code=404, detail="Backup not found.")
+    return JSONResponse({"trips": snapshot})
+
+
+@app.post("/api/admin/backups")
+async def trigger_backup(request: Request):
+    """Manually trigger a trip backup immediately."""
+    _require_admin(request)
+    info = BackupStore().create_backup()
+    return JSONResponse({"status": "ok", **info})
 
 
 # ---------------------------------------------------------------------------

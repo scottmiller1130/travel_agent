@@ -182,5 +182,36 @@ class TripStore:
             else:
                 cur.execute("DELETE FROM trips WHERE id = %s", (trip_id,))
 
+    def get_all_admin(self) -> list[dict]:
+        """Return all trips across all users (admin view, no user filter)."""
+        self._ensure_db()
+        with get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT id, destination, start_date, end_date, status, user_id, created_at, updated_at "
+                "FROM trips ORDER BY updated_at DESC"
+            )
+            rows = cur.fetchall()
+        return [
+            {
+                "id":          r[0],
+                "destination": r[1],
+                "start_date":  r[2],
+                "end_date":    r[3],
+                "status":      r[4],
+                "user_id":     r[5],
+                "created_at":  r[6],
+                "updated_at":  r[7],
+            }
+            for r in rows
+        ]
+
+    def admin_delete(self, trip_id: str) -> None:
+        """Delete any trip regardless of owner (admin only)."""
+        self._ensure_db()
+        with get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("DELETE FROM trips WHERE id = %s", (trip_id,))
+
     def close(self):
         pass  # Connection pool is managed globally
