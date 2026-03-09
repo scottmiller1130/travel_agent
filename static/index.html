@@ -1882,7 +1882,7 @@
           try {
             const r = await fetch('/api/me', { method: 'POST', headers: hdrs });
             const d = await r.json();
-            if (d.user) renderUserPanel(d.user, d.usage, d.limits); // only update if server returned a user
+            if (d.user) { renderUserPanel(d.user, d.usage, d.limits); loadGroups(); } // only update if server returned a user
           } catch(_) {} // keep the Clerk-data render above
         } else {
           renderUserPanel(null, null, null);
@@ -1921,23 +1921,21 @@
 
   async function loadGroups() {
     if (!_currentUser) return;
+    // Show the section immediately — user is signed in
+    const section = document.getElementById('groups-section');
+    if (section) section.style.display = '';
     try {
       const [gr, pr] = await Promise.all([
-        _apiFetch('/api/groups').then(async r => {
-          if (!r.ok) throw new Error('auth_' + r.status);
-          return r.json();
-        }),
-        _apiFetch('/api/groups/pending').then(async r => {
-          if (!r.ok) return { invites: [] };
-          return r.json();
-        }),
+        _apiFetch('/api/groups').then(r => r.ok ? r.json() : Promise.resolve({ groups: [] })),
+        _apiFetch('/api/groups/pending').then(r => r.ok ? r.json() : Promise.resolve({ invites: [] })),
       ]);
       _groups = gr.groups || [];
       _pendingInvites = pr.invites || [];
-      renderGroupsSection();
     } catch (_) {
-      document.getElementById('groups-section').style.display = 'none';
+      _groups = [];
+      _pendingInvites = [];
     }
+    renderGroupsSection();
   }
 
   function renderGroupsSection() {
@@ -2017,7 +2015,7 @@
         body: JSON.stringify({ name }),
       });
       const d = await r.json();
-      if (!r.ok) { showToast(d.detail || 'Could not create group.'); return; }
+      if (!r.ok) { showToast(r.status === 401 ? 'Session expired — please refresh and sign in again.' : (d.detail || 'Could not create group.')); return; }
       document.getElementById('create-group-modal')?.remove();
       await loadGroups();
       if (d.group) showGroupModal(d.group.id);
