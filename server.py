@@ -1320,8 +1320,9 @@ async def admin_ui():
 async def admin_stats(request: Request):
     """Dashboard overview metrics."""
     _require_admin(request)
-    from memory.db import get_conn
     from datetime import datetime as _dt, timedelta as _td
+
+    from memory.db import get_conn
     month = _dt.now().strftime("%Y-%m")
     with get_conn() as conn:
         cur = conn.cursor()

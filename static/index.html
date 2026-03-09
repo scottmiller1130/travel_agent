@@ -1753,34 +1753,42 @@
     try { cfg = await (await fetch('/api/config')).json(); } catch(_) { return; }
     if (!cfg.auth_enabled || !cfg.clerk_publishable_key) return;
 
-    // Load Clerk JS SDK from Clerk's own CDN (derived from publishable key)
-    const _frontendApi = atob(cfg.clerk_publishable_key.split('_')[2]).replace(/\$$/, '');
-    await new Promise((resolve, reject) => {
-      const s = document.createElement('script');
-      s.src = `https://${_frontendApi}/npm/@clerk/clerk-js@latest/dist/clerk.browser.js`;
-      s.onload = resolve; s.onerror = reject;
-      document.head.appendChild(s);
-    });
+    // Show sign-in button immediately while Clerk loads
+    renderUserPanel(null, null, null);
 
-    _clerk = new window.Clerk(cfg.clerk_publishable_key);
-    await _clerk.load();
+    try {
+      // Load Clerk JS SDK from Clerk's own CDN (derived from publishable key)
+      const _frontendApi = atob(cfg.clerk_publishable_key.split('_')[2]).replace(/\$$/, '');
+      await new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = `https://${_frontendApi}/npm/@clerk/clerk-js@latest/dist/clerk.browser.js`;
+        s.onload = resolve; s.onerror = reject;
+        document.head.appendChild(s);
+      });
 
-    _clerk.addListener(async ({ user }) => {
-      if (user) {
-        // Sync user to our DB and render profile
-        const hdrs = await authHeaders();
-        try {
-          const r = await fetch('/api/me', { method: 'POST', headers: hdrs });
-          const d = await r.json();
-          renderUserPanel(d.user, d.usage, d.limits);
-        } catch(_) { renderUserPanel(null, null, null); }
-      } else {
+      _clerk = new window.Clerk(cfg.clerk_publishable_key);
+      await _clerk.load();
+
+      _clerk.addListener(async ({ user }) => {
+        if (user) {
+          // Sync user to our DB and render profile
+          const hdrs = await authHeaders();
+          try {
+            const r = await fetch('/api/me', { method: 'POST', headers: hdrs });
+            const d = await r.json();
+            renderUserPanel(d.user, d.usage, d.limits);
+          } catch(_) { renderUserPanel(null, null, null); }
+        } else {
+          renderUserPanel(null, null, null);
+        }
+      });
+
+      if (!_clerk.user) {
         renderUserPanel(null, null, null);
       }
-    });
-
-    if (!_clerk.user) {
-      renderUserPanel(null, null, null);
+    } catch(e) {
+      console.warn('Clerk failed to load:', e);
+      // sign-in panel already rendered above; leave it as-is
     }
   }
 
