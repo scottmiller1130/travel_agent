@@ -562,6 +562,42 @@
     .ws-chip .ws-name { font-size: 12px; font-weight: 600; color: var(--text-2); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .ws-chip .ws-count { font-size: 10px; font-weight: 600; color: var(--text-4); background: var(--border); border-radius: 4px; padding: 1px 5px; }
 
+    /* ── Groups section ── */
+    #groups-section { border-bottom: 1px solid var(--border); }
+    .groups-header { display: flex; align-items: center; padding: 8px 12px 4px; gap: 4px; }
+    .groups-header h3 { font-size: 10px; font-weight: 600; color: var(--text-4); text-transform: uppercase; letter-spacing: .1em; flex: 1; }
+    .groups-header-btn { background: none; border: none; cursor: pointer; color: var(--text-4); font-size: 14px; padding: 2px 5px; border-radius: 4px; line-height: 1; transition: all .15s; display: flex; align-items: center; }
+    .groups-header-btn:hover { background: var(--surface2); color: var(--text-2); }
+    #groups-badge { background: var(--indigo); color: #fff; border-radius: 8px; padding: 1px 5px; font-size: 9px; font-weight: 700; display: none; margin-left: 2px; }
+    #groups-badge.show { display: inline; }
+    #groups-list { padding: 2px 8px 6px; }
+    .group-chip { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-radius: var(--radius); cursor: pointer; transition: all .15s; }
+    .group-chip:hover { background: var(--surface2); }
+    .group-chip .gc-icon { font-size: 13px; flex-shrink: 0; }
+    .group-chip .gc-name { font-size: 12px; font-weight: 600; color: var(--text-2); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .group-chip .gc-count { font-size: 10px; font-weight: 500; color: var(--text-4); background: var(--border); border-radius: 4px; padding: 1px 5px; flex-shrink: 0; }
+    .group-pending-chip { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-radius: var(--radius); cursor: pointer; transition: all .15s; background: var(--indigo-l); border: 1px solid rgba(79,70,229,.2); margin-bottom: 4px; }
+    .group-pending-chip:hover { border-color: var(--indigo); }
+    .group-pending-chip .gpc-label { font-size: 11px; font-weight: 600; color: var(--indigo); flex: 1; }
+    .group-pending-chip .gpc-count { font-size: 10px; font-weight: 700; background: var(--indigo); color: #fff; border-radius: 8px; padding: 1px 6px; }
+
+    /* ── Group modal extras ── */
+    .gm-members { margin: 12px 0; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+    .gm-member { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 12px; }
+    .gm-member:last-child { border-bottom: none; }
+    .gm-member .mm-avatar { width: 22px; height: 22px; border-radius: 50%; background: var(--indigo-l); color: var(--indigo); font-size: 9px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .gm-member .mm-email { flex: 1; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .gm-member .mm-role { font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 4px; background: var(--surface2); color: var(--text-3); }
+    .gm-member .mm-role.owner { background: var(--gold-l); color: #92400e; }
+    .gm-member .mm-remove { background: none; border: none; cursor: pointer; color: var(--text-4); font-size: 13px; padding: 2px 4px; border-radius: 4px; transition: all .15s; }
+    .gm-member .mm-remove:hover { background: var(--rose-l); color: var(--rose); }
+    .gm-trips { max-height: 260px; overflow-y: auto; }
+    .gm-trip-card { padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 12px; }
+    .gm-trip-card:last-child { border-bottom: none; }
+    .gm-trip-card .gt-dest { font-weight: 600; color: var(--text); }
+    .gm-trip-card .gt-dates { color: var(--text-4); font-size: 11px; margin-top: 1px; }
+    .gm-empty { font-size: 12px; color: var(--text-4); padding: 12px; text-align: center; }
+
     /* ── Upgrade nudge ── */
     .upgrade-nudge { margin: 5px 12px; padding: 7px 10px; background: var(--green-l); border: 1px solid #a7f3d0; border-radius: var(--radius); cursor: pointer; transition: all .15s; }
     .upgrade-nudge:hover { border-color: #34d399; }
@@ -626,6 +662,15 @@
     <a class="btn" href="/help" target="_blank" style="text-decoration:none"><span class="icon">📖</span> User Guide</a>
   </div>
   <div id="workspace-slot"></div>
+  <div id="groups-section" style="display:none">
+    <div class="groups-header">
+      <h3>Groups</h3>
+      <span id="groups-badge" aria-live="polite"></span>
+      <button class="groups-header-btn" onclick="showPendingInvitesModal()" title="Pending invites" id="pending-invites-btn" style="display:none">🔔</button>
+      <button class="groups-header-btn" onclick="showCreateGroupModal()" title="Create group">＋</button>
+    </div>
+    <div id="groups-list"></div>
+  </div>
   <div class="sidebar-section"><h3>Saved Trips</h3></div>
   <div id="trips-list"><p class="empty-state">No trips yet.<br>Ask me to plan one!</p></div>
   <div style="padding:6px 14px 10px;border-top:1px solid var(--border)">
@@ -1725,7 +1770,9 @@
       if (chip) chip.style.display = 'none';
       return;
     }
+    const wasLoggedIn = !!_currentUser;
     _currentUser = user;
+    if (!wasLoggedIn) loadGroups(); // load once when user first authenticates
     const initial = (user.name || user.email || '?')[0].toUpperCase();
     const planClass = 'plan-' + (user.plan || 'free');
     const planLabel = (user.plan || 'free').charAt(0).toUpperCase() + (user.plan||'free').slice(1);
@@ -1866,6 +1913,283 @@
         <span class="ws-name">${escapeHtml(ws.name)}</span>
         <span class="ws-count">${ws.member_count} members</span>
       </div>`;
+  }
+
+  // ── Groups ────────────────────────────────────────────────────────────────
+  let _groups = [];
+  let _pendingInvites = [];
+
+  async function loadGroups() {
+    if (!_currentUser) return;
+    try {
+      const [gr, pr] = await Promise.all([
+        _apiFetch('/api/groups').then(r => r.json()),
+        _apiFetch('/api/groups/pending').then(r => r.json()),
+      ]);
+      _groups = gr.groups || [];
+      _pendingInvites = pr.invites || [];
+      renderGroupsSection();
+    } catch (_) {}
+  }
+
+  function renderGroupsSection() {
+    const section = document.getElementById('groups-section');
+    section.style.display = '';
+    const list = document.getElementById('groups-list');
+    const badge = document.getElementById('groups-badge');
+    const pendingBtn = document.getElementById('pending-invites-btn');
+
+    // Pending invite badge
+    if (_pendingInvites.length) {
+      badge.textContent = _pendingInvites.length;
+      badge.classList.add('show');
+      pendingBtn.style.display = '';
+    } else {
+      badge.classList.remove('show');
+      pendingBtn.style.display = 'none';
+    }
+
+    if (!_groups.length && !_pendingInvites.length) {
+      list.innerHTML = '<p class="empty-state" style="font-size:11px;padding:4px 8px 8px">No groups yet. Create one or accept an invite.</p>';
+      return;
+    }
+
+    let html = '';
+    if (_pendingInvites.length) {
+      html += `<div class="group-pending-chip" onclick="showPendingInvitesModal()">
+        <span>🔔</span>
+        <span class="gpc-label">${_pendingInvites.length} pending invite${_pendingInvites.length > 1 ? 's' : ''}</span>
+        <span class="gpc-count">${_pendingInvites.length}</span>
+      </div>`;
+    }
+    for (const g of _groups) {
+      html += `<div class="group-chip" onclick="showGroupModal('${escapeHtml(g.id)}')">
+        <span class="gc-icon">👥</span>
+        <span class="gc-name">${escapeHtml(g.name)}</span>
+        <span class="gc-count">${g.member_count} member${g.member_count !== 1 ? 's' : ''}</span>
+      </div>`;
+    }
+    list.innerHTML = html;
+  }
+
+  // Create group modal
+  function showCreateGroupModal() {
+    const ex = document.getElementById('create-group-modal');
+    if (ex) ex.remove();
+    const el = document.createElement('div');
+    el.id = 'create-group-modal';
+    el.className = 'ta-modal-overlay';
+    el.innerHTML = `
+      <div class="ta-modal" role="dialog" aria-modal="true" aria-labelledby="cg-title">
+        <div class="ta-modal-icon">👥</div>
+        <div class="ta-modal-title" id="cg-title">Create Group</div>
+        <div class="ta-modal-desc">Group members can see each other's saved trips.</div>
+        <input id="cg-name-input" class="ta-modal-input" type="text" placeholder="Group name (e.g. Family Vacation)" maxlength="60" autocomplete="off">
+        <div class="ta-modal-footer">
+          <button class="ta-modal-btn cancel" onclick="document.getElementById('create-group-modal').remove()">Cancel</button>
+          <button class="ta-modal-btn primary" onclick="submitCreateGroup()">Create</button>
+        </div>
+      </div>`;
+    document.body.appendChild(el);
+    setTimeout(() => el.querySelector('#cg-name-input').focus(), 50);
+    el.addEventListener('click', e => { if (e.target === el) el.remove(); });
+    el.querySelector('#cg-name-input').addEventListener('keydown', e => {
+      if (e.key === 'Enter') submitCreateGroup();
+    });
+  }
+
+  async function submitCreateGroup() {
+    const name = document.getElementById('cg-name-input')?.value.trim();
+    if (!name) { showToast('Enter a group name.'); return; }
+    try {
+      const r = await _apiFetch('/api/groups', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      });
+      const d = await r.json();
+      if (!r.ok) { showToast(d.detail || 'Could not create group.'); return; }
+      document.getElementById('create-group-modal')?.remove();
+      await loadGroups();
+      if (d.group) showGroupModal(d.group.id);
+    } catch (e) { showToast('Error: ' + e.message); }
+  }
+
+  // Group detail modal
+  async function showGroupModal(groupId) {
+    const ex = document.getElementById('group-detail-modal');
+    if (ex) ex.remove();
+    try {
+      const [gr, tr] = await Promise.all([
+        _apiFetch('/api/groups/' + groupId).then(r => r.json()),
+        _apiFetch('/api/groups/' + groupId + '/trips').then(r => r.json()),
+      ]);
+      if (!gr.group) { showToast('Group not found.'); return; }
+      _renderGroupModal(gr.group, gr.my_role, tr.trips || []);
+    } catch (e) { showToast('Could not load group: ' + e.message); }
+  }
+
+  function _renderGroupModal(group, myRole, trips) {
+    const ex = document.getElementById('group-detail-modal');
+    if (ex) ex.remove();
+    const isOwner = myRole === 'owner';
+
+    const membersHtml = group.members.map(m => {
+      const initial = (m.email || '?')[0].toUpperCase();
+      const joined = m.joined_at ? '' : ' <span style="font-size:10px;color:var(--text-4)">(pending)</span>';
+      const removeBtn = (isOwner && m.role !== 'owner')
+        ? `<button class="mm-remove" onclick="removeGroupMember('${escapeHtml(group.id)}','${escapeHtml(m.email)}')" title="Remove">✕</button>` : '';
+      return `<div class="gm-member">
+        <div class="mm-avatar">${escapeHtml(initial)}</div>
+        <span class="mm-email">${escapeHtml(m.email)}${joined}</span>
+        <span class="mm-role ${m.role}">${escapeHtml(m.role)}</span>
+        ${removeBtn}
+      </div>`;
+    }).join('');
+
+    const tripsHtml = trips.length
+      ? trips.slice(0, 10).map(t => {
+          const dates = [t.start_date, t.end_date].filter(Boolean).join(' → ');
+          return `<div class="gm-trip-card">
+            <div class="gt-dest">${escapeHtml(t.destination || 'Unknown')}</div>
+            ${dates ? `<div class="gt-dates">${escapeHtml(dates)}</div>` : ''}
+          </div>`;
+        }).join('')
+      : '<div class="gm-empty">No saved trips from group members yet.</div>';
+
+    const el = document.createElement('div');
+    el.id = 'group-detail-modal';
+    el.className = 'ta-modal-overlay';
+    el.innerHTML = `
+      <div class="ta-modal" style="max-width:480px" role="dialog" aria-modal="true" aria-labelledby="gd-title">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+          <span style="font-size:20px">👥</span>
+          <div class="ta-modal-title" id="gd-title" style="margin:0;flex:1">${escapeHtml(group.name)}</div>
+          ${isOwner ? `<button class="ta-modal-btn cancel" style="padding:5px 10px;font-size:11px" onclick="showInviteModal('${escapeHtml(group.id)}')">+ Invite</button>` : ''}
+        </div>
+        <div style="font-size:11px;font-weight:600;color:var(--text-4);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">Members</div>
+        <div class="gm-members">${membersHtml}</div>
+        <div style="font-size:11px;font-weight:600;color:var(--text-4);text-transform:uppercase;letter-spacing:.08em;margin:12px 0 6px">Group Trips</div>
+        <div class="gm-members gm-trips">${tripsHtml}</div>
+        <div style="display:flex;gap:8px;margin-top:14px">
+          <button class="ta-modal-btn cancel" style="flex:1" onclick="document.getElementById('group-detail-modal').remove()">Close</button>
+          ${isOwner ? `<button class="ta-modal-btn cancel" style="color:var(--rose);border-color:var(--rose-l)" onclick="confirmDeleteGroup('${escapeHtml(group.id)}')">Delete Group</button>` : ''}
+        </div>
+      </div>`;
+    document.body.appendChild(el);
+    el.addEventListener('click', e => { if (e.target === el) el.remove(); });
+  }
+
+  // Invite modal
+  function showInviteModal(groupId) {
+    document.getElementById('group-detail-modal')?.remove();
+    const el = document.createElement('div');
+    el.id = 'invite-group-modal';
+    el.className = 'ta-modal-overlay';
+    el.innerHTML = `
+      <div class="ta-modal" role="dialog" aria-modal="true" aria-labelledby="ig-title">
+        <div class="ta-modal-icon">✉️</div>
+        <div class="ta-modal-title" id="ig-title">Invite to Group</div>
+        <div class="ta-modal-desc">Enter the email address of the person you'd like to invite. They'll see it as a pending invite when they log in.</div>
+        <input id="ig-email-input" class="ta-modal-input" type="email" placeholder="colleague@example.com" autocomplete="off">
+        <div style="margin-top:10px;display:flex;align-items:center;gap:8px">
+          <label style="font-size:12px;color:var(--text-3);white-space:nowrap">Role:</label>
+          <select id="ig-role-select" style="font-size:12px;padding:4px 8px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);color:var(--text);font-family:inherit">
+            <option value="viewer">Viewer — can see trips</option>
+          </select>
+        </div>
+        <div class="ta-modal-footer">
+          <button class="ta-modal-btn cancel" onclick="document.getElementById('invite-group-modal').remove();showGroupModal('${escapeHtml(groupId)}')">Back</button>
+          <button class="ta-modal-btn primary" onclick="submitInvite('${escapeHtml(groupId)}')">Send Invite</button>
+        </div>
+      </div>`;
+    document.body.appendChild(el);
+    setTimeout(() => el.querySelector('#ig-email-input').focus(), 50);
+    el.addEventListener('click', e => { if (e.target === el) el.remove(); });
+    el.querySelector('#ig-email-input').addEventListener('keydown', e => {
+      if (e.key === 'Enter') submitInvite(groupId);
+    });
+  }
+
+  async function submitInvite(groupId) {
+    const email = document.getElementById('ig-email-input')?.value.trim();
+    const role = document.getElementById('ig-role-select')?.value || 'viewer';
+    if (!email || !email.includes('@')) { showToast('Enter a valid email address.'); return; }
+    try {
+      const r = await _apiFetch('/api/groups/' + groupId + '/invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, role }),
+      });
+      const d = await r.json();
+      if (r.status === 429) { showToast(d.detail || 'Invite limit reached.'); return; }
+      if (!r.ok) { showToast(d.detail || 'Could not send invite.'); return; }
+      document.getElementById('invite-group-modal')?.remove();
+      showToast('Invite sent to ' + email);
+      showGroupModal(groupId);
+      loadGroups();
+    } catch (e) { showToast('Error: ' + e.message); }
+  }
+
+  // Remove member
+  async function removeGroupMember(groupId, email) {
+    if (!confirm(`Remove ${email} from this group?`)) return;
+    try {
+      const r = await _apiFetch('/api/groups/' + groupId + '/members/' + encodeURIComponent(email), { method: 'DELETE' });
+      if (!r.ok) { const d = await r.json(); showToast(d.detail || 'Could not remove member.'); return; }
+      showGroupModal(groupId);
+      loadGroups();
+    } catch (e) { showToast('Error: ' + e.message); }
+  }
+
+  // Delete group
+  async function confirmDeleteGroup(groupId) {
+    if (!confirm('Delete this group? This cannot be undone.')) return;
+    try {
+      const r = await _apiFetch('/api/groups/' + groupId, { method: 'DELETE' });
+      if (!r.ok) { const d = await r.json(); showToast(d.detail || 'Could not delete group.'); return; }
+      document.getElementById('group-detail-modal')?.remove();
+      showToast('Group deleted.');
+      loadGroups();
+    } catch (e) { showToast('Error: ' + e.message); }
+  }
+
+  // Pending invites modal
+  function showPendingInvitesModal() {
+    const ex = document.getElementById('pending-invites-modal');
+    if (ex) ex.remove();
+    const el = document.createElement('div');
+    el.id = 'pending-invites-modal';
+    el.className = 'ta-modal-overlay';
+    const rows = _pendingInvites.length
+      ? _pendingInvites.map(inv => `
+          <div class="gm-member">
+            <div class="mm-avatar">👥</div>
+            <span class="mm-email">${escapeHtml(inv.name || inv.id)}</span>
+            <button class="ta-modal-btn primary" style="padding:4px 10px;font-size:11px" onclick="joinGroup('${escapeHtml(inv.id)}')">Join</button>
+          </div>`)
+        .join('')
+      : '<div class="gm-empty">No pending invites.</div>';
+    el.innerHTML = `
+      <div class="ta-modal" role="dialog" aria-modal="true" aria-labelledby="pi-title">
+        <div class="ta-modal-icon">🔔</div>
+        <div class="ta-modal-title" id="pi-title">Pending Invites</div>
+        <div class="ta-modal-desc">You've been invited to these groups. Joining lets you see each other's saved trips.</div>
+        <div class="gm-members">${rows}</div>
+        <button class="ta-modal-btn cancel" style="width:100%;margin-top:14px" onclick="document.getElementById('pending-invites-modal').remove()">Close</button>
+      </div>`;
+    document.body.appendChild(el);
+    el.addEventListener('click', e => { if (e.target === el) el.remove(); });
+  }
+
+  async function joinGroup(groupId) {
+    try {
+      const r = await _apiFetch('/api/groups/' + groupId + '/join', { method: 'POST' });
+      if (!r.ok) { const d = await r.json(); showToast(d.detail || 'Could not join group.'); return; }
+      document.getElementById('pending-invites-modal')?.remove();
+      showToast('Joined group!');
+      await loadGroups();
+    } catch (e) { showToast('Error: ' + e.message); }
   }
 
   // ── Wrap fetch calls to include auth header ───────────────────────────────
