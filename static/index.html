@@ -585,13 +585,19 @@
     .ta-modal-note { font-size: 11px; color: #94a3b8; margin-top: 8px; }
 
     /* ── Login screen ── */
-    #login-screen { position: fixed; inset: 0; z-index: 9999; background: linear-gradient(145deg, #0369a1 0%, #0ea5e9 50%, #0d9488 100%); display: flex; align-items: center; justify-content: center; }
+    #login-screen { position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 99999; background: linear-gradient(145deg, #0369a1 0%, #0ea5e9 50%, #0d9488 100%); display: flex; align-items: center; justify-content: center; }
     #login-screen.hidden { display: none; }
-    #login-card { background: #fff; border-radius: 24px; padding: 44px 40px 36px; box-shadow: 0 32px 80px rgba(0,0,0,.22); max-width: 420px; width: 90%; text-align: center; }
+    #login-card { background: #fff; border-radius: 24px; padding: 44px 40px 36px; box-shadow: 0 32px 80px rgba(0,0,0,.22); max-width: 420px; width: 90%; text-align: center; position: relative; }
     .login-plane { font-size: 52px; margin-bottom: 14px; line-height: 1; display: block; }
     #login-card h2 { font-size: 28px; font-weight: 900; color: #0f172a; letter-spacing: -.5px; margin-bottom: 6px; }
     #login-card .login-sub { font-size: 14px; color: #64748b; margin-bottom: 28px; line-height: 1.5; }
     #clerk-sign-in-container { min-height: 60px; }
+    /* ── Header user chip ── */
+    #header-user-chip { display: flex; align-items: center; gap: 8px; background: rgba(14,165,233,.1); border: 1.5px solid rgba(14,165,233,.25); border-radius: 20px; padding: 5px 12px 5px 8px; cursor: default; }
+    #header-user-chip .huc-avatar { width: 26px; height: 26px; border-radius: 50%; background: linear-gradient(135deg, var(--sky), var(--teal)); color: #fff; font-size: 11px; font-weight: 800; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    #header-user-chip .huc-name { font-size: 12px; font-weight: 600; color: var(--text-2); max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #header-user-chip .huc-signout { font-size: 11px; font-weight: 600; color: var(--text-4); background: none; border: none; cursor: pointer; padding: 2px 4px; border-radius: 6px; transition: color .15s, background .15s; }
+    #header-user-chip .huc-signout:hover { color: var(--rose); background: var(--rose-l); }
   </style>
 </head>
 <body>
@@ -654,6 +660,7 @@
           <input type="file" id="import-file-input" accept=".json,application/json" style="display:none" onchange="handleImportFile(event)">
         </div>
       </div>
+      <div id="header-user-chip" style="display:none"></div>
       <button id="board-toggle-btn" onclick="toggleBoard()" aria-label="Toggle trip planning board" aria-expanded="false" aria-controls="board-panel">🗺 Trip Board <span id="issue-badge" aria-live="polite"></span></button>
     </div>
   </div>
@@ -1706,12 +1713,14 @@
 
   function renderUserPanel(user, usage, limits) {
     const el = document.getElementById('user-panel');
+    const chip = document.getElementById('header-user-chip');
     if (!user) {
       el.innerHTML = `
         <div class="signin-prompt">
           <p>Sign in to save trips across devices and get your personal planning space.</p>
           <button id="sign-in-btn" onclick="_clerk&&_clerk.openSignIn()">Sign In / Create Account</button>
         </div>`;
+      if (chip) chip.style.display = 'none';
       return;
     }
     _currentUser = user;
@@ -1745,6 +1754,14 @@
         <div class="un-title">⚡ Upgrade to Pro</div>
         <div class="un-desc">Unlimited chats · $19/month</div>
       </div>` : ''}`;
+    // Update header chip
+    if (chip) {
+      chip.style.display = 'flex';
+      chip.innerHTML = `
+        <div class="huc-avatar">${initial}</div>
+        <span class="huc-name">${escapeHtml(user.name || user.email || 'Account')}</span>
+        <button class="huc-signout" onclick="_clerk&&_clerk.signOut()" title="Sign out">Sign out</button>`;
+    }
   }
 
   function showUpgradeModal() {
