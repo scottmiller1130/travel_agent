@@ -72,32 +72,50 @@ def _sanitize_conversation(conversation: list[dict]) -> list[dict]:
     return result
 
 
-def _strip_orphaned_tool_results(messages: list[dict]) -> list[dict]:
-    """Remove leading user messages that contain only tool_result blocks with no
-    preceding assistant tool_use message.
+def _heal_conversation(conversation: list[dict]) -> list[dict]:
+    """Remove any user messages whose tool_result blocks lack a matching tool_use
+    in the immediately preceding assistant message.
 
-    This can happen after conversation trimming cuts between an assistant
-    tool_use message and the following user tool_result message.  The Claude
-    API rejects such conversations with a 400 error.
+    This catches corruption anywhere in the conversation — not just at the start —
+    whether caused by a server crash, mid-conversation trimming that split a
+    tool_use/tool_result pair, or a stale DB row written before the sanitizers ran.
+
+    The loop repeats until no more changes are needed because removing one broken
+    message can expose another (e.g. the preceding assistant message now has
+    tool_use blocks with no following tool_results, which _sanitize_conversation
+    will then strip).
     """
-    result = list(messages)
-    # Collect all tool_use IDs present in assistant messages
-    while result:
-        first = result[0]
-        if first.get("role") != "user":
-            break
-        content = first.get("content", [])
-        if not isinstance(content, list):
-            break
-        # Check if this user message is purely tool_result blocks
-        is_all_tool_results = content and all(
-            isinstance(b, dict) and b.get("type") == "tool_result"
-            for b in content
-        )
-        if not is_all_tool_results:
-            break
-        # No preceding assistant message — these tool_results are orphaned
-        result.pop(0)
+    result = _sanitize_conversation(list(conversation))
+    changed = True
+    while changed:
+        changed = False
+        for i, msg in enumerate(result):
+            if msg.get("role") != "user":
+                continue
+            content = msg.get("content", [])
+            if not isinstance(content, list):
+                continue
+            result_ids = {
+                b.get("tool_use_id")
+                for b in content
+                if isinstance(b, dict) and b.get("type") == "tool_result" and b.get("tool_use_id")
+            }
+            if not result_ids:
+                continue
+            # Check the immediately preceding message has matching tool_use IDs
+            prev = result[i - 1] if i > 0 else None
+            prev_content = (prev or {}).get("content", [])
+            use_ids = {
+                b.get("id")
+                for b in (prev_content if isinstance(prev_content, list) else [])
+                if isinstance(b, dict) and b.get("type") == "tool_use" and b.get("id")
+            }
+            if result_ids - use_ids:
+                # Orphaned tool_result found — drop this user message and re-sanitize
+                result.pop(i)
+                result = _sanitize_conversation(result)
+                changed = True
+                break  # restart the scan from the beginning
     return result
 
 
@@ -337,9 +355,9 @@ class TravelAgent:
         head = self._conversation[:KEEP_INITIAL_MESSAGES]
         tail = self._conversation[-KEEP_RECENT_MESSAGES:]
 
-        # Drop any leading tool_result messages in the tail whose matching
+        # Heal the tail: remove any tool_result messages whose matching
         # tool_use assistant message was trimmed away.
-        tail = _strip_orphaned_tool_results(tail)
+        tail = _heal_conversation(tail)
 
         dropped = len(self._conversation) - KEEP_INITIAL_MESSAGES - KEEP_RECENT_MESSAGES
         bridge = {
@@ -363,6 +381,9 @@ class TravelAgent:
         self._progress_callback = progress_callback
         self._conversation.append({"role": "user", "content": user_message})
         self._trim_conversation()
+        # Heal the full conversation before every API call so any corruption
+        # (from DB, trimming, or a previous crash) is fixed regardless of cause.
+        self._conversation = _heal_conversation(self._conversation)
         system = self._build_system_prompt()
 
         while True:
@@ -460,8 +481,8 @@ class TravelAgent:
         return self._conversation
 
     def load_conversation(self, conversation: list[dict]) -> None:
-        """Restore a previously saved conversation, stripping any incomplete tool turns."""
-        self._conversation = _strip_orphaned_tool_results(_sanitize_conversation(conversation))
+        """Restore a previously saved conversation, healing any incomplete tool turns."""
+        self._conversation = _heal_conversation(conversation)
 
     def get_itinerary(self) -> dict | None:
         """Return the most recent itinerary pushed via update_itinerary."""
