@@ -72,6 +72,35 @@ def _sanitize_conversation(conversation: list[dict]) -> list[dict]:
     return result
 
 
+def _strip_orphaned_tool_results(messages: list[dict]) -> list[dict]:
+    """Remove leading user messages that contain only tool_result blocks with no
+    preceding assistant tool_use message.
+
+    This can happen after conversation trimming cuts between an assistant
+    tool_use message and the following user tool_result message.  The Claude
+    API rejects such conversations with a 400 error.
+    """
+    result = list(messages)
+    # Collect all tool_use IDs present in assistant messages
+    while result:
+        first = result[0]
+        if first.get("role") != "user":
+            break
+        content = first.get("content", [])
+        if not isinstance(content, list):
+            break
+        # Check if this user message is purely tool_result blocks
+        is_all_tool_results = content and all(
+            isinstance(b, dict) and b.get("type") == "tool_result"
+            for b in content
+        )
+        if not is_all_tool_results:
+            break
+        # No preceding assistant message — these tool_results are orphaned
+        result.pop(0)
+    return result
+
+
 def _blocks_to_dicts(content) -> list[dict] | str:
     """Convert Anthropic SDK content blocks to plain JSON-serialisable dicts.
 
@@ -308,6 +337,10 @@ class TravelAgent:
         head = self._conversation[:KEEP_INITIAL_MESSAGES]
         tail = self._conversation[-KEEP_RECENT_MESSAGES:]
 
+        # Drop any leading tool_result messages in the tail whose matching
+        # tool_use assistant message was trimmed away.
+        tail = _strip_orphaned_tool_results(tail)
+
         dropped = len(self._conversation) - KEEP_INITIAL_MESSAGES - KEEP_RECENT_MESSAGES
         bridge = {
             "role": "user",
@@ -428,7 +461,7 @@ class TravelAgent:
 
     def load_conversation(self, conversation: list[dict]) -> None:
         """Restore a previously saved conversation, stripping any incomplete tool turns."""
-        self._conversation = _sanitize_conversation(conversation)
+        self._conversation = _strip_orphaned_tool_results(_sanitize_conversation(conversation))
 
     def get_itinerary(self) -> dict | None:
         """Return the most recent itinerary pushed via update_itinerary."""

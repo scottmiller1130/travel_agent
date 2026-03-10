@@ -231,11 +231,20 @@ def _verify_clerk_token(token: str) -> dict | None:
     # ── Method 1: static RSA public key (no network) ───────────────────────
     pem = os.getenv("CLERK_JWT_VERIFICATION_KEY", "").strip()
     if pem:
-        # Railway / Heroku variables sometimes collapse PEM newlines into spaces
+        # Railway / Heroku variables sometimes collapse PEM newlines into spaces.
+        # Reconstruct via regex so multi-word headers like "BEGIN PUBLIC KEY" survive.
         if "\n" not in pem and "-----" in pem:
-            pem = pem.replace(" ", "\n").replace("\nBEGIN\n", " BEGIN ").replace(
-                "\nEND\n", " END "
+            import re as _re
+            _m = _re.match(
+                r"(-----BEGIN [^-]+-----)\s*(.+?)\s*(-----END [^-]+-----)",
+                pem,
+                _re.DOTALL,
             )
+            if _m:
+                _header, _body, _footer = _m.group(1), _m.group(2), _m.group(3)
+                _body = _re.sub(r"\s+", "", _body)
+                _body_lines = "\n".join(_body[i : i + 64] for i in range(0, len(_body), 64))
+                pem = f"{_header}\n{_body_lines}\n{_footer}"
         try:
             payload = _jwt.decode(
                 token,
