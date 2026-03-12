@@ -586,24 +586,44 @@ class TravelAgent:
         # after the first call.
         cached_system = [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
 
+        _api_retry_delays = [2, 4, 8]  # seconds between retries for transient errors
+
         while True:
-            try:
-                response = self._client.messages.create(
-                    model="claude-sonnet-4-6",
-                    max_tokens=4096,
-                    system=cached_system,
-                    tools=_tools_with_cache,
-                    messages=self._conversation,
-                )
-            except anthropic.BadRequestError as e:
-                body = e.body or {}
-                err = body.get("error", {}) if isinstance(body, dict) else {}
-                if "usage limits" in err.get("message", "").lower():
-                    raise RuntimeError(
-                        "The AI service is temporarily unavailable due to an API usage limit on the server. "
-                        "Please try again later or contact support."
-                    ) from None
-                raise
+            for attempt, _delay in enumerate([0] + _api_retry_delays):
+                if _delay:
+                    time.sleep(_delay)
+                try:
+                    response = self._client.messages.create(
+                        model="claude-sonnet-4-6",
+                        max_tokens=4096,
+                        system=cached_system,
+                        tools=_tools_with_cache,
+                        messages=self._conversation,
+                    )
+                    break  # success — exit retry loop
+                except anthropic.BadRequestError as e:
+                    body = e.body or {}
+                    err = body.get("error", {}) if isinstance(body, dict) else {}
+                    if "usage limits" in err.get("message", "").lower():
+                        raise RuntimeError(
+                            "The AI service is temporarily unavailable due to an API usage limit on the server. "
+                            "Please try again later or contact support."
+                        ) from None
+                    raise  # non-retryable bad request
+                except (anthropic.APIStatusError, anthropic.APIConnectionError, anthropic.APITimeoutError) as e:
+                    status = getattr(e, "status_code", None)
+                    # 529 = overloaded, 529/503/502 = transient server errors
+                    retryable = status in (429, 502, 503, 529) or isinstance(
+                        e, (anthropic.APIConnectionError, anthropic.APITimeoutError)
+                    )
+                    if retryable and attempt < len(_api_retry_delays):
+                        log.warning("Anthropic API transient error (status=%s), retrying in %ds…", status, _api_retry_delays[attempt])
+                        continue
+                    if status in (429, 502, 503, 529):
+                        raise RuntimeError(
+                            "The AI service is temporarily overloaded. Please wait a moment and try again."
+                        ) from None
+                    raise
 
             self._conversation.append({"role": "assistant", "content": _blocks_to_dicts(response.content)})
 
