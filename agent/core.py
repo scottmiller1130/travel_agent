@@ -74,79 +74,98 @@ def _sanitize_conversation(conversation: list[dict]) -> list[dict]:
     return result
 
 
+def _tool_use_ids(msg: dict) -> set[str]:
+    """Return the set of tool_use IDs in an assistant message."""
+    content = msg.get("content", [])
+    if not isinstance(content, list):
+        return set()
+    return {b["id"] for b in content if isinstance(b, dict) and b.get("type") == "tool_use" and b.get("id")}
+
+
+def _tool_result_ids(msg: dict) -> set[str]:
+    """Return the set of tool_use_ids referenced by tool_result blocks in a user message."""
+    content = msg.get("content", [])
+    if not isinstance(content, list):
+        return set()
+    return {
+        b["tool_use_id"]
+        for b in content
+        if isinstance(b, dict) and b.get("type") == "tool_result" and b.get("tool_use_id")
+    }
+
+
 def _heal_conversation(conversation: list[dict]) -> list[dict]:
-    """Remove messages that would cause a 400 tool_use/tool_result mismatch.
+    """Return a copy of *conversation* with every structural violation removed.
 
-    Two corruption cases are handled:
+    The Anthropic API enforces these invariants that can be broken by trimming,
+    DB corruption, aborted requests, or conversation stitching:
 
-    Case 1 — orphaned tool_result: a user message contains tool_result blocks
-      whose tool_use_id is not present in the immediately preceding assistant
-      message.  This happens when trimming removes the assistant turn but keeps
-      the result turn, or when a crash saves the result without the call.
+      (0) Trailing assistant-with-tool_use  — _sanitize_conversation strips it.
+      (1) Leading assistant message          — API requires first message = user.
+      (2) Consecutive same-role messages    — two users or two assistants in a row.
+      (3) Orphaned tool_result (Case 1)     — user message whose tool_result IDs
+            have no matching tool_use in the immediately preceding assistant turn.
+      (4) Orphaned tool_use (Case 2)        — assistant message whose tool_use IDs
+            are not all answered in the immediately following user turn.
 
-    Case 2 — orphaned tool_use: an assistant message contains tool_use blocks
-      that are NOT answered by matching tool_result blocks in the very next
-      message.  This happens when trimming keeps a tool_use call in the head
-      but the matching result lands in the dropped middle, or when a conversation
-      is reassembled after slicing (e.g. head + bridge + tail).
-
-    The loop repeats until stable because removing one broken message can expose
-    another (e.g. removing a tool_result exposes its now-dangling tool_use,
-    which _sanitize_conversation then strips from the tail).
+    The loop repeats until no pass finds anything to remove, because fixing one
+    violation can expose another (e.g. removing an assistant(tool_use) may leave
+    two adjacent user messages that then trigger rule 2).
     """
     result = _sanitize_conversation(list(conversation))
+
     changed = True
     while changed:
         changed = False
+
+        # Rule 1: conversation must start with a user message.
+        if result and result[0].get("role") != "user":
+            result.pop(0)
+            result = _sanitize_conversation(result)
+            changed = True
+            continue
+
         for i, msg in enumerate(result):
+            role = msg.get("role")
+
+            # Rule 2: no two consecutive messages with the same role.
+            if i > 0 and result[i - 1].get("role") == role:
+                # Keep the later message — it has more recent context.
+                # Exception: if the earlier message holds tool_results that are
+                # still needed, keep the earlier one instead.
+                keep_later = not bool(_tool_result_ids(result[i - 1]))
+                result.pop(i - 1 if keep_later else i)
+                result = _sanitize_conversation(result)
+                changed = True
+                break
+
             content = msg.get("content", [])
             if not isinstance(content, list):
                 content = []
 
-            if msg.get("role") == "user":
-                # Case 1: user message has tool_results with no matching tool_use
+            if role == "user":
+                # Rule 3 (Case 1): orphaned tool_result — no matching tool_use
                 # in the immediately preceding assistant message.
-                result_ids = {
-                    b.get("tool_use_id")
-                    for b in content
-                    if isinstance(b, dict) and b.get("type") == "tool_result" and b.get("tool_use_id")
-                }
+                result_ids = _tool_result_ids(msg)
                 if not result_ids:
                     continue
                 prev = result[i - 1] if i > 0 else None
-                prev_content = (prev or {}).get("content", [])
-                use_ids = {
-                    b.get("id")
-                    for b in (prev_content if isinstance(prev_content, list) else [])
-                    if isinstance(b, dict) and b.get("type") == "tool_use" and b.get("id")
-                }
+                use_ids = _tool_use_ids(prev) if prev else set()
                 if result_ids - use_ids:
                     result.pop(i)
                     result = _sanitize_conversation(result)
                     changed = True
                     break
 
-            elif msg.get("role") == "assistant":
-                # Case 2: assistant message has tool_use blocks that are not
-                # answered by matching tool_results in the very next message.
-                use_ids = {
-                    b.get("id")
-                    for b in content
-                    if isinstance(b, dict) and b.get("type") == "tool_use" and b.get("id")
-                }
+            elif role == "assistant":
+                # Rule 4 (Case 2): orphaned tool_use — not all IDs answered by
+                # the immediately following user message's tool_results.
+                use_ids = _tool_use_ids(msg)
                 if not use_ids:
                     continue
                 next_msg = result[i + 1] if i + 1 < len(result) else None
-                next_content = (next_msg or {}).get("content", [])
-                result_ids = {
-                    b.get("tool_use_id")
-                    for b in (next_content if isinstance(next_content, list) else [])
-                    if isinstance(b, dict) and b.get("type") == "tool_result" and b.get("tool_use_id")
-                }
+                result_ids = _tool_result_ids(next_msg) if next_msg else set()
                 if use_ids - result_ids:
-                    # Drop the assistant turn; the Case 1 check will clean up
-                    # any now-orphaned tool_result in the following user message
-                    # on the next iteration.
                     result.pop(i)
                     result = _sanitize_conversation(result)
                     changed = True
@@ -178,6 +197,10 @@ def _estimate_tokens(messages: list[dict]) -> int:
 
     Avoids an extra API call just to count tokens. Good enough for trimming
     decisions — we're targeting a 15k-token threshold, not an exact limit.
+
+    Document blocks (base64 PDFs) are excluded from counting — they are
+    stripped from history after the first API call via _strip_document_blocks,
+    so their multi-MB base64 data never inflates the estimate.
     """
     total = 0
     for msg in messages:
@@ -187,8 +210,59 @@ def _estimate_tokens(messages: list[dict]) -> int:
         elif isinstance(content, list):
             for block in content:
                 if isinstance(block, dict):
+                    if block.get("type") == "document":
+                        continue  # base64 PDFs would inflate the estimate wildly
                     total += len(json.dumps(block))
     return total // 4
+
+
+def _strip_document_blocks(conversation: list[dict]) -> list[dict]:
+    """Replace document (base64 PDF) blocks in all but the last user message
+    with a slim placeholder so the multi-MB base64 payload is never re-sent.
+
+    After the first API call the model has already seen the document.  Keeping
+    the full base64 in the conversation list would (a) inflate _estimate_tokens,
+    causing the tail-builder to discard nearly the entire history, and (b)
+    waste tokens on every subsequent call.
+    """
+    if not conversation:
+        return conversation
+
+    result = []
+    # Find the index of the last user message that contains a document block.
+    last_doc_user_idx = -1
+    for i, msg in enumerate(conversation):
+        if msg.get("role") == "user":
+            content = msg.get("content", [])
+            if isinstance(content, list) and any(
+                isinstance(b, dict) and b.get("type") == "document" for b in content
+            ):
+                last_doc_user_idx = i
+
+    for i, msg in enumerate(conversation):
+        if i == last_doc_user_idx:
+            # Keep this one intact — it's the one that will be (or was just) sent.
+            result.append(msg)
+            continue
+        content = msg.get("content", [])
+        if not isinstance(content, list):
+            result.append(msg)
+            continue
+        # Strip document blocks from older messages, leaving a text placeholder.
+        new_content = []
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "document":
+                source = block.get("source", {})
+                media = source.get("media_type", "document")
+                new_content.append({
+                    "type": "text",
+                    "text": f"[{media} attachment was processed in a prior turn]",
+                })
+            else:
+                new_content.append(block)
+        result.append({**msg, "content": new_content})
+
+    return result
 
 
 TOOL_LABELS = {
@@ -497,6 +571,10 @@ class TravelAgent:
         else:
             content = user_message
         self._conversation.append({"role": "user", "content": content})
+        # Strip base64 document payloads from older turns before trimming/healing
+        # so the multi-MB data doesn't inflate _estimate_tokens and cause the
+        # tail-builder to discard the entire conversation history.
+        self._conversation = _strip_document_blocks(self._conversation)
         self._trim_conversation()
         # Heal the full conversation before every API call so any corruption
         # (from DB, trimming, or a previous crash) is fixed regardless of cause.
