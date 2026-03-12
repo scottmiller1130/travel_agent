@@ -8,6 +8,7 @@ Booking actions (book_flight, book_hotel) require explicit user confirmation
 before payment_confirmed is set to True.
 """
 
+import base64
 import copy
 import json
 import logging
@@ -438,16 +439,31 @@ class TravelAgent:
         }
         self._conversation = head + [bridge] + tail
 
-    def chat(self, user_message: str, progress_callback: Callable | None = None) -> str:
+    def chat(
+        self,
+        user_message: str,
+        progress_callback: Callable | None = None,
+        file_bytes: bytes | None = None,
+        file_name: str | None = None,
+        file_media_type: str | None = None,
+    ) -> str:
         """Send a message and run the agentic loop until a final response is produced.
 
         Args:
             progress_callback: Optional callable(event_type: str, data: dict).
                                Called with ("tool_start", {"tool": ..., "label": ...})
                                and ("tool_done", {"tool": ...}) around each tool call.
+            file_bytes: Raw bytes of an attached file (PDF or plain text).
+            file_name: Original filename, used for context in the prompt.
+            file_media_type: MIME type — "application/pdf" or "text/plain".
         """
         self._progress_callback = progress_callback
-        self._conversation.append({"role": "user", "content": user_message})
+
+        if file_bytes:
+            content = self._build_file_content(user_message, file_bytes, file_name, file_media_type)
+        else:
+            content = user_message
+        self._conversation.append({"role": "user", "content": content})
         self._trim_conversation()
         # Heal the full conversation before every API call so any corruption
         # (from DB, trimming, or a previous crash) is fixed regardless of cause.
@@ -574,6 +590,49 @@ class TravelAgent:
     def load_itinerary(self, itinerary: dict | None) -> None:
         """Restore a previously saved itinerary."""
         self._current_trip = itinerary or {}
+
+    def _build_file_content(
+        self,
+        user_message: str,
+        file_bytes: bytes,
+        file_name: str | None,
+        file_media_type: str | None,
+    ) -> list[dict]:
+        """Build an Anthropic content block list that includes the attached file.
+
+        PDFs are sent as native document blocks so Claude reads them directly.
+        Plain-text files are inlined as a fenced code block in a text message.
+        """
+        label = f'"{file_name}"' if file_name else "the attached document"
+        instruction = (
+            user_message
+            or f"Please analyse {label} and import any itinerary it contains."
+        )
+
+        if file_media_type == "application/pdf":
+            return [
+                {
+                    "type": "document",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "application/pdf",
+                        "data": base64.standard_b64encode(file_bytes).decode(),
+                    },
+                },
+                {"type": "text", "text": instruction},
+            ]
+
+        # Plain text / markdown — inline the content
+        text_content = file_bytes.decode("utf-8", errors="replace")
+        return [
+            {
+                "type": "text",
+                "text": (
+                    f"[Attached file: {file_name or 'document'}]\n\n"
+                    f"```\n{text_content}\n```\n\n{instruction}"
+                ),
+            }
+        ]
 
     def _build_system_prompt(self) -> str:
         if self._system_prompt_cache is not None:

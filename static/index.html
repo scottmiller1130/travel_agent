@@ -302,6 +302,11 @@
     #send-btn:hover { background: var(--indigo-d); }
     #send-btn:active { transform: scale(.93); }
     #send-btn:disabled { background: var(--surface2); cursor: not-allowed; color: var(--text-4); }
+    #attach-btn { width: 40px; height: 40px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--surface); color: var(--text-2); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 16px; transition: all .15s var(--ease); flex-shrink: 0; }
+    #attach-btn:hover { background: var(--surface2); border-color: var(--border2); }
+    #attached-file-badge { display: none; align-items: center; gap: 6px; margin: 4px 0 0; padding: 4px 10px; background: var(--indigo-l); border: 1px solid #c7d2fe; border-radius: 20px; font-size: 12px; color: var(--indigo); width: fit-content; max-width: 100%; }
+    #attached-file-badge span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 280px; }
+    #attached-file-badge button { border: none; background: none; cursor: pointer; color: var(--indigo); padding: 0 0 0 2px; font-size: 13px; line-height: 1; flex-shrink: 0; }
     .hints { margin-top: 8px; display: flex; gap: 4px; flex-wrap: wrap; }
     .hint { padding: 4px 11px; background: var(--surface); border: 1px solid var(--border); border-radius: 20px; font-size: 11px; font-weight: 500; color: var(--text-3); cursor: pointer; transition: all .15s var(--ease); }
     .hint:hover { border-color: var(--indigo); color: var(--indigo); background: var(--indigo-l); }
@@ -745,10 +750,16 @@
 
   <div id="input-area">
     <div id="input-row">
+      <input type="file" id="attach-file-input" accept=".pdf,.txt,.md,application/pdf,text/plain,text/markdown" style="display:none" onchange="handleAttachFile(event)">
+      <button id="attach-btn" onclick="document.getElementById('attach-file-input').click()" title="Attach a document (PDF or text) to analyse" aria-label="Attach document">📎</button>
       <label for="input" class="sr-only">Message to travel agent</label>
       <textarea id="input" rows="1" placeholder="Ask me to plan a trip, search flights, check weather..."
         onkeydown="handleKey(event)" oninput="autoResize(this)" aria-label="Message to travel agent"></textarea>
       <button id="send-btn" onclick="sendMessage()" aria-label="Send message (Enter)">➤</button>
+    </div>
+    <div id="attached-file-badge">
+      <span id="attached-file-name"></span>
+      <button onclick="clearAttachment()" aria-label="Remove attachment">✕</button>
     </div>
     <div class="hints">
       <span class="hint" onclick="fillHint(this)">Plan a trip to Bali</span>
@@ -892,14 +903,43 @@
     else     { sendBtn.innerHTML = '➤'; sendBtn.classList.remove('stop-mode'); sendBtn.disabled = false; sendBtn.onclick = sendMessage; }
   }
 
+  // ── File attachment state ────────────────────────────────────────────────
+  let _attachedFile = null; // { data: base64, name, type } or null
+
+  function handleAttachFile(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) { showToast('File too large — max 10 MB.'); return; }
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const base64 = ev.target.result.split(',')[1];
+      _attachedFile = { data: base64, name: file.name, type: file.type || 'text/plain' };
+      document.getElementById('attached-file-name').textContent = '📎 ' + file.name;
+      document.getElementById('attached-file-badge').style.display = 'flex';
+    };
+    reader.readAsDataURL(file);
+    e.target.value = ''; // allow re-selecting the same file
+  }
+
+  function clearAttachment() {
+    _attachedFile = null;
+    document.getElementById('attached-file-badge').style.display = 'none';
+    document.getElementById('attached-file-name').textContent = '';
+  }
+
   async function sendMessage() {
-    const text = inputEl.value.trim(); if (!text) return;
+    const text = inputEl.value.trim();
+    if (!text && !_attachedFile) return;
     if (isThinking) { messageQueue.push(text); inputEl.value = ''; autoResize(inputEl); showToast('Message queued — ' + messageQueue.length + ' waiting. Agent will reply automatically.'); return; }
     isThinking = true; _abortCtrl = new AbortController(); _setStopMode(true);
     inputEl.value = ''; autoResize(inputEl);
-    addUserMessage(text); addThinkingMessage();
+    const displayText = text || (_attachedFile ? '📎 ' + _attachedFile.name : '');
+    addUserMessage(displayText); addThinkingMessage();
+    const requestBody = { message: text };
+    if (_attachedFile) requestBody.file = _attachedFile;
+    clearAttachment();
     try {
-      const res = await _apiFetch('/api/chat/' + sessionId, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: text }), signal: _abortCtrl.signal });
+      const res = await _apiFetch('/api/chat/' + sessionId, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(requestBody), signal: _abortCtrl.signal });
       if (res.status === 402) { const e = await res.json(); const t = document.getElementById('thinking-msg'); if(t)t.remove(); _setStopMode(false); showUpgradeModal(); return; }
       const reader = res.body.getReader(); const decoder = new TextDecoder(); let buf = ''; let gotResponse = false;
       while (true) {
