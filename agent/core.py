@@ -628,7 +628,8 @@ class TravelAgent:
             self._conversation.append({"role": "assistant", "content": _blocks_to_dicts(response.content)})
 
             if response.stop_reason == "end_turn":
-                return self._extract_text(response.content)
+                text = self._extract_text(response.content)
+                return text if text else "Done! Let me know if you'd like any changes."
 
             if response.stop_reason == "tool_use":
                 tool_blocks = [b for b in response.content if b.type == "tool_use"]
@@ -696,7 +697,8 @@ class TravelAgent:
 
             break
 
-        return self._extract_text(response.content)
+        text = self._extract_text(response.content)
+        return text if text else "Done! Let me know if you'd like any changes."
 
     def reset(self):
         """Start a fresh conversation (keeps memory/preferences)."""
@@ -930,7 +932,9 @@ class TravelAgent:
 
     @staticmethod
     def _extract_text(content: list) -> str:
-        for block in content:
-            if hasattr(block, "type") and block.type == "text":
-                return block.text
-        return ""
+        parts = [
+            block.text
+            for block in content
+            if hasattr(block, "type") and block.type == "text" and block.text
+        ]
+        return " ".join(parts)
