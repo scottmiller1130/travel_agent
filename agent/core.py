@@ -772,16 +772,46 @@ class TravelAgent:
         if self._system_prompt_cache is not None:
             return self._system_prompt_cache
 
-        # When the traveler profile is known, send only the relevant profile
-        # section instead of all three, saving ~200 tokens per API call.
-        profile = self._prefs.get("traveler_profile", user_id=self._user_id)
+        # Run all three DB reads concurrently in daemon threads with a 3-second
+        # timeout each so a slow DB never stalls the main chat() thread.
+        results: dict = {}
+
+        def _fetch_profile():
+            try:
+                results["profile"] = self._prefs.get("traveler_profile", user_id=self._user_id)
+            except Exception:
+                results["profile"] = None
+
+        def _fetch_prefs():
+            try:
+                results["prefs_context"] = self._prefs.as_context_string(user_id=self._user_id)
+            except Exception:
+                results["prefs_context"] = ""
+
+        def _fetch_trips():
+            try:
+                results["trips_context"] = self._trips.as_context_string(user_id=self._user_id)
+            except Exception:
+                results["trips_context"] = ""
+
+        threads = [
+            threading.Thread(target=_fetch_profile, daemon=True),
+            threading.Thread(target=_fetch_prefs, daemon=True),
+            threading.Thread(target=_fetch_trips, daemon=True),
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=3)
+
+        profile = results.get("profile")
         if profile in _PROFILE_BLOCKS:
             base_prompt = _SYSTEM_INTRO + _PROFILE_BLOCKS[profile] + _SYSTEM_TAIL
         else:
             base_prompt = SYSTEM_PROMPT
 
-        prefs_context = self._prefs.as_context_string(user_id=self._user_id)
-        trips_context = self._trips.as_context_string(user_id=self._user_id)
+        prefs_context = results.get("prefs_context", "")
+        trips_context = results.get("trips_context", "")
         itinerary_context = ""
         if self._current_trip:
             itinerary_context = (
@@ -860,7 +890,7 @@ class TravelAgent:
             "add_to_calendar": lambda i: add_to_calendar(**i),
             "web_search": lambda i: web_search(**i),
             "save_preference": self._handle_save_preference,
-            "get_preferences": lambda i: self._prefs.get_all(user_id=self._user_id),
+            "get_preferences": self._handle_get_preferences,
             "save_trip": self._handle_save_trip,
             "get_trips": self._handle_get_trips,
             "update_itinerary":    self._handle_update_itinerary,
@@ -883,8 +913,14 @@ class TravelAgent:
     def _handle_save_preference(self, inputs: dict) -> dict:
         key = inputs["key"]
         value = inputs["value"]
-        self._prefs.set(key, value, user_id=self._user_id)
         self._system_prompt_cache = None
+        # Persist in a daemon thread so a slow DB never blocks the tool future.
+        def _bg():
+            try:
+                self._prefs.set(key, value, user_id=self._user_id)
+            except Exception:
+                pass
+        threading.Thread(target=_bg, daemon=True).start()
         return {"status": "success", "message": f"Preference '{key}' saved: {value}"}
 
     def _handle_save_trip(self, inputs: dict) -> dict:
@@ -960,9 +996,30 @@ class TravelAgent:
             trip_budget_usd=inputs.get("trip_budget_usd"),
         )
 
+    def _handle_get_preferences(self, inputs: dict) -> dict:  # noqa: ARG002
+        result: dict = {}
+        def _bg():
+            try:
+                result["data"] = self._prefs.get_all(user_id=self._user_id)
+            except Exception:
+                result["data"] = {}
+        t = threading.Thread(target=_bg, daemon=True)
+        t.start()
+        t.join(timeout=5)
+        return result.get("data", {})
+
     def _handle_get_trips(self, inputs: dict) -> dict:
         status = inputs.get("status")
-        trips = self._trips.get_all_trips(status=status, user_id=self._user_id)
+        result: dict = {}
+        def _bg():
+            try:
+                result["trips"] = self._trips.get_all_trips(status=status, user_id=self._user_id)
+            except Exception:
+                result["trips"] = []
+        t = threading.Thread(target=_bg, daemon=True)
+        t.start()
+        t.join(timeout=5)
+        trips = result.get("trips", [])
         return {"status": "success", "trips": trips, "count": len(trips)}
 
     @staticmethod

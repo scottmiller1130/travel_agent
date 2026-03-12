@@ -597,7 +597,14 @@ async def chat(session_id: str, body: ChatRequest, request: Request):
         finally:
             # Always persist — the conversation sanitizer in load_conversation()
             # will heal any incomplete tool turns if we crashed mid-loop.
-            _save_session(session_id, agent, latest_itinerary.get("value"))
+            # Run in its own daemon thread so a slow DB write doesn't keep the
+            # run_agent thread alive and accumulate zombie threads under load.
+            _snap = latest_itinerary.get("value")
+            threading.Thread(
+                target=_save_session,
+                args=(session_id, agent, _snap),
+                daemon=True,
+            ).start()
 
     threading.Thread(target=run_agent, daemon=True).start()
 
