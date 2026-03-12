@@ -10,6 +10,8 @@ import math
 import threading
 import time
 
+from tools.cache import ttl_cache
+
 try:
     import httpx as _httpx
     _HTTPX = True
@@ -143,6 +145,7 @@ def _haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
+@ttl_cache(ttl=86400)  # Cache for 24 hours — POI data rarely changes
 def search_places(destination: str, category: str = "attraction",
                   query: str | None = None, limit: int = 8) -> dict:
     """

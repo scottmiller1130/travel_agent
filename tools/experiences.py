@@ -16,6 +16,8 @@ Get keys:
 import os
 import time
 
+from tools.cache import ttl_cache
+
 try:
     import httpx as _httpx
     _HTTPX = True
@@ -397,6 +399,7 @@ def _fallback_experiences(destination: str, category: str, max_results: int) -> 
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
+@ttl_cache(ttl=3600)  # Cache for 1 hour — experience listings are stable
 def search_experiences(
     destination: str,
     category: str = "attraction",
