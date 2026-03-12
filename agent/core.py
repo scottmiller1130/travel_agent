@@ -387,13 +387,23 @@ class TravelAgent:
         system = self._build_system_prompt()
 
         while True:
-            response = self._client.messages.create(
-                model="claude-sonnet-4-6",
-                max_tokens=8096,
-                system=system,
-                tools=TOOLS,
-                messages=self._conversation,
-            )
+            try:
+                response = self._client.messages.create(
+                    model="claude-sonnet-4-6",
+                    max_tokens=8096,
+                    system=system,
+                    tools=TOOLS,
+                    messages=self._conversation,
+                )
+            except anthropic.BadRequestError as e:
+                body = e.body or {}
+                err = body.get("error", {}) if isinstance(body, dict) else {}
+                if "usage limits" in err.get("message", "").lower():
+                    raise RuntimeError(
+                        "The AI service is temporarily unavailable due to an API usage limit on the server. "
+                        "Please try again later or contact support."
+                    ) from None
+                raise
 
             self._conversation.append({"role": "assistant", "content": _blocks_to_dicts(response.content)})
 
