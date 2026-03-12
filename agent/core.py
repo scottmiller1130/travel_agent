@@ -13,6 +13,7 @@ import copy
 import json
 import logging
 import os
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from concurrent.futures import TimeoutError as FuturesTimeoutError
@@ -771,16 +772,46 @@ class TravelAgent:
         if self._system_prompt_cache is not None:
             return self._system_prompt_cache
 
-        # When the traveler profile is known, send only the relevant profile
-        # section instead of all three, saving ~200 tokens per API call.
-        profile = self._prefs.get("traveler_profile", user_id=self._user_id)
+        # Run all three DB reads concurrently in daemon threads with a 3-second
+        # timeout each so a slow DB never stalls the main chat() thread.
+        results: dict = {}
+
+        def _fetch_profile():
+            try:
+                results["profile"] = self._prefs.get("traveler_profile", user_id=self._user_id)
+            except Exception:
+                results["profile"] = None
+
+        def _fetch_prefs():
+            try:
+                results["prefs_context"] = self._prefs.as_context_string(user_id=self._user_id)
+            except Exception:
+                results["prefs_context"] = ""
+
+        def _fetch_trips():
+            try:
+                results["trips_context"] = self._trips.as_context_string(user_id=self._user_id)
+            except Exception:
+                results["trips_context"] = ""
+
+        threads = [
+            threading.Thread(target=_fetch_profile, daemon=True),
+            threading.Thread(target=_fetch_prefs, daemon=True),
+            threading.Thread(target=_fetch_trips, daemon=True),
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=3)
+
+        profile = results.get("profile")
         if profile in _PROFILE_BLOCKS:
             base_prompt = _SYSTEM_INTRO + _PROFILE_BLOCKS[profile] + _SYSTEM_TAIL
         else:
             base_prompt = SYSTEM_PROMPT
 
-        prefs_context = self._prefs.as_context_string(user_id=self._user_id)
-        trips_context = self._trips.as_context_string(user_id=self._user_id)
+        prefs_context = results.get("prefs_context", "")
+        trips_context = results.get("trips_context", "")
         itinerary_context = ""
         if self._current_trip:
             itinerary_context = (
@@ -801,21 +832,31 @@ class TravelAgent:
         """Route a tool call to the correct implementation."""
 
         # --- Metered tools: check + increment monthly api_calls quota ---
+        # Run the quota check in a short-lived thread with a 5-second timeout
+        # so a slow DB never blocks the tool for the full TOOL_TIMEOUT_SECONDS.
         if name in METERED_TOOLS and self._user_store and self._user_id:
-            user_rec = self._user_store.get(self._user_id)
-            if user_rec:
-                usage = self._user_store.get_usage(self._user_id)
-                if not self._user_store.within_limit(user_rec, "api_calls", usage):
-                    plan = user_rec["plan"]
-                    cap  = PLAN_LIMITS[plan]["api_calls"]
-                    return {
-                        "status": "error",
-                        "message": (
-                            f"Monthly search limit reached ({cap} searches on {plan} plan). "
-                            "Please upgrade to Pro for 200 searches/month, or Team for 500."
-                        ),
-                    }
-                self._user_store.increment_api(self._user_id)
+            quota_result: dict = {}
+            def _check_quota():
+                try:
+                    user_rec = self._user_store.get(self._user_id)
+                    if user_rec:
+                        usage = self._user_store.get_usage(self._user_id)
+                        if not self._user_store.within_limit(user_rec, "api_calls", usage):
+                            plan = user_rec["plan"]
+                            cap  = PLAN_LIMITS[plan]["api_calls"]
+                            quota_result["error"] = (
+                                f"Monthly search limit reached ({cap} searches on {plan} plan). "
+                                "Please upgrade to Pro for 200 searches/month, or Team for 500."
+                            )
+                        else:
+                            self._user_store.increment_api(self._user_id)
+                except Exception:
+                    pass  # DB error → allow the tool to proceed
+            t = threading.Thread(target=_check_quota, daemon=True)
+            t.start()
+            t.join(timeout=5)  # wait at most 5 s; if DB is slow just proceed
+            if quota_result.get("error"):
+                return {"status": "error", "message": quota_result["error"]}
 
         # --- Booking tools: require explicit user confirmation ---
         if name in CONFIRMATION_REQUIRED and inputs.get("payment_confirmed"):
@@ -849,7 +890,7 @@ class TravelAgent:
             "add_to_calendar": lambda i: add_to_calendar(**i),
             "web_search": lambda i: web_search(**i),
             "save_preference": self._handle_save_preference,
-            "get_preferences": lambda i: self._prefs.get_all(user_id=self._user_id),
+            "get_preferences": self._handle_get_preferences,
             "save_trip": self._handle_save_trip,
             "get_trips": self._handle_get_trips,
             "update_itinerary":    self._handle_update_itinerary,
@@ -872,33 +913,58 @@ class TravelAgent:
     def _handle_save_preference(self, inputs: dict) -> dict:
         key = inputs["key"]
         value = inputs["value"]
-        self._prefs.set(key, value, user_id=self._user_id)
         self._system_prompt_cache = None
+        # Persist in a daemon thread so a slow DB never blocks the tool future.
+        def _bg():
+            try:
+                self._prefs.set(key, value, user_id=self._user_id)
+            except Exception:
+                pass
+        threading.Thread(target=_bg, daemon=True).start()
         return {"status": "success", "message": f"Preference '{key}' saved: {value}"}
 
     def _handle_save_trip(self, inputs: dict) -> dict:
         trip = inputs["trip"]
-        trip_id = self._trips.save_trip(trip, user_id=self._user_id)
         self._current_trip = trip
         self._system_prompt_cache = None
-        return {"status": "success", "trip_id": trip_id, "message": "Trip saved."}
+        # Save in daemon thread so a slow DB never blocks the tool future.
+        def _bg():
+            try:
+                self._trips.save_trip(trip, user_id=self._user_id)
+            except Exception:
+                pass
+        threading.Thread(target=_bg, daemon=True).start()
+        return {"status": "success", "message": "Trip saved."}
 
     def _handle_update_itinerary(self, inputs: dict) -> dict:
         self._current_trip = inputs  # persist so get_itinerary() is always current
         self._system_prompt_cache = None
-        # Auto-save every itinerary push to TripStore so nothing is ever lost.
-        # Derive a stable ID from destination + start_date so repeated updates
-        # to the same trip overwrite the existing row rather than duplicating.
-        try:
-            if not inputs.get("id"):
-                import hashlib
-                key = f"{inputs.get('destination', '')}-{inputs.get('start_date', '')}"
-                inputs["id"] = "TRIP-" + hashlib.md5(key.encode()).hexdigest()[:10]
-            self._trips.save_trip(inputs, user_id=self._user_id)
-        except Exception:
-            pass  # never let a save failure break the itinerary update
+
+        # Assign a stable ID before doing anything else so the board event and
+        # the DB row always share the same ID.
+        if not inputs.get("id"):
+            import hashlib
+            key = f"{inputs.get('destination', '')}-{inputs.get('start_date', '')}"
+            inputs["id"] = "TRIP-" + hashlib.md5(key.encode()).hexdigest()[:10]
+
+        # Fire the board-update event FIRST — before any DB I/O — so the UI
+        # always updates immediately.  A slow or failing DB save must never
+        # block the board from refreshing (previously save_trip was called
+        # before the callback, causing a 30-second tool timeout when the DB
+        # was slow, which meant the board never updated at all).
         if self._progress_callback:
             self._progress_callback("itinerary_update", {"itinerary": inputs})
+
+        # Persist in a daemon thread so the tool future returns immediately and
+        # the ThreadPoolExecutor never blocks waiting on a slow DB write.
+        def _bg_save():
+            try:
+                self._trips.save_trip(inputs, user_id=self._user_id)
+            except Exception:
+                pass
+
+        threading.Thread(target=_bg_save, daemon=True).start()
+
         return {"status": "success", "message": "Trip board updated."}
 
     def _handle_find_cheapest_dates(self, inputs: dict) -> dict:
@@ -930,9 +996,30 @@ class TravelAgent:
             trip_budget_usd=inputs.get("trip_budget_usd"),
         )
 
+    def _handle_get_preferences(self, inputs: dict) -> dict:  # noqa: ARG002
+        result: dict = {}
+        def _bg():
+            try:
+                result["data"] = self._prefs.get_all(user_id=self._user_id)
+            except Exception:
+                result["data"] = {}
+        t = threading.Thread(target=_bg, daemon=True)
+        t.start()
+        t.join(timeout=5)
+        return result.get("data", {})
+
     def _handle_get_trips(self, inputs: dict) -> dict:
         status = inputs.get("status")
-        trips = self._trips.get_all_trips(status=status, user_id=self._user_id)
+        result: dict = {}
+        def _bg():
+            try:
+                result["trips"] = self._trips.get_all_trips(status=status, user_id=self._user_id)
+            except Exception:
+                result["trips"] = []
+        t = threading.Thread(target=_bg, daemon=True)
+        t.start()
+        t.join(timeout=5)
+        trips = result.get("trips", [])
         return {"status": "success", "trips": trips, "count": len(trips)}
 
     @staticmethod
