@@ -1,0 +1,569 @@
+{
+  "name": "Costa Rica Family Adventure",
+  "destination": "Playa Ocotal, Guanacaste, Costa Rica",
+  "destinations": ["Playa Ocotal, Guanacaste"],
+  "start_date": "2026-05-23",
+  "end_date": "2026-05-30",
+  "travelers": 13,
+  "max_budget_usd": 12716,
+  "budget": {
+    "transport": 520,
+    "food": 3350,
+    "activities": 3295,
+    "flights": 0,
+    "hotels": 0
+  },
+  "season": {
+    "season": "shoulder",
+    "label": "Shoulder / Early Green Season",
+    "emoji": "🌿",
+    "crowd_level": "Low — tourist crowds drop significantly in May",
+    "price_context": "Villa and activities 20–30% cheaper than peak dry season (Dec–Apr)",
+    "notes": "May marks the start of the rainy season in Guanacaste. Mornings typically sunny; afternoon showers possible but short. Playa Ocotal remains swimmable. Lush green landscapes."
+  },
+  "issues": [
+    {
+      "severity": "warning",
+      "message": "Private Catamaran (Day 3) not yet booked — estimated $2,000 total for 13 people",
+      "item_ids": ["a6"]
+    },
+    {
+      "severity": "warning",
+      "message": "Scuba Diving (Day 3) not yet booked — Scott & Courtney must bring dive certification cards",
+      "item_ids": ["a4"]
+    },
+    {
+      "severity": "warning",
+      "message": "Diamante Animal Sanctuary (Day 5) not yet booked — estimated $770 for ~11 people",
+      "item_ids": ["a11"]
+    },
+    {
+      "severity": "info",
+      "message": "Maeve's birthday cake (Day 7) still needs to be arranged — estimated $75",
+      "item_ids": ["a17"]
+    },
+    {
+      "severity": "info",
+      "message": "Waterfall entrance fees (~$150 total) paid on-site — Llanos de Cortés ~$10–15/person, La Leona ~$20–30/person",
+      "item_ids": ["a13", "a14"]
+    },
+    {
+      "severity": "info",
+      "message": "Zip line (Day 4): confirm age/weight minimums for Liam (5) and Aspen (7) before booking",
+      "item_ids": ["a7"]
+    },
+    {
+      "severity": "info",
+      "message": "Denver group arrives ~1h 40m after Charlotte group — single shared shuttle works, Charlotte group waits at LIR or heads to villa first",
+      "item_ids": ["f1", "f2", "t1"]
+    }
+  ],
+  "days": [
+    {
+      "date": "2026-05-23",
+      "label": "Arrival Day — Welcome to Paradise",
+      "items": [
+        {
+          "id": "f1",
+          "type": "flight",
+          "title": "Charlotte Group Arrives — CLT → LIR",
+          "subtitle": "7 travelers: Brad, Allison, Bennett, Ela, Liam Scheu · Pat & Tom Miller",
+          "time": "09:10",
+          "end_time": "11:35",
+          "notes": "Departs Charlotte 9:10 AM, arrives Liberia (LIR) 11:35 AM.",
+          "status": "confirmed"
+        },
+        {
+          "id": "f2",
+          "type": "flight",
+          "title": "Denver Group Arrives — DEN → LIR",
+          "subtitle": "6 travelers: Scott, Courtney, Ava, Aspen, Maeve Miller · Jeff Miller",
+          "time": "08:20",
+          "end_time": "13:15",
+          "notes": "Departs Denver 8:20 AM, arrives Liberia (LIR) 1:15 PM.",
+          "status": "confirmed"
+        },
+        {
+          "id": "t1",
+          "type": "transfer",
+          "title": "Private Shuttle — LIR → Malinche Palace",
+          "subtitle": "Private Costa Rica Tours · +506 8950 3427 · All 13 travelers",
+          "time": "13:30",
+          "price_usd": 520,
+          "notes": "Both groups arrive within ~26 minutes of each other (11:35 & 13:15). One shared shuttle. $40/person × 13 = $520 total. CONFIRMED.",
+          "status": "confirmed"
+        },
+        {
+          "id": "h1",
+          "type": "hotel",
+          "title": "Check-In — Malinche Palace",
+          "subtitle": "Playa Ocotal, Guanacaste · 6 bedrooms · +506 8851 5321",
+          "time": "15:00",
+          "notes": "Check-in 3:00 PM. Infinity pool, hot tub, movie room, ocean-view terrace. Bedroom allocation: Scheu family (2 rooms), Scott/Courtney/kids (2 rooms), Jeff Miller (1 room), Pat & Tom Miller (1 room).",
+          "status": "confirmed"
+        },
+        {
+          "id": "a1",
+          "type": "activity",
+          "title": "Grocery Delivery Arrives",
+          "subtitle": "Pre-arranged for 2:30 PM arrival",
+          "time": "14:30",
+          "status": "confirmed"
+        },
+        {
+          "id": "a2",
+          "type": "free_time",
+          "title": "Unpack, Pool Time & Villa Exploration",
+          "time": "15:30",
+          "end_time": "18:00",
+          "notes": "Infinity pool, hot tub, movie room, terraces. Allow young children and seniors to rest after travel.",
+          "status": "suggested"
+        },
+        {
+          "id": "r1",
+          "type": "restaurant",
+          "title": "Chef's Welcome Dinner at Villa",
+          "subtitle": "Chef Gerson · WhatsApp: +506 8942 9530",
+          "time": "18:30",
+          "notes": "Chef Gerson provides most dinners and some breakfasts throughout the trip. Total chef cost: $3,350 for full trip.",
+          "status": "confirmed"
+        },
+        {
+          "id": "a3",
+          "type": "activity",
+          "title": "Sunset from the Terrace",
+          "time": "19:30",
+          "end_time": "20:30",
+          "notes": "Playa Ocotal faces west — excellent sunset views over the Pacific.",
+          "status": "suggested"
+        }
+      ]
+    },
+    {
+      "date": "2026-05-24",
+      "label": "Beach & Pool Day — Settle In",
+      "items": [
+        {
+          "id": "r2",
+          "type": "restaurant",
+          "title": "Breakfast at Villa",
+          "time": "08:00",
+          "status": "confirmed"
+        },
+        {
+          "id": "a4",
+          "type": "activity",
+          "title": "Ocotal Beach — Snorkeling, Tide Pools & Beach Play",
+          "subtitle": "Walkable from villa · All ages · Free",
+          "time": "09:00",
+          "end_time": "12:00",
+          "notes": "Tide pools great for Liam (5) and Aspen (7). Snorkeling for Bennett (11), Ela (10), Ava (10). Shallow calm areas safe for Maeve with supervision. Pat & Tom can enjoy beach chairs.",
+          "status": "suggested"
+        },
+        {
+          "id": "r3",
+          "type": "restaurant",
+          "title": "Lunch — Villa or Father Rooster Beach Bar",
+          "subtitle": "Father Rooster is a local beach bar at Ocotal",
+          "time": "12:30",
+          "notes": "Option to eat back at villa or stay at the beach at Father Rooster — a popular local beach bar with cold drinks and casual food.",
+          "status": "suggested"
+        },
+        {
+          "id": "a5",
+          "type": "free_time",
+          "title": "Afternoon — Infinity Pool, Hot Tub & Movie Room",
+          "time": "14:00",
+          "end_time": "18:00",
+          "notes": "Villa amenities: infinity pool, hot tub, large movie room, ocean terrace.",
+          "status": "suggested"
+        },
+        {
+          "id": "r4",
+          "type": "restaurant",
+          "title": "Chef Dinner at Villa",
+          "subtitle": "Chef Gerson",
+          "time": "18:30",
+          "status": "confirmed"
+        }
+      ]
+    },
+    {
+      "date": "2026-05-25",
+      "label": "Scuba Dive & Private Catamaran",
+      "items": [
+        {
+          "id": "r5",
+          "type": "restaurant",
+          "title": "Early Breakfast — Scuba Divers Only",
+          "subtitle": "Scott & Courtney Miller",
+          "time": "06:00",
+          "status": "confirmed"
+        },
+        {
+          "id": "a6",
+          "type": "activity",
+          "title": "Scuba Diving — Catalina & Bat Islands",
+          "subtitle": "Scott & Courtney Miller only · 2-tank dive · Must bring dive certification cards",
+          "time": "06:30",
+          "end_time": "12:30",
+          "price_usd": 300,
+          "notes": "TO BOOK. 2-tank dive at Catalina Islands or Bat Islands. Wildlife: manta rays, sharks, sea turtles, coral. Estimated $80–$150/person. Dive certification cards are REQUIRED — do not forget.",
+          "status": "suggested"
+        },
+        {
+          "id": "r6",
+          "type": "restaurant",
+          "title": "Breakfast — Everyone Else (Sleep in!)",
+          "time": "08:30",
+          "status": "confirmed"
+        },
+        {
+          "id": "a7",
+          "type": "activity",
+          "title": "Morning Option — Villa Relax OR Quick Diamante Visit",
+          "subtitle": "Non-divers · Optional · Sloths, jaguars, monkeys at Diamante · Flat paved paths",
+          "time": "09:00",
+          "end_time": "12:00",
+          "notes": "Option A: Sleep in and relax at villa pool. Option B: Quick 2-hour visit to Diamante Animal Sanctuary (flat paths, stroller-friendly, great for kids and seniors). Must return by noon for catamaran.",
+          "status": "suggested"
+        },
+        {
+          "id": "r7",
+          "type": "restaurant",
+          "title": "Light Lunch — Prep for Catamaran",
+          "time": "12:00",
+          "end_time": "13:00",
+          "status": "suggested"
+        },
+        {
+          "id": "a8",
+          "type": "activity",
+          "title": "Private Catamaran — All 13 People",
+          "subtitle": "Departs Ocotal Beach (walkable from villa) · Snorkeling, paddleboards, food & drinks included",
+          "time": "13:00",
+          "end_time": "18:00",
+          "price_usd": 2000,
+          "notes": "TO BOOK. 4–5 hour private charter. All 13 travelers including Maeve and grandparents. Estimated $150–$200/person, ~$2,000 total. Includes: snorkeling gear, paddleboards, food, drinks, crew. Suitable for all ages and mobility levels — grandparents can relax on deck.",
+          "status": "suggested"
+        },
+        {
+          "id": "r8",
+          "type": "restaurant",
+          "title": "Chef Dinner at Villa",
+          "subtitle": "Chef Gerson",
+          "time": "18:30",
+          "status": "confirmed"
+        }
+      ]
+    },
+    {
+      "date": "2026-05-26",
+      "label": "Adventure Split Day — Choose Your Thrill",
+      "items": [
+        {
+          "id": "r9",
+          "type": "restaurant",
+          "title": "Breakfast at Villa",
+          "time": "08:00",
+          "status": "confirmed"
+        },
+        {
+          "id": "a9",
+          "type": "activity",
+          "title": "Option A — Zip Line at Diamante",
+          "subtitle": "1,360m Superman line · ~40 min drive · $88/person",
+          "time": "09:00",
+          "end_time": "13:00",
+          "price_usd": 704,
+          "notes": "Diamante Eco Adventure Park's signature Superman zip line. Best for: Bennett (11), Ela (10), Ava (10), and all adults. CONFIRM age/weight minimums for Liam (5) and Aspen (7) before booking. Not recommended for Pat, Tom, or Maeve.",
+          "status": "suggested"
+        },
+        {
+          "id": "a10",
+          "type": "activity",
+          "title": "Option B — ATV Riding",
+          "subtitle": "$90–$300/person · Children ride with adult · ~30–45 min drive",
+          "time": "09:00",
+          "end_time": "13:00",
+          "notes": "Multiple operators in the Ocotal/Tamarindo area. Children typically must ride with an adult. Confirm age minimums.",
+          "status": "suggested"
+        },
+        {
+          "id": "a11",
+          "type": "activity",
+          "title": "Option C — Horseback Riding",
+          "subtitle": "$50–$80/person · Ages 7+ with adult supervision",
+          "time": "09:00",
+          "end_time": "12:00",
+          "notes": "Generally suitable for children 7+ with adult supervision. Aspen (7) should be confirmed with operator. Beach or jungle trail options available nearby.",
+          "status": "suggested"
+        },
+        {
+          "id": "a12",
+          "type": "free_time",
+          "title": "Option D — Chill at Villa (Recommended for Pat, Tom & Maeve)",
+          "subtitle": "Pool, beach, hot tub, movie room",
+          "time": "09:00",
+          "end_time": "18:00",
+          "notes": "Strongly recommended for Pat (75), Tom (75), and Maeve (1). Also a good option for anyone who wants a relaxed day.",
+          "status": "suggested"
+        },
+        {
+          "id": "r10",
+          "type": "restaurant",
+          "title": "Lunch — Packed (Adventure Groups) or Villa (Chill Group)",
+          "time": "12:30",
+          "status": "suggested"
+        },
+        {
+          "id": "r11",
+          "type": "restaurant",
+          "title": "Chef BBQ Night at Villa",
+          "subtitle": "Chef Gerson — Full group reunites",
+          "time": "18:30",
+          "status": "confirmed"
+        }
+      ]
+    },
+    {
+      "date": "2026-05-27",
+      "label": "Sloth Day — Diamante Animal Sanctuary",
+      "items": [
+        {
+          "id": "r12",
+          "type": "restaurant",
+          "title": "Breakfast at Villa",
+          "time": "08:00",
+          "status": "confirmed"
+        },
+        {
+          "id": "t2",
+          "type": "transfer",
+          "title": "Depart for Diamante Animal Sanctuary",
+          "subtitle": "~40 min drive from villa · Full group",
+          "time": "09:30",
+          "status": "suggested"
+        },
+        {
+          "id": "a13",
+          "type": "activity",
+          "title": "Diamante Animal Sanctuary — Full Group",
+          "subtitle": "Sloths · Jaguars · Monkeys · Tropical birds · Flat paved paths throughout",
+          "time": "10:00",
+          "end_time": "13:00",
+          "duration_hours": 2.5,
+          "price_usd": 770,
+          "notes": "TO BOOK. ~11 people (confirm count). $60–$70/person, ~$770 total. 2–3 hours on-site. Flat, paved paths — perfect accessibility for Pat, Tom, and stroller for Maeve. Educational and interactive for all ages. Wildlife: sloths, jaguars, monkeys, tropical birds, reptiles.",
+          "status": "suggested"
+        },
+        {
+          "id": "r13",
+          "type": "restaurant",
+          "title": "Lunch — At or Near Sanctuary",
+          "subtitle": "Back at villa by ~1:30–2:00 PM",
+          "time": "13:00",
+          "status": "suggested"
+        },
+        {
+          "id": "a14",
+          "type": "free_time",
+          "title": "Afternoon — Villa Pool & Relaxation",
+          "time": "14:00",
+          "end_time": "18:00",
+          "status": "suggested"
+        },
+        {
+          "id": "r14",
+          "type": "restaurant",
+          "title": "Chef Dinner at Villa",
+          "subtitle": "Chef Gerson",
+          "time": "18:30",
+          "status": "confirmed"
+        }
+      ]
+    },
+    {
+      "date": "2026-05-28",
+      "label": "Waterfall Hike — Choose Your Level",
+      "items": [
+        {
+          "id": "r15",
+          "type": "restaurant",
+          "title": "Early Breakfast at Villa",
+          "time": "07:30",
+          "status": "confirmed"
+        },
+        {
+          "id": "t3",
+          "type": "transfer",
+          "title": "Depart for Waterfalls",
+          "subtitle": "Llanos de Cortés: ~45 min · La Leona: ~60 min",
+          "time": "08:30",
+          "status": "suggested"
+        },
+        {
+          "id": "a15",
+          "type": "activity",
+          "title": "Option A — Llanos de Cortés Waterfall (EASY)",
+          "subtitle": "40-ft waterfall · 10–15 min walk · Safe shallow swimming pool · Picnic area & bathrooms",
+          "time": "09:30",
+          "end_time": "12:00",
+          "price_usd": 150,
+          "notes": "EASY. ~45 min drive. $10–$15/person entrance. Short, well-maintained path to a stunning 40-ft waterfall with a wide, shallow pool perfect for all ages. Recommended for Pat, Tom, Maeve, Liam (5), and Aspen (7). Picnic area and bathroom facilities on-site.",
+          "status": "suggested"
+        },
+        {
+          "id": "a16",
+          "type": "activity",
+          "title": "Option B — La Leona Waterfall (MODERATE)",
+          "subtitle": "30–40 min hike · White sand beach at base · River swimming · Guide included",
+          "time": "09:30",
+          "end_time": "12:00",
+          "notes": "MODERATE. ~60 min drive. $20–$30/person, guide included. 30–40 min hike through jungle to a waterfall with a white sand beach and river swimming at the base. Best for teens and adults. Suitable for Bennett (11), Ela (10), Ava (10). Stunning scenery.",
+          "status": "suggested"
+        },
+        {
+          "id": "a17",
+          "type": "activity",
+          "title": "Option C — Split Groups",
+          "subtitle": "Easy group → Llanos de Cortés · Moderate group → La Leona · Reunite at villa for lunch",
+          "time": "08:30",
+          "notes": "Recommended split: Pat, Tom, Maeve, young children + caregivers go to Llanos de Cortés. Older kids and adults who want more adventure go to La Leona. Both groups meet back at villa ~1:00 PM. Packing list: swimsuits, towels, water shoes, waterproof bag, sunscreen, bug spray, light snacks.",
+          "status": "suggested"
+        },
+        {
+          "id": "r16",
+          "type": "restaurant",
+          "title": "Lunch — Packed or Back at Villa",
+          "time": "13:00",
+          "status": "suggested"
+        },
+        {
+          "id": "a18",
+          "type": "free_time",
+          "title": "Afternoon — Villa Pool & Rest",
+          "time": "14:00",
+          "end_time": "18:00",
+          "notes": "Recovery time after morning activity. Pool, hot tub, movie room.",
+          "status": "suggested"
+        },
+        {
+          "id": "r17",
+          "type": "restaurant",
+          "title": "Chef Dinner at Villa",
+          "subtitle": "Chef Gerson",
+          "time": "18:30",
+          "status": "confirmed"
+        }
+      ]
+    },
+    {
+      "date": "2026-05-29",
+      "label": "Maeve's 2nd Birthday — Rest & Celebrate",
+      "items": [
+        {
+          "id": "r18",
+          "type": "restaurant",
+          "title": "Breakfast — Sleep In!",
+          "subtitle": "Villa · Relaxed start",
+          "time": "08:30",
+          "status": "confirmed"
+        },
+        {
+          "id": "a19",
+          "type": "free_time",
+          "title": "All Day — Villa Pool, Beach & Movie Room",
+          "subtitle": "Free choice · Full rest day before departure",
+          "time": "10:00",
+          "end_time": "18:00",
+          "notes": "Unstructured day. Pool, hot tub, beach walks, movie room. Great rest day for Pat & Tom before the long return flights tomorrow. Maeve is the guest of honor today!",
+          "status": "suggested"
+        },
+        {
+          "id": "r19",
+          "type": "restaurant",
+          "title": "Lunch — Casual / Self-Serve at Villa",
+          "time": "12:30",
+          "status": "suggested"
+        },
+        {
+          "id": "r20",
+          "type": "restaurant",
+          "title": "Maeve's Birthday Dinner",
+          "subtitle": "Chef Gerson at villa — Special birthday menu",
+          "time": "18:30",
+          "status": "confirmed"
+        },
+        {
+          "id": "a20",
+          "type": "activity",
+          "title": "Birthday Cake & Celebration — Maeve Turns 2!",
+          "subtitle": "TO ARRANGE — Birthday cake · Estimated $75",
+          "time": "19:30",
+          "price_usd": 75,
+          "notes": "TO ARRANGE. Maeve Miller turns 2 today (born 2024-05-29). Order birthday cake in advance — ask Chef Gerson (+506 8942 9530) or a local bakery in Playas del Coco / Ocotal. Estimated $75.",
+          "status": "suggested"
+        }
+      ]
+    },
+    {
+      "date": "2026-05-30",
+      "label": "Departure Day — Pura Vida!",
+      "items": [
+        {
+          "id": "a21",
+          "type": "activity",
+          "title": "Final Swim & Group Photos",
+          "time": "07:00",
+          "end_time": "09:00",
+          "notes": "Last morning in paradise. Group photo at the villa and pool before packing up.",
+          "status": "suggested"
+        },
+        {
+          "id": "r21",
+          "type": "restaurant",
+          "title": "Final Breakfast at Villa",
+          "time": "07:30",
+          "status": "confirmed"
+        },
+        {
+          "id": "t4",
+          "type": "transfer",
+          "title": "Charlotte Group Departs — Villa → LIR",
+          "subtitle": "Brad, Allison, Bennett, Ela, Liam Scheu · Pat & Tom Miller · 7 travelers",
+          "time": "10:00",
+          "notes": "Depart villa 10:00 AM for Liberia Airport. Flight LIR → CLT departs 12:22 PM, arrives Charlotte 7:00 PM.",
+          "status": "confirmed"
+        },
+        {
+          "id": "t5",
+          "type": "transfer",
+          "title": "Denver Group Departs — Villa → LIR",
+          "subtitle": "Scott, Courtney, Ava, Aspen, Maeve Miller · Jeff Miller · 6 travelers",
+          "time": "10:30",
+          "notes": "Depart villa 10:30 AM for Liberia Airport. Flight LIR → DEN departs 1:05 PM, arrives Denver 6:40 PM.",
+          "status": "confirmed"
+        },
+        {
+          "id": "f3",
+          "type": "flight",
+          "title": "Charlotte Group — LIR → CLT",
+          "subtitle": "7 travelers · Arrives Charlotte 7:00 PM",
+          "time": "12:22",
+          "end_time": "19:00",
+          "status": "confirmed"
+        },
+        {
+          "id": "f4",
+          "type": "flight",
+          "title": "Denver Group — LIR → DEN",
+          "subtitle": "6 travelers · Arrives Denver 6:40 PM",
+          "time": "13:05",
+          "end_time": "18:40",
+          "status": "confirmed"
+        }
+      ]
+    }
+  ]
+}
