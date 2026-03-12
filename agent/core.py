@@ -8,6 +8,7 @@ Booking actions (book_flight, book_hotel) require explicit user confirmation
 before payment_confirmed is set to True.
 """
 
+import copy
 import json
 import logging
 import os
@@ -166,6 +167,13 @@ TOOL_LABELS = {
     "generate_packing_list": "Building your packing list...",
 }
 
+
+# Tool list with a prompt-cache breakpoint on the last entry.
+# Anthropic will cache the entire tools block on the first call and charge
+# only 10% of normal input-token price on subsequent cache hits, cutting the
+# ~8,800-token tool-schema cost by ~90% for every call after the first.
+_tools_with_cache: list[dict] = copy.deepcopy(TOOLS)
+_tools_with_cache[-1]["cache_control"] = {"type": "ephemeral"}
 
 # Actions that require a human confirmation step before proceeding
 CONFIRMATION_REQUIRED = {"book_flight", "book_hotel"}
@@ -386,13 +394,18 @@ class TravelAgent:
         self._conversation = _heal_conversation(self._conversation)
         system = self._build_system_prompt()
 
+        # Wrap the system prompt in a list block so Anthropic can cache it.
+        # This covers the ~3,000-token system prompt at ~10% of normal cost
+        # after the first call.
+        cached_system = [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
+
         while True:
             try:
                 response = self._client.messages.create(
                     model="claude-sonnet-4-6",
-                    max_tokens=8096,
-                    system=system,
-                    tools=TOOLS,
+                    max_tokens=4096,
+                    system=cached_system,
+                    tools=_tools_with_cache,
                     messages=self._conversation,
                 )
             except anthropic.BadRequestError as e:
