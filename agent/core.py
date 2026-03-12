@@ -628,7 +628,8 @@ class TravelAgent:
             self._conversation.append({"role": "assistant", "content": _blocks_to_dicts(response.content)})
 
             if response.stop_reason == "end_turn":
-                return self._extract_text(response.content)
+                text = self._extract_text(response.content)
+                return text if text else "Done! Let me know if you'd like any changes."
 
             if response.stop_reason == "tool_use":
                 tool_blocks = [b for b in response.content if b.type == "tool_use"]
@@ -696,7 +697,8 @@ class TravelAgent:
 
             break
 
-        return self._extract_text(response.content)
+        text = self._extract_text(response.content)
+        return text if text else "Done! Let me know if you'd like any changes."
 
     def reset(self):
         """Start a fresh conversation (keeps memory/preferences)."""
@@ -883,12 +885,11 @@ class TravelAgent:
         # Derive a stable ID from destination + start_date so repeated updates
         # to the same trip overwrite the existing row rather than duplicating.
         try:
-            trip_copy = dict(inputs)
-            if not trip_copy.get("id"):
+            if not inputs.get("id"):
                 import hashlib
-                key = f"{trip_copy.get('destination', '')}-{trip_copy.get('start_date', '')}"
-                trip_copy["id"] = "TRIP-" + hashlib.md5(key.encode()).hexdigest()[:10]
-            self._trips.save_trip(trip_copy, user_id=self._user_id)
+                key = f"{inputs.get('destination', '')}-{inputs.get('start_date', '')}"
+                inputs["id"] = "TRIP-" + hashlib.md5(key.encode()).hexdigest()[:10]
+            self._trips.save_trip(inputs, user_id=self._user_id)
         except Exception:
             pass  # never let a save failure break the itinerary update
         if self._progress_callback:
@@ -931,7 +932,9 @@ class TravelAgent:
 
     @staticmethod
     def _extract_text(content: list) -> str:
-        for block in content:
-            if hasattr(block, "type") and block.type == "text":
-                return block.text
-        return ""
+        parts = [
+            block.text
+            for block in content
+            if hasattr(block, "type") and block.type == "text" and block.text
+        ]
+        return " ".join(parts)

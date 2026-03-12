@@ -478,6 +478,17 @@ async def pwa_icon(filename: str):
     return FileResponse(path, media_type=media_type)
 
 
+@app.get("/static/{filename}")
+async def static_file(filename: str):
+    """Serve arbitrary files from the static directory (e.g. sample JSON files)."""
+    if "/" in filename or "\\" in filename or ".." in filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    path = STATIC_DIR / filename
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+    return FileResponse(path)
+
+
 @app.get("/help", response_class=HTMLResponse)
 async def user_guide():
     guide = Path(__file__).parent / "docs" / "user-guide.html"
