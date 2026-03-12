@@ -138,6 +138,24 @@ def _blocks_to_dicts(content) -> list[dict] | str:
             result.append({"type": "text", "text": str(block)})
     return result
 
+def _estimate_tokens(messages: list[dict]) -> int:
+    """Rough token estimate: ~4 characters per token for conversational content.
+
+    Avoids an extra API call just to count tokens. Good enough for trimming
+    decisions — we're targeting a 15k-token threshold, not an exact limit.
+    """
+    total = 0
+    for msg in messages:
+        content = msg.get("content", "")
+        if isinstance(content, str):
+            total += len(content)
+        elif isinstance(content, list):
+            for block in content:
+                if isinstance(block, dict):
+                    total += len(json.dumps(block))
+    return total // 4
+
+
 TOOL_LABELS = {
     "search_experiences": "Finding tours & experiences...",
     "get_inspiration":    "Reading your inspiration source...",
@@ -181,9 +199,9 @@ CONFIRMATION_REQUIRED = {"book_flight", "book_hotel"}
 # Tools counted against the monthly api_calls quota
 METERED_TOOLS = {"search_flights", "search_hotels", "find_cheapest_dates", "find_cheapest_month", "search_experiences"}
 
-MAX_CONVERSATION_MESSAGES = 30  # Summarize when conversation exceeds this length
-KEEP_RECENT_MESSAGES = 16       # Always keep the most recent N messages
-KEEP_INITIAL_MESSAGES = 2       # Always keep the very first user/assistant exchange
+MAX_CONVERSATION_TOKENS = 15_000  # Trim when estimated conversation history exceeds this
+KEEP_TAIL_TOKEN_BUDGET  = 10_000  # Keep the most recent messages that fit in this budget
+KEEP_INITIAL_MESSAGES   = 2       # Always keep the very first user/assistant exchange
 
 SYSTEM_PROMPT = """You are a world-class personal travel concierge — the most capable AI travel planner available. You combine the depth of a specialist travel agent with the speed of AI and real data across flights, hotels, experiences, weather, currency, transport, and deal-hunting. You adapt fluidly to three traveler profiles and handle everything from visa research to day-by-day itinerary creation.
 
@@ -314,6 +332,36 @@ Mid-Range: Knowledgeable friend. Warm, balanced, good-value-focused. "This guest
 Luxury Travelers: Personal concierge. Warm, authoritative, effortless. Anticipate needs. "I'd lean toward the Ritz-Carlton for the harbour suite — the private butler service is genuinely exceptional there. I can also note a request for early check-in."
 """
 
+# ── Profile-section splitting ─────────────────────────────────────────────────
+# When the traveler_profile is already known we only need to send ONE profile
+# section instead of all three.  Skipping the other two saves ~200 tokens on
+# every API call in the agentic loop.
+#
+# We derive the parts from SYSTEM_PROMPT at import time so the source of truth
+# stays in one place and the split stays in sync automatically.
+def _split_system_prompt(prompt: str) -> tuple[str, dict[str, str], str]:
+    """Return (intro, {profile_key: block}, tail) from SYSTEM_PROMPT."""
+    adv_marker = '**Adventure Traveler (traveler_profile = "adventure")**'
+    mid_marker = '**Mid-Range Traveler (traveler_profile = "mid_range")**'
+    lux_marker = '**Luxury / Affluent Traveler (traveler_profile = "luxury")**'
+    det_marker = "━" * 40 + "\nPROFILE DETECTION"
+
+    adv_start = prompt.index(adv_marker)
+    mid_start = prompt.index(mid_marker)
+    lux_start = prompt.index(lux_marker)
+    det_start = prompt.index(det_marker)
+
+    intro  = prompt[:adv_start]
+    blocks = {
+        "adventure": prompt[adv_start:mid_start],
+        "mid_range":  prompt[mid_start:lux_start],
+        "luxury":     prompt[lux_start:det_start],
+    }
+    tail = prompt[det_start:]
+    return intro, blocks, tail
+
+_SYSTEM_INTRO, _PROFILE_BLOCKS, _SYSTEM_TAIL = _split_system_prompt(SYSTEM_PROMPT)
+
 
 class TravelAgent:
     def __init__(
@@ -354,20 +402,32 @@ class TravelAgent:
         """Keep conversation within token budget using a sliding window.
 
         Preserves the first KEEP_INITIAL_MESSAGES messages (original intent)
-        and the last KEEP_RECENT_MESSAGES messages (current context), dropping
-        the middle when total length exceeds MAX_CONVERSATION_MESSAGES.
+        and the most recent messages that fit within KEEP_TAIL_TOKEN_BUDGET,
+        dropping the middle when estimated tokens exceed MAX_CONVERSATION_TOKENS.
+
+        Uses a character-based approximation (~4 chars/token) to avoid the cost
+        of a separate counting API call.
         """
-        if len(self._conversation) <= MAX_CONVERSATION_MESSAGES:
+        if _estimate_tokens(self._conversation) <= MAX_CONVERSATION_TOKENS:
             return
 
         head = self._conversation[:KEEP_INITIAL_MESSAGES]
-        tail = self._conversation[-KEEP_RECENT_MESSAGES:]
+
+        # Build the tail greedily from the end, respecting the token budget.
+        tail: list[dict] = []
+        tail_tokens = 0
+        for msg in reversed(self._conversation[KEEP_INITIAL_MESSAGES:]):
+            msg_tokens = _estimate_tokens([msg])
+            if tail_tokens + msg_tokens > KEEP_TAIL_TOKEN_BUDGET:
+                break
+            tail.insert(0, msg)
+            tail_tokens += msg_tokens
 
         # Heal the tail: remove any tool_result messages whose matching
         # tool_use assistant message was trimmed away.
         tail = _heal_conversation(tail)
 
-        dropped = len(self._conversation) - KEEP_INITIAL_MESSAGES - KEEP_RECENT_MESSAGES
+        dropped = len(self._conversation) - len(head) - len(tail)
         bridge = {
             "role": "user",
             "content": (
@@ -518,6 +578,15 @@ class TravelAgent:
     def _build_system_prompt(self) -> str:
         if self._system_prompt_cache is not None:
             return self._system_prompt_cache
+
+        # When the traveler profile is known, send only the relevant profile
+        # section instead of all three, saving ~200 tokens per API call.
+        profile = self._prefs.get("traveler_profile", user_id=self._user_id)
+        if profile in _PROFILE_BLOCKS:
+            base_prompt = _SYSTEM_INTRO + _PROFILE_BLOCKS[profile] + _SYSTEM_TAIL
+        else:
+            base_prompt = SYSTEM_PROMPT
+
         prefs_context = self._prefs.as_context_string(user_id=self._user_id)
         trips_context = self._trips.as_context_string(user_id=self._user_id)
         itinerary_context = ""
@@ -528,7 +597,7 @@ class TravelAgent:
                 "You can reference, modify, or extend it based on the user's requests.\n"
                 f"```json\n{json.dumps(self._current_trip, indent=2)}\n```"
             )
-        self._system_prompt_cache = f"{SYSTEM_PROMPT}\n\n{prefs_context}\n\n{trips_context}{itinerary_context}"
+        self._system_prompt_cache = f"{base_prompt}\n\n{prefs_context}\n\n{trips_context}{itinerary_context}"
         return self._system_prompt_cache
 
     def _dispatch_tool(self, name: str, inputs: dict) -> dict:

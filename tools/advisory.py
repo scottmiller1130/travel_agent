@@ -17,6 +17,8 @@ from typing import Optional
 
 import httpx
 
+from tools.cache import ttl_cache
+
 log = logging.getLogger("travel_agent.tools.advisory")
 
 _ADVISORY_API = "https://www.travel-advisory.info/api"
@@ -133,6 +135,7 @@ def _resolve_iso(destination: str) -> Optional[str]:
     return _DEST_ISO.get(key)
 
 
+@ttl_cache(ttl=3600)  # Cache for 1 hour — advisories change infrequently
 def get_travel_advisory(destination: str, passport_country: str = "US") -> dict:
     """
     Retrieve the current travel advisory / safety level for a destination.

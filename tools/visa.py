@@ -10,6 +10,8 @@ from typing import Optional
 
 import httpx
 
+from tools.cache import ttl_cache
+
 log = logging.getLogger("travel_agent.tools.visa")
 
 # Passport Index open API — returns visa requirement between two countries
@@ -122,6 +124,7 @@ def _resolve_passport(name: str) -> Optional[str]:
     return _PASSPORT_ISO.get(key)
 
 
+@ttl_cache(ttl=86400)  # Cache for 24 hours — visa rules change infrequently
 def get_visa_requirements(
     destination: str,
     passport_country: str = "US",

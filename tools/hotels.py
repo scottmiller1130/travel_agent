@@ -21,6 +21,8 @@ import random
 import string
 import time
 
+from tools.cache import ttl_cache
+
 try:
     import httpx as _httpx
     _HTTPX = True
@@ -589,6 +591,7 @@ def _apply_accommodation_type(result: dict, accommodation_type: str) -> dict:
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
+@ttl_cache(ttl=1800)  # Cache for 30 minutes — hotel prices are estimated and change slowly
 def search_hotels(
     destination: str,
     check_in: str,

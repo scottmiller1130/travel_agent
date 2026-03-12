@@ -718,6 +718,7 @@ def search_flights(
     return payload
 
 
+@ttl_cache(ttl=1800)  # Cache for 30 minutes — same as search_flights
 def find_cheapest_dates(
     origin: str,
     destination: str,
@@ -867,6 +868,7 @@ def find_cheapest_dates(
     }
 
 
+@ttl_cache(ttl=1800)  # Cache for 30 minutes — same as search_flights
 def find_cheapest_month(
     origin: str,
     destination: str,
