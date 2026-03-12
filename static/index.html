@@ -389,6 +389,13 @@
     .card-price { font-size: 11px; font-weight: 600; color: var(--text-2); }
     .card-duration { font-size: 11px; color: var(--text-3); }
     .card-notes { font-size: 11px; color: var(--text-3); margin-top: 5px; line-height: 1.5; }
+    .card-menu { margin-top: 6px; }
+    .card-cuisine { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: #d97706; background: #fef3c7; border-radius: 4px; padding: 1px 6px; display: inline-block; margin-bottom: 4px; }
+    .card-menu-highlights { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 2px; }
+    .card-menu-highlights li { font-size: 11px; color: var(--text-2); padding-left: 12px; position: relative; line-height: 1.45; }
+    .card-menu-highlights li::before { content: '·'; position: absolute; left: 2px; color: #d97706; font-weight: 900; }
+    .card-reservation { font-size: 10px; color: #065f46; background: #d1fae5; border-radius: 4px; padding: 1px 7px; display: inline-flex; align-items: center; gap: 3px; margin-top: 4px; font-weight: 600; }
+    .card-dietary { font-size: 10px; color: var(--text-3); margin-top: 3px; font-style: italic; }
     .card-actions { display: none; gap: 5px; margin-top: 7px; padding-top: 7px; border-top: 1px solid var(--border); }
     .itin-card:hover .card-actions { display: flex; }
     .card-btn { font-size: 10px; font-weight: 500; padding: 3px 9px; border-radius: 5px; border: 1px solid var(--border); background: transparent; color: var(--text-3); cursor: pointer; transition: all .15s; font-family: inherit; }
@@ -1276,9 +1283,22 @@
     if(item.duration_hours)meta+='<span class="card-duration">'+item.duration_hours+'h</span>';
     if(item.price_usd)meta+='<span class="card-price">$'+item.price_usd.toLocaleString()+'</span>';
     const actions=item.type!=='free_time'?'<div class="card-actions"><button class="card-btn" onclick="askAlt(\''+escapeHtml(item.title).replace(/'/g,"\\'")+'\',event)">↔ Alternative</button><button class="card-btn lock" onclick="toggleLock(\''+item.id+'\',event)">'+(locked?'🔓 Unlock':'🔒 Lock')+'</button></div>':'';
+    // Menu / restaurant details
+    const isFoodCard = item.type==='restaurant'||item.type==='food';
+    let menuHtml='';
+    if(isFoodCard){
+      let inner='';
+      if(item.cuisine)inner+='<span class="card-cuisine">'+escapeHtml(item.cuisine)+'</span>';
+      if(item.menu_highlights&&item.menu_highlights.length){
+        inner+='<ul class="card-menu-highlights">'+item.menu_highlights.map(d=>'<li>'+escapeHtml(d)+'</li>').join('')+'</ul>';
+      }
+      if(item.reservation)inner+='<div class="card-reservation">📋 '+escapeHtml(item.reservation)+'</div>';
+      if(item.dietary_options)inner+='<div class="card-dietary">🌿 '+escapeHtml(item.dietary_options)+'</div>';
+      if(inner)menuHtml='<div class="card-menu">'+inner+'</div>';
+    }
     return'<div class="itin-card type-'+item.type+' status-'+(item.status||'suggested')+(locked?' locked':'')+'" data-id="'+item.id+'" data-idx="'+dayIdx+'" '+(draggable?'draggable="true"':'')+'>'+
       '<div class="card-top"><span class="card-icon">'+icon+'</span><div class="card-main"><div class="card-title">'+escapeHtml(item.title)+'</div>'+(item.subtitle?'<div class="card-subtitle">'+escapeHtml(item.subtitle)+'</div>':'')+'</div>'+badge+'</div>'+
-      (meta?'<div class="card-meta">'+meta+'</div>':'')+(item.notes?'<div class="card-notes">'+escapeHtml(item.notes)+'</div>':'')+actions+'</div>';
+      (meta?'<div class="card-meta">'+meta+'</div>':'')+menuHtml+(item.notes?'<div class="card-notes">'+escapeHtml(item.notes)+'</div>':'')+actions+'</div>';
   }
   function askAlt(title,e){
     e.stopPropagation();

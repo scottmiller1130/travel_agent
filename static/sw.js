@@ -10,7 +10,7 @@
  *    offline page rather than the browser's default error screen.
  */
 
-const CACHE_VERSION = 'v1';
+const CACHE_VERSION = 'v2';
 const CACHE_NAME = `travel-agent-${CACHE_VERSION}`;
 
 const APP_SHELL = ['/'];
@@ -119,13 +119,15 @@ self.addEventListener('fetch', event => {
   }
 
   // Navigation (HTML) — stale-while-revalidate with offline fallback
+  // Only serve the app shell for the root path; all other navigations go straight to network.
   if (request.mode === 'navigate') {
     event.respondWith(
       caches.open(CACHE_NAME).then(cache =>
         cache.match('/').then(cached => {
           const networkFetch = fetch(request)
             .then(response => {
-              if (response.ok) cache.put('/', response.clone());
+              // Only cache the root app shell, never share pages or other routes.
+              if (response.ok && url.pathname === '/') cache.put('/', response.clone());
               return response;
             })
             .catch(() => {
@@ -135,8 +137,8 @@ self.addEventListener('fetch', event => {
               });
             });
 
-          // Return cached immediately, update in background
-          return cached || networkFetch;
+          // Return cached shell immediately only for the root path; otherwise always network.
+          return (url.pathname === '/' && cached) ? cached : networkFetch;
         })
       )
     );
