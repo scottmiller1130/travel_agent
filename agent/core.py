@@ -883,12 +883,11 @@ class TravelAgent:
         # Derive a stable ID from destination + start_date so repeated updates
         # to the same trip overwrite the existing row rather than duplicating.
         try:
-            trip_copy = dict(inputs)
-            if not trip_copy.get("id"):
+            if not inputs.get("id"):
                 import hashlib
-                key = f"{trip_copy.get('destination', '')}-{trip_copy.get('start_date', '')}"
-                trip_copy["id"] = "TRIP-" + hashlib.md5(key.encode()).hexdigest()[:10]
-            self._trips.save_trip(trip_copy, user_id=self._user_id)
+                key = f"{inputs.get('destination', '')}-{inputs.get('start_date', '')}"
+                inputs["id"] = "TRIP-" + hashlib.md5(key.encode()).hexdigest()[:10]
+            self._trips.save_trip(inputs, user_id=self._user_id)
         except Exception:
             pass  # never let a save failure break the itinerary update
         if self._progress_callback:
