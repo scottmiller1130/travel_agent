@@ -13,6 +13,7 @@ import copy
 import json
 import logging
 import os
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from concurrent.futures import TimeoutError as FuturesTimeoutError
@@ -801,21 +802,31 @@ class TravelAgent:
         """Route a tool call to the correct implementation."""
 
         # --- Metered tools: check + increment monthly api_calls quota ---
+        # Run the quota check in a short-lived thread with a 5-second timeout
+        # so a slow DB never blocks the tool for the full TOOL_TIMEOUT_SECONDS.
         if name in METERED_TOOLS and self._user_store and self._user_id:
-            user_rec = self._user_store.get(self._user_id)
-            if user_rec:
-                usage = self._user_store.get_usage(self._user_id)
-                if not self._user_store.within_limit(user_rec, "api_calls", usage):
-                    plan = user_rec["plan"]
-                    cap  = PLAN_LIMITS[plan]["api_calls"]
-                    return {
-                        "status": "error",
-                        "message": (
-                            f"Monthly search limit reached ({cap} searches on {plan} plan). "
-                            "Please upgrade to Pro for 200 searches/month, or Team for 500."
-                        ),
-                    }
-                self._user_store.increment_api(self._user_id)
+            quota_result: dict = {}
+            def _check_quota():
+                try:
+                    user_rec = self._user_store.get(self._user_id)
+                    if user_rec:
+                        usage = self._user_store.get_usage(self._user_id)
+                        if not self._user_store.within_limit(user_rec, "api_calls", usage):
+                            plan = user_rec["plan"]
+                            cap  = PLAN_LIMITS[plan]["api_calls"]
+                            quota_result["error"] = (
+                                f"Monthly search limit reached ({cap} searches on {plan} plan). "
+                                "Please upgrade to Pro for 200 searches/month, or Team for 500."
+                            )
+                        else:
+                            self._user_store.increment_api(self._user_id)
+                except Exception:
+                    pass  # DB error → allow the tool to proceed
+            t = threading.Thread(target=_check_quota, daemon=True)
+            t.start()
+            t.join(timeout=5)  # wait at most 5 s; if DB is slow just proceed
+            if quota_result.get("error"):
+                return {"status": "error", "message": quota_result["error"]}
 
         # --- Booking tools: require explicit user confirmation ---
         if name in CONFIRMATION_REQUIRED and inputs.get("payment_confirmed"):
@@ -878,10 +889,16 @@ class TravelAgent:
 
     def _handle_save_trip(self, inputs: dict) -> dict:
         trip = inputs["trip"]
-        trip_id = self._trips.save_trip(trip, user_id=self._user_id)
         self._current_trip = trip
         self._system_prompt_cache = None
-        return {"status": "success", "trip_id": trip_id, "message": "Trip saved."}
+        # Save in daemon thread so a slow DB never blocks the tool future.
+        def _bg():
+            try:
+                self._trips.save_trip(trip, user_id=self._user_id)
+            except Exception:
+                pass
+        threading.Thread(target=_bg, daemon=True).start()
+        return {"status": "success", "message": "Trip saved."}
 
     def _handle_update_itinerary(self, inputs: dict) -> dict:
         self._current_trip = inputs  # persist so get_itinerary() is always current
@@ -902,11 +919,15 @@ class TravelAgent:
         if self._progress_callback:
             self._progress_callback("itinerary_update", {"itinerary": inputs})
 
-        # Persist in the background; swallow errors so a DB hiccup is silent.
-        try:
-            self._trips.save_trip(inputs, user_id=self._user_id)
-        except Exception:
-            pass
+        # Persist in a daemon thread so the tool future returns immediately and
+        # the ThreadPoolExecutor never blocks waiting on a slow DB write.
+        def _bg_save():
+            try:
+                self._trips.save_trip(inputs, user_id=self._user_id)
+            except Exception:
+                pass
+
+        threading.Thread(target=_bg_save, daemon=True).start()
 
         return {"status": "success", "message": "Trip board updated."}
 
