@@ -936,13 +936,33 @@ async def shared_itinerary(token: str):
             )
             notes_html = f"<div class='inotes'>{notes}</div>" if notes else ""
 
+            # Menu / restaurant details
+            menu_html = ""
+            if itype in ("restaurant", "food"):
+                cuisine = _safe(item.get("cuisine") or "")
+                highlights = item.get("menu_highlights") or []
+                reservation = _safe(item.get("reservation") or "")
+                dietary = _safe(item.get("dietary_options") or "")
+                m = ""
+                if cuisine:
+                    m += f"<span class='icuisine'>{cuisine}</span>"
+                if highlights:
+                    lis = "".join(f"<li>{_safe(h)}</li>" for h in highlights if h)
+                    m += f"<ul class='imenuhighlights'>{lis}</ul>"
+                if reservation:
+                    m += f"<div class='ireservation'>📋 {reservation}</div>"
+                if dietary:
+                    m += f"<div class='idietary'>🌿 {dietary}</div>"
+                if m:
+                    menu_html = f"<div class='imenu'>{m}</div>"
+
             items_html += (
                 f"<div class='icard' style='--ic:{color};--ibg:{bg}'>"
                 f"<span class='iicon'>{icon}</span>"
                 f"<div class='idetails'>"
                 f"<div class='itop'>{time_html}<span class='ititle'>{title_str}</span>"
                 f"{price_html}{status_html}</div>"
-                f"{tags_html}{notes_html}"
+                f"{tags_html}{menu_html}{notes_html}"
                 f"</div></div>"
             )
 
@@ -1104,6 +1124,16 @@ async def shared_itinerary(token: str):
   .itag{{font-size:11px;color:var(--text-3);background:#fff;
          border:1px solid var(--border);border-radius:5px;padding:1px 7px;font-weight:600}}
   .inotes{{margin-top:5px;font-size:12px;color:var(--text-3);line-height:1.55}}
+  .imenu{{margin-top:7px;display:flex;flex-direction:column;gap:3px}}
+  .icuisine{{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;
+             color:#b45309;background:#fef3c7;border-radius:4px;padding:1px 7px;
+             display:inline-block;width:fit-content}}
+  .imenuhighlights{{list-style:none;padding:0;margin:2px 0 0;display:flex;flex-direction:column;gap:2px}}
+  .imenuhighlights li{{font-size:11px;color:var(--text-2);padding-left:13px;position:relative;line-height:1.45}}
+  .imenuhighlights li::before{{content:'·';position:absolute;left:3px;color:#d97706;font-weight:900}}
+  .ireservation{{font-size:10px;font-weight:600;color:#065f46;background:#d1fae5;
+                 border-radius:4px;padding:2px 7px;display:inline-block;width:fit-content}}
+  .idietary{{font-size:10px;color:var(--text-3);font-style:italic}}
 
   /* ── footer ── */
   footer{{text-align:center;font-size:12px;color:var(--text-3);
