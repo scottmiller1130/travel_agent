@@ -886,19 +886,28 @@ class TravelAgent:
     def _handle_update_itinerary(self, inputs: dict) -> dict:
         self._current_trip = inputs  # persist so get_itinerary() is always current
         self._system_prompt_cache = None
-        # Auto-save every itinerary push to TripStore so nothing is ever lost.
-        # Derive a stable ID from destination + start_date so repeated updates
-        # to the same trip overwrite the existing row rather than duplicating.
-        try:
-            if not inputs.get("id"):
-                import hashlib
-                key = f"{inputs.get('destination', '')}-{inputs.get('start_date', '')}"
-                inputs["id"] = "TRIP-" + hashlib.md5(key.encode()).hexdigest()[:10]
-            self._trips.save_trip(inputs, user_id=self._user_id)
-        except Exception:
-            pass  # never let a save failure break the itinerary update
+
+        # Assign a stable ID before doing anything else so the board event and
+        # the DB row always share the same ID.
+        if not inputs.get("id"):
+            import hashlib
+            key = f"{inputs.get('destination', '')}-{inputs.get('start_date', '')}"
+            inputs["id"] = "TRIP-" + hashlib.md5(key.encode()).hexdigest()[:10]
+
+        # Fire the board-update event FIRST — before any DB I/O — so the UI
+        # always updates immediately.  A slow or failing DB save must never
+        # block the board from refreshing (previously save_trip was called
+        # before the callback, causing a 30-second tool timeout when the DB
+        # was slow, which meant the board never updated at all).
         if self._progress_callback:
             self._progress_callback("itinerary_update", {"itinerary": inputs})
+
+        # Persist in the background; swallow errors so a DB hiccup is silent.
+        try:
+            self._trips.save_trip(inputs, user_id=self._user_id)
+        except Exception:
+            pass
+
         return {"status": "success", "message": "Trip board updated."}
 
     def _handle_find_cheapest_dates(self, inputs: dict) -> dict:
