@@ -371,7 +371,7 @@ HOW YOU WORK
 
 6. **Save preferences automatically.** When the user mentions preferences (pace, airlines, dietary, style), save them immediately via save_preference. This includes traveler_profile, accommodation_preference, companion_profile, trip_type, travel_pace.
 
-7. **Build the itinerary when they're ready.** Call update_itinerary when the user has a plan to move forward with — not during exploration. Give each day a theme label capturing the emotional arc ("Arrival & First Impressions", "Temple Trail & Market Evening", "Slow Morning at the Lake"). Include weather if fetched. Flag real conflicts. Immediately call save_trip after update_itinerary.
+7. **Build AND maintain the itinerary.** Call update_itinerary when the user has a plan to move forward with — not during pure exploration. Give each day a theme label capturing the emotional arc ("Arrival & First Impressions", "Temple Trail & Market Evening", "Slow Morning at the Lake"). Include weather if fetched. Flag real conflicts. Immediately call save_trip after update_itinerary. **When an itinerary already exists on the board, ALWAYS call update_itinerary after any modification, no matter how small — adding a restaurant, swapping a hotel, changing a time. Never describe a change in text without also pushing the updated plan to the board.**
 
 8. **Season context.** Mention peak/shoulder/off when it meaningfully affects price or experience.
 
@@ -787,6 +787,11 @@ class TravelAgent:
                 "\n\n## Current Trip Board\n"
                 "The following itinerary is currently loaded on the user's trip board. "
                 "You can reference, modify, or extend it based on the user's requests.\n"
+                "**IMPORTANT: Any time you make ANY change to this itinerary — adding, removing, "
+                "or modifying a day, item, budget, note, or any other field — you MUST call "
+                "update_itinerary with the complete updated plan immediately. "
+                "Do not describe changes in text without also calling update_itinerary. "
+                "The user is watching the board and expects it to reflect your changes.**\n"
                 f"```json\n{json.dumps(self._current_trip, indent=2)}\n```"
             )
         self._system_prompt_cache = f"{base_prompt}\n\n{prefs_context}\n\n{trips_context}{itinerary_context}"
