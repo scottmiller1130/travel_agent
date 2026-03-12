@@ -75,49 +75,83 @@ def _sanitize_conversation(conversation: list[dict]) -> list[dict]:
 
 
 def _heal_conversation(conversation: list[dict]) -> list[dict]:
-    """Remove any user messages whose tool_result blocks lack a matching tool_use
-    in the immediately preceding assistant message.
+    """Remove messages that would cause a 400 tool_use/tool_result mismatch.
 
-    This catches corruption anywhere in the conversation — not just at the start —
-    whether caused by a server crash, mid-conversation trimming that split a
-    tool_use/tool_result pair, or a stale DB row written before the sanitizers ran.
+    Two corruption cases are handled:
 
-    The loop repeats until no more changes are needed because removing one broken
-    message can expose another (e.g. the preceding assistant message now has
-    tool_use blocks with no following tool_results, which _sanitize_conversation
-    will then strip).
+    Case 1 — orphaned tool_result: a user message contains tool_result blocks
+      whose tool_use_id is not present in the immediately preceding assistant
+      message.  This happens when trimming removes the assistant turn but keeps
+      the result turn, or when a crash saves the result without the call.
+
+    Case 2 — orphaned tool_use: an assistant message contains tool_use blocks
+      that are NOT answered by matching tool_result blocks in the very next
+      message.  This happens when trimming keeps a tool_use call in the head
+      but the matching result lands in the dropped middle, or when a conversation
+      is reassembled after slicing (e.g. head + bridge + tail).
+
+    The loop repeats until stable because removing one broken message can expose
+    another (e.g. removing a tool_result exposes its now-dangling tool_use,
+    which _sanitize_conversation then strips from the tail).
     """
     result = _sanitize_conversation(list(conversation))
     changed = True
     while changed:
         changed = False
         for i, msg in enumerate(result):
-            if msg.get("role") != "user":
-                continue
             content = msg.get("content", [])
             if not isinstance(content, list):
-                continue
-            result_ids = {
-                b.get("tool_use_id")
-                for b in content
-                if isinstance(b, dict) and b.get("type") == "tool_result" and b.get("tool_use_id")
-            }
-            if not result_ids:
-                continue
-            # Check the immediately preceding message has matching tool_use IDs
-            prev = result[i - 1] if i > 0 else None
-            prev_content = (prev or {}).get("content", [])
-            use_ids = {
-                b.get("id")
-                for b in (prev_content if isinstance(prev_content, list) else [])
-                if isinstance(b, dict) and b.get("type") == "tool_use" and b.get("id")
-            }
-            if result_ids - use_ids:
-                # Orphaned tool_result found — drop this user message and re-sanitize
-                result.pop(i)
-                result = _sanitize_conversation(result)
-                changed = True
-                break  # restart the scan from the beginning
+                content = []
+
+            if msg.get("role") == "user":
+                # Case 1: user message has tool_results with no matching tool_use
+                # in the immediately preceding assistant message.
+                result_ids = {
+                    b.get("tool_use_id")
+                    for b in content
+                    if isinstance(b, dict) and b.get("type") == "tool_result" and b.get("tool_use_id")
+                }
+                if not result_ids:
+                    continue
+                prev = result[i - 1] if i > 0 else None
+                prev_content = (prev or {}).get("content", [])
+                use_ids = {
+                    b.get("id")
+                    for b in (prev_content if isinstance(prev_content, list) else [])
+                    if isinstance(b, dict) and b.get("type") == "tool_use" and b.get("id")
+                }
+                if result_ids - use_ids:
+                    result.pop(i)
+                    result = _sanitize_conversation(result)
+                    changed = True
+                    break
+
+            elif msg.get("role") == "assistant":
+                # Case 2: assistant message has tool_use blocks that are not
+                # answered by matching tool_results in the very next message.
+                use_ids = {
+                    b.get("id")
+                    for b in content
+                    if isinstance(b, dict) and b.get("type") == "tool_use" and b.get("id")
+                }
+                if not use_ids:
+                    continue
+                next_msg = result[i + 1] if i + 1 < len(result) else None
+                next_content = (next_msg or {}).get("content", [])
+                result_ids = {
+                    b.get("tool_use_id")
+                    for b in (next_content if isinstance(next_content, list) else [])
+                    if isinstance(b, dict) and b.get("type") == "tool_result" and b.get("tool_use_id")
+                }
+                if use_ids - result_ids:
+                    # Drop the assistant turn; the Case 1 check will clean up
+                    # any now-orphaned tool_result in the following user message
+                    # on the next iteration.
+                    result.pop(i)
+                    result = _sanitize_conversation(result)
+                    changed = True
+                    break
+
     return result
 
 
@@ -424,10 +458,6 @@ class TravelAgent:
             tail.insert(0, msg)
             tail_tokens += msg_tokens
 
-        # Heal the tail: remove any tool_result messages whose matching
-        # tool_use assistant message was trimmed away.
-        tail = _heal_conversation(tail)
-
         dropped = len(self._conversation) - len(head) - len(tail)
         bridge = {
             "role": "user",
@@ -437,7 +467,10 @@ class TravelAgent:
                 "are the most recent exchanges.]"
             ),
         }
-        self._conversation = head + [bridge] + tail
+        # Heal the fully-assembled conversation so that stitching head + bridge
+        # + tail together doesn't leave orphaned tool_use blocks in the head or
+        # orphaned tool_results at the start of the tail.
+        self._conversation = _heal_conversation(head + [bridge] + tail)
 
     def chat(
         self,
