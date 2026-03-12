@@ -489,8 +489,15 @@ async def user_guide():
 # ---------------------------------------------------------------------------
 # Chat endpoint — SSE stream
 # ---------------------------------------------------------------------------
+class FileAttachment(BaseModel):
+    data: str        # base64-encoded file content
+    name: str        # original filename, e.g. "itinerary.pdf"
+    type: str        # MIME type, e.g. "application/pdf" or "text/plain"
+
+
 class ChatRequest(BaseModel):
     message: str
+    file: FileAttachment | None = None
 
 
 @app.post("/api/chat/{session_id}")
@@ -549,9 +556,24 @@ async def chat(session_id: str, body: ChatRequest, request: Request):
             loop,
         )
 
+    # Decode the optional file attachment once, outside the thread.
+    file_bytes: bytes | None = None
+    if body.file:
+        import base64 as _b64
+        try:
+            file_bytes = _b64.b64decode(body.file.data)
+        except Exception:
+            file_bytes = None
+
     def run_agent():
         try:
-            response = agent.chat(body.message, progress_callback=progress_callback)
+            response = agent.chat(
+                body.message,
+                progress_callback=progress_callback,
+                file_bytes=file_bytes,
+                file_name=body.file.name if body.file else None,
+                file_media_type=body.file.type if body.file else None,
+            )
             asyncio.run_coroutine_threadsafe(
                 event_queue.put({"type": "done", "content": response}),
                 loop,
