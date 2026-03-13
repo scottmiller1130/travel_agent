@@ -1343,7 +1343,6 @@ async def auth_status(request: Request):
     effective_url  = os.getenv("CLERK_JWKS_URL", "").strip() or derived_url or ""
 
     token_status = "no_token"
-    token_error  = None
     auth_user    = None
     raw_token    = None
     auth_header  = request.headers.get("Authorization", "")
@@ -1793,7 +1792,8 @@ async def admin_ui():
 async def admin_stats(request: Request):
     """Dashboard overview metrics."""
     _require_admin(request)
-    from datetime import datetime as _dt, timedelta as _td
+    from datetime import datetime as _dt
+    from datetime import timedelta as _td
 
     from memory.db import get_conn
     month = _dt.now().strftime("%Y-%m")
