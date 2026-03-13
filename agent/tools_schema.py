@@ -510,7 +510,10 @@ TOOLS: list[dict] = [
             "Call this whenever you have a concrete day-by-day plan — the user will see "
             "draggable cards they can rearrange across days. Include all known flights, "
             "hotels, activities, transfers, plus any issues or budget breakdown. "
-            "Call again whenever the plan changes significantly."
+            "IMPORTANT: Call again after ANY change to the itinerary, no matter how small — "
+            "adding or removing a restaurant, swapping a hotel, changing a time, updating a note. "
+            "Every modification requires a fresh call with the complete updated itinerary. "
+            "Never describe a change in text without also calling this tool."
         ),
         "input_schema": {
             "type": "object",
