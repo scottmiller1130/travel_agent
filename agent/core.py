@@ -595,8 +595,8 @@ class TravelAgent:
         self._conversation = _heal_conversation(self._conversation)
         system = self._build_system_prompt()
 
-        # Per-turn flag: did the model call update_itinerary during this chat()?
-        # Used by the post-end_turn guard below to catch "Done!" without a push.
+        # ── Per-turn update_itinerary enforcement ────────────────────────────────
+        # Track whether update_itinerary was called during this chat() turn.
         _update_called_this_turn = False
         _orig_handle_update = self._handle_update_itinerary
 
@@ -606,7 +606,40 @@ class TravelAgent:
             return _orig_handle_update(inputs)
 
         self._handle_update_itinerary = _tracked_update  # type: ignore[method-assign]
-        _correction_injected = False  # only inject once per turn to avoid loops
+
+        # Detect modification intent in the user's message so we can force a
+        # tool call even when the model's own response gives no signal.
+        _MOD_WORDS = frozenset({
+            "update", "change", "add", "fix", "modify", "correct", "push",
+            "remove", "delete", "swap", "move", "adjust", "revise", "edit",
+            "replace", "rebuild", "redo", "include", "set", "put", "insert",
+        })
+        _user_wants_update = bool(
+            self._current_trip
+            and any(w in user_message.lower() for w in _MOD_WORDS)
+        )
+
+        # Signals in the model's OWN response that indicate it believes it
+        # already made changes — both past tense AND forward promises.
+        _MODEL_DONE_SIGNALS = (
+            # Past tense / claiming completion
+            "done!", "all set", "there you go",
+            "i've updated", "i've added", "i've changed", "i've modified",
+            "i've adjusted", "i've pushed", "i've switched", "i've moved",
+            "i've made", "i have updated", "i have added", "i have changed",
+            "has been updated", "has been changed", "has been modified",
+            "updated the", "added the", "changed the", "adjusted the",
+            "modified the", "pushed the", "now reflects", "now includes",
+            "now shows", "itinerary updated", "board updated",
+            # Forward promises ("I will do it") that also indicate the model
+            # processed the request without actually calling the tool
+            "let me do it", "let me push", "let me update", "let me now",
+            "doing it now", "pushing now", "updating now", "right now",
+            "will push", "will update", "pushing it",
+        )
+
+        _correction_injected = False  # only inject once — prevents infinite loop
+        _force_update_tool = False    # set True to force tool_choice on next call
 
         # Wrap the system prompt in a list block so Anthropic can cache it.
         # This covers the ~3,000-token system prompt at ~10% of normal cost
@@ -616,6 +649,16 @@ class TravelAgent:
         _api_retry_delays = [2, 4, 8]  # seconds between retries for transient errors
 
         while True:
+            # When the previous iteration injected a correction, force the API
+            # to call update_itinerary specifically — bypasses all prompt-following
+            # uncertainty since the tool schema guarantees execution.
+            _tc: dict = (
+                {"type": "tool", "name": "update_itinerary"}
+                if _force_update_tool
+                else {"type": "auto"}
+            )
+            _force_update_tool = False  # consume the flag
+
             for attempt, _delay in enumerate([0] + _api_retry_delays):
                 if _delay:
                     time.sleep(_delay)
@@ -626,6 +669,7 @@ class TravelAgent:
                         system=cached_system,
                         tools=_tools_with_cache,
                         messages=self._conversation,
+                        tool_choice=_tc,
                     )
                     break  # success — exit retry loop
                 except anthropic.BadRequestError as e:
@@ -657,38 +701,40 @@ class TravelAgent:
             if response.stop_reason == "end_turn":
                 text = self._extract_text(response.content)
 
-                # Guard: if the model claimed to make changes but didn't call
-                # update_itinerary, inject a correction and loop once more.
-                # Only fires when there's an existing board and only once per
-                # turn (_correction_injected prevents an infinite loop).
+                # ── Enforcement guard ─────────────────────────────────────────
+                # Trigger if: there's a board, no tool was called this turn,
+                # correction not yet injected, AND either the USER asked for a
+                # modification (keyword match) OR the model's text shows it
+                # believes it already made changes (past/future promise signals).
+                # Then inject a correction AND set _force_update_tool so the next
+                # API call uses tool_choice={"type":"tool","name":"update_itinerary"}
+                # — this guarantees the tool WILL be called regardless of prompts.
                 if (
                     self._current_trip
                     and not _update_called_this_turn
                     and not _correction_injected
-                ):
-                    _DONE_SIGNALS = (
-                        "done!", "all set", "i've updated", "i've added",
-                        "i've changed", "i've modified", "i've adjusted",
-                        "i've pushed", "i've switched", "i've moved",
-                        "updated the", "added the", "changed the",
-                        "adjusted the", "modified the", "pushed the",
-                        "now reflects", "now includes", "now shows",
-                        "itinerary updated", "board updated",
+                    and (
+                        _user_wants_update
+                        or any(s in (text or "").lower() for s in _MODEL_DONE_SIGNALS)
                     )
-                    lower_text = (text or "").lower()
-                    if any(s in lower_text for s in _DONE_SIGNALS):
-                        _correction_injected = True
-                        self._conversation.append({
-                            "role": "user",
-                            "content": (
-                                "⚠️ The board was NOT updated. You described changes in text "
-                                "but did not call update_itinerary — the user still sees the "
-                                "old itinerary. You MUST call update_itinerary right now with "
-                                "the complete updated itinerary including every change you just "
-                                "described. Do not reply with text — call the tool first."
-                            ),
-                        })
-                        continue  # loop back to make the API call with the correction
+                ):
+                    _correction_injected = True
+                    _force_update_tool = True
+                    log.info(
+                        "update_itinerary guard triggered "
+                        "(user_wants_update=%s, text=%r)",
+                        _user_wants_update, (text or "")[:80],
+                    )
+                    self._conversation.append({
+                        "role": "user",
+                        "content": (
+                            "The board was NOT updated — you must call update_itinerary "
+                            "right now with the complete updated itinerary including every "
+                            "change you described or were asked to make. "
+                            "Call the tool immediately."
+                        ),
+                    })
+                    continue  # next iteration will force tool_choice
 
                 # Restore original handler before returning
                 self._handle_update_itinerary = _orig_handle_update  # type: ignore[method-assign]
