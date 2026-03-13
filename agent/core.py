@@ -531,6 +531,7 @@ class TravelAgent:
         Uses a character-based approximation (~4 chars/token) to avoid the cost
         of a separate counting API call.
         """
+        before = len(self._conversation)
         if _estimate_tokens(self._conversation) <= MAX_CONVERSATION_TOKENS:
             return
 
@@ -559,6 +560,10 @@ class TravelAgent:
         # + tail together doesn't leave orphaned tool_use blocks in the head or
         # orphaned tool_results at the start of the tail.
         self._conversation = _heal_conversation(head + [bridge] + tail)
+        log.info(
+            "conversation trimmed: %d → %d messages (dropped %d mid-turn messages) uid=%s",
+            before, len(self._conversation), dropped, self._user_id or "anon",
+        )
 
     def chat(
         self,
@@ -580,7 +585,20 @@ class TravelAgent:
         """
         self._progress_callback = progress_callback
 
+        chat_t0 = time.monotonic()
+        log.info(
+            "chat start: uid=%s msg_len=%d has_file=%s conv_msgs=%d",
+            self._user_id or "anon",
+            len(user_message),
+            bool(file_bytes),
+            len(self._conversation),
+        )
         if file_bytes:
+            log.info(
+                "file attachment: name=%s type=%s size_bytes=%d uid=%s",
+                file_name or "unknown", file_media_type or "unknown", len(file_bytes),
+                self._user_id or "anon",
+            )
             content = self._build_file_content(user_message, file_bytes, file_name, file_media_type)
         else:
             content = user_message
@@ -628,6 +646,7 @@ class TravelAgent:
 
         _correction_injected = False  # only inject once — prevents infinite loop
         _force_update_tool = False    # set True to force tool_choice on next call
+        _loop_iter = 0
 
         # Wrap the system prompt in a list block so Anthropic can cache it.
         # This covers the ~3,000-token system prompt at ~10% of normal cost
@@ -646,10 +665,20 @@ class TravelAgent:
                 else {"type": "auto"}
             )
             _force_update_tool = False  # consume the flag
+            _loop_iter += 1
+            log.debug(
+                "agentic loop iter=%d uid=%s tool_choice=%s",
+                _loop_iter, self._user_id or "anon", _tc.get("name", "auto"),
+            )
 
             for attempt, _delay in enumerate([0] + _api_retry_delays):
                 if _delay:
+                    log.warning(
+                        "Anthropic API retry: attempt=%d delay=%ds uid=%s",
+                        attempt, _delay, self._user_id or "anon",
+                    )
                     time.sleep(_delay)
+                _api_t0 = time.monotonic()
                 try:
                     response = self._client.messages.create(
                         model="claude-sonnet-4-6",
@@ -658,6 +687,16 @@ class TravelAgent:
                         tools=_tools_with_cache,
                         messages=self._conversation,
                         tool_choice=_tc,
+                    )
+                    _api_elapsed = int((time.monotonic() - _api_t0) * 1000)
+                    log.info(
+                        "Anthropic API call: elapsed_ms=%d stop_reason=%s "
+                        "input_tokens=%s output_tokens=%s uid=%s",
+                        _api_elapsed,
+                        response.stop_reason,
+                        getattr(getattr(response, "usage", None), "input_tokens", "?"),
+                        getattr(getattr(response, "usage", None), "output_tokens", "?"),
+                        self._user_id or "anon",
                     )
                     break  # success — exit retry loop
                 except anthropic.BadRequestError as e:
@@ -676,18 +715,34 @@ class TravelAgent:
                         e, (anthropic.APIConnectionError, anthropic.APITimeoutError)
                     )
                     if retryable and attempt < len(_api_retry_delays):
-                        log.warning("Anthropic API transient error (status=%s), retrying in %ds…", status, _api_retry_delays[attempt])
+                        log.warning(
+                            "Anthropic API transient error: status=%s attempt=%d/%d uid=%s err=%s",
+                            status, attempt + 1, len(_api_retry_delays) + 1,
+                            self._user_id or "anon", e,
+                        )
                         continue
                     if status in (429, 502, 503, 529):
+                        log.error(
+                            "Anthropic API permanently overloaded after %d attempts: status=%s uid=%s",
+                            attempt + 1, status, self._user_id or "anon",
+                        )
                         raise RuntimeError(
                             "The AI service is temporarily overloaded. Please wait a moment and try again."
                         ) from None
+                    log.error(
+                        "Anthropic API non-retryable error: status=%s uid=%s err=%s",
+                        status, self._user_id or "anon", e,
+                    )
                     raise
 
             self._conversation.append({"role": "assistant", "content": _blocks_to_dicts(response.content)})
 
             if response.stop_reason == "end_turn":
                 text = self._extract_text(response.content)
+                log.info(
+                    "end_turn: iter=%d response_len=%d uid=%s",
+                    _loop_iter, len(text or ""), self._user_id or "anon",
+                )
 
                 # ── Enforcement guard ─────────────────────────────────────────
                 # Fires when: there's a board, no tool was called this turn,
@@ -721,10 +776,21 @@ class TravelAgent:
 
                 # Restore original handler before returning
                 self._handle_update_itinerary = _orig_handle_update  # type: ignore[method-assign]
+                chat_elapsed = int((time.monotonic() - chat_t0) * 1000)
+                log.info(
+                    "chat complete: uid=%s elapsed_ms=%d iters=%d response_len=%d",
+                    self._user_id or "anon", chat_elapsed, _loop_iter, len(text or ""),
+                )
                 return text if text else "Done! Let me know if you'd like any changes."
 
             if response.stop_reason == "tool_use":
                 tool_blocks = [b for b in response.content if b.type == "tool_use"]
+                log.info(
+                    "tool_use: iter=%d tools=%s uid=%s",
+                    _loop_iter,
+                    [b.name for b in tool_blocks],
+                    self._user_id or "anon",
+                )
 
                 # Notify the UI about every tool that's about to run so the
                 # progress indicators appear all at once before any work starts.
@@ -742,19 +808,29 @@ class TravelAgent:
                 n_workers = 1 if has_confirmation else len(tool_blocks)
 
                 results_map: dict[str, dict] = {}
+                _tool_start_times: dict[str, float] = {}
                 with ThreadPoolExecutor(max_workers=n_workers) as pool:
-                    future_to_block = {
-                        pool.submit(self._dispatch_tool, b.name, b.input): b
-                        for b in tool_blocks
-                    }
+                    future_to_block = {}
+                    for b in tool_blocks:
+                        _tool_start_times[b.id] = time.monotonic()
+                        future_to_block[pool.submit(self._dispatch_tool, b.name, b.input)] = b
                     try:
                         for future in as_completed(future_to_block, timeout=TOOL_TIMEOUT_SECONDS):
                             block = future_to_block[future]
+                            elapsed_ms = int((time.monotonic() - _tool_start_times[block.id]) * 1000)
                             try:
                                 result = future.result()
-                                log.info("tool %s OK", block.name)
+                                log.info(
+                                    "tool OK: name=%s elapsed_ms=%d status=%s uid=%s",
+                                    block.name, elapsed_ms,
+                                    result.get("status", "?") if isinstance(result, dict) else "ok",
+                                    self._user_id or "anon",
+                                )
                             except Exception as e:
-                                log.error("tool %s error: %s", block.name, e)
+                                log.error(
+                                    "tool error: name=%s elapsed_ms=%d err=%s uid=%s",
+                                    block.name, elapsed_ms, e, self._user_id or "anon",
+                                )
                                 result = {"status": "error", "message": str(e)}
                             if progress_callback:
                                 progress_callback("tool_done", {"tool": block.name})
@@ -764,7 +840,12 @@ class TravelAgent:
                         # that didn't finish and fire their done callbacks.
                         for future, block in future_to_block.items():
                             if block.id not in results_map:
-                                log.warning("tool %s timed out after %ds", block.name, TOOL_TIMEOUT_SECONDS)
+                                elapsed_ms = int((time.monotonic() - _tool_start_times[block.id]) * 1000)
+                                log.warning(
+                                    "tool timeout: name=%s elapsed_ms=%d timeout=%ds uid=%s",
+                                    block.name, elapsed_ms, TOOL_TIMEOUT_SECONDS,
+                                    self._user_id or "anon",
+                                )
                                 if progress_callback:
                                     progress_callback("tool_done", {"tool": block.name})
                                 results_map[block.id] = {
@@ -792,6 +873,12 @@ class TravelAgent:
         # Restore original handler (also restored at the end_turn return above)
         self._handle_update_itinerary = _orig_handle_update  # type: ignore[method-assign]
         text = self._extract_text(response.content)
+        chat_elapsed = int((time.monotonic() - chat_t0) * 1000)
+        log.info(
+            "chat complete (fallback): uid=%s elapsed_ms=%d iters=%d response_len=%d stop_reason=%s",
+            self._user_id or "anon", chat_elapsed, _loop_iter, len(text or ""),
+            getattr(response, "stop_reason", "?"),
+        )
         return text if text else "Done! Let me know if you'd like any changes."
 
     def reset(self):
@@ -950,21 +1037,38 @@ class TravelAgent:
             t.start()
             t.join(timeout=5)  # wait at most 5 s; if DB is slow just proceed
             if quota_result.get("error"):
+                log.warning(
+                    "api_calls quota exceeded: tool=%s uid=%s",
+                    name, self._user_id,
+                )
                 return {"status": "error", "message": quota_result["error"]}
 
         # --- Booking tools: require explicit user confirmation ---
         if name in CONFIRMATION_REQUIRED and inputs.get("payment_confirmed"):
             # Notify the frontend so it can show a confirmation modal.
+            log.info(
+                "booking confirmation requested: tool=%s uid=%s",
+                name, self._user_id or "anon",
+            )
             if self._progress_callback:
                 self._progress_callback("booking_confirm", {
                     "tool": name,
                     "inputs": inputs,
                 })
-            if not self._confirm(f"Confirm {name} with inputs: {json.dumps(inputs, indent=2)}"):
+            confirmed = self._confirm(f"Confirm {name} with inputs: {json.dumps(inputs, indent=2)}")
+            if not confirmed:
+                log.info(
+                    "booking cancelled by user: tool=%s uid=%s",
+                    name, self._user_id or "anon",
+                )
                 return {
                     "status": "cancelled",
                     "message": "User declined to confirm the booking. No charge was made.",
                 }
+            log.info(
+                "booking confirmed by user: tool=%s uid=%s",
+                name, self._user_id or "anon",
+            )
 
         dispatch = {
             "search_flights": lambda i: search_flights(**i),
@@ -1007,13 +1111,14 @@ class TravelAgent:
     def _handle_save_preference(self, inputs: dict) -> dict:
         key = inputs["key"]
         value = inputs["value"]
+        log.info("save_preference: key=%s uid=%s", key, self._user_id or "anon")
         self._system_prompt_cache = None
         # Persist in a daemon thread so a slow DB never blocks the tool future.
         def _bg():
             try:
                 self._prefs.set(key, value, user_id=self._user_id)
-            except Exception:
-                pass
+            except Exception as e:
+                log.error("save_preference DB error: key=%s uid=%s err=%s", key, self._user_id or "anon", e)
         threading.Thread(target=_bg, daemon=True).start()
         return {"status": "success", "message": f"Preference '{key}' saved: {value}"}
 
@@ -1021,18 +1126,28 @@ class TravelAgent:
         trip = inputs["trip"]
         self._current_trip = trip
         self._system_prompt_cache = None
+        log.info(
+            "save_trip: destination=%s uid=%s",
+            trip.get("destination", "unknown"), self._user_id or "anon",
+        )
         # Save in daemon thread so a slow DB never blocks the tool future.
         def _bg():
             try:
                 self._trips.save_trip(trip, user_id=self._user_id)
-            except Exception:
-                pass
+            except Exception as e:
+                log.error("save_trip DB error: uid=%s err=%s", self._user_id or "anon", e)
         threading.Thread(target=_bg, daemon=True).start()
         return {"status": "success", "message": "Trip saved."}
 
     def _handle_update_itinerary(self, inputs: dict) -> dict:
         self._current_trip = inputs  # persist so get_itinerary() is always current
         self._system_prompt_cache = None
+        log.info(
+            "update_itinerary: destination=%s days=%d uid=%s",
+            inputs.get("destination", "unknown"),
+            len(inputs.get("days") or []),
+            self._user_id or "anon",
+        )
 
         # Assign a stable ID before doing anything else so the board event and
         # the DB row always share the same ID.

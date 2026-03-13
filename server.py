@@ -417,11 +417,13 @@ def _get_agent(session_id: str, user_id: str | None = None) -> TravelAgent:
             if user_id and not agent._user_id:
                 agent._user_id = user_id
                 agent._user_store = _user_store
+            log.debug("agent cache hit: session=%s uid=%s", session_id, user_id or "anon")
             return agent
 
     # Cold path: load from DB outside the lock so one slow DB read doesn't
     # block every other session.  A duplicate construction race is harmless
     # because the second writer will just overwrite with an equivalent agent.
+    log.info("agent cache miss — loading from DB: session=%s uid=%s", session_id, user_id or "anon")
     agent = TravelAgent(
         confirm_callback=_make_confirm_callback(session_id),
         user_id=user_id,
@@ -431,6 +433,10 @@ def _get_agent(session_id: str, user_id: str | None = None) -> TravelAgent:
     if saved:
         agent.load_conversation(saved["conversation"])
         agent.load_itinerary(saved["itinerary"])
+        log.info(
+            "session restored: session=%s msgs=%d has_itinerary=%s",
+            session_id, len(saved.get("conversation") or []), bool(saved.get("itinerary")),
+        )
 
     with _cache_lock:
         # Prefer an existing entry that arrived concurrently
@@ -455,11 +461,13 @@ def _require_session_access(session_id: str, auth_user: dict | None) -> None:
 
 def _save_session(session_id: str, agent: TravelAgent, itinerary=None) -> None:
     """Persist conversation and itinerary after each exchange."""
-    _session_store.save(
-        session_id,
-        agent.get_conversation(),
-        itinerary if itinerary is not None else agent.get_itinerary(),
+    conv = agent.get_conversation()
+    itin = itinerary if itinerary is not None else agent.get_itinerary()
+    log.info(
+        "session save: session=%s msgs=%d has_itinerary=%s",
+        session_id, len(conv), bool(itin),
     )
+    _session_store.save(session_id, conv, itin)
 
 
 # ---------------------------------------------------------------------------
@@ -559,7 +567,16 @@ async def chat(session_id: str, body: ChatRequest, request: Request):
     rl_key   = uid if uid else client_ip
     rl_limit = RATE_LIMIT_AUTH if uid else RATE_LIMIT_ANON
     if not _check_rate_limit(rl_key, rl_limit):
+        log.warning(
+            "rate limit exceeded: session=%s uid=%s ip=%s limit=%d",
+            session_id, uid or "anon", client_ip, rl_limit,
+        )
         raise HTTPException(status_code=429, detail="Too many requests. Please wait a moment.")
+
+    log.info(
+        "chat request: session=%s uid=%s ip=%s msg_len=%d has_file=%s",
+        session_id, uid or "anon", client_ip, len(body.message), bool(body.file),
+    )
 
     # Session ownership check
     _require_session_access(session_id, auth_user)
@@ -573,6 +590,10 @@ async def chat(session_id: str, body: ChatRequest, request: Request):
                 plan = user_rec["plan"]
                 from memory.users import PLAN_LIMITS
                 cap = PLAN_LIMITS[plan]["chat_turns"]
+                log.warning(
+                    "plan chat_turns limit exceeded: uid=%s plan=%s cap=%d",
+                    uid, plan, cap,
+                )
                 raise HTTPException(
                     status_code=402,
                     detail=f"Monthly chat limit reached ({cap} turns on {plan} plan). Upgrade to Pro for unlimited chats.",
@@ -583,6 +604,7 @@ async def chat(session_id: str, body: ChatRequest, request: Request):
         agent = _get_agent(session_id, user_id=uid)
     except Exception as startup_err:
         err_msg = str(startup_err)
+        log.error("agent init failed: session=%s uid=%s err=%s", session_id, uid or "anon", startup_err)
 
         async def err_stream():
             yield f"data: {json.dumps({'type': 'error', 'message': err_msg})}\n\n"
@@ -612,14 +634,29 @@ async def chat(session_id: str, body: ChatRequest, request: Request):
     file_bytes: bytes | None = None
     if body.file:
         if len(body.file.data) > _MAX_FILE_B64:
+            log.warning(
+                "file upload rejected (too large): session=%s uid=%s size=%d",
+                session_id, uid or "anon", len(body.file.data),
+            )
             raise HTTPException(status_code=413, detail="File too large (max 10 MB).")
         import base64 as _b64
         try:
             file_bytes = _b64.b64decode(body.file.data)
-        except Exception:
+            log.info(
+                "file attachment decoded: session=%s uid=%s name=%s type=%s size_bytes=%d",
+                session_id, uid or "anon",
+                body.file.name, body.file.type, len(file_bytes),
+            )
+        except Exception as decode_err:
+            log.warning(
+                "file attachment decode failed: session=%s uid=%s err=%s",
+                session_id, uid or "anon", decode_err,
+            )
             file_bytes = None
 
     def run_agent():
+        _run_t0 = time.monotonic()
+        log.info("agent run start: session=%s uid=%s", session_id, uid or "anon")
         try:
             response = agent.chat(
                 body.message,
@@ -628,11 +665,21 @@ async def chat(session_id: str, body: ChatRequest, request: Request):
                 file_name=body.file.name if body.file else None,
                 file_media_type=body.file.type if body.file else None,
             )
+            _run_elapsed = int((time.monotonic() - _run_t0) * 1000)
+            log.info(
+                "agent run complete: session=%s uid=%s elapsed_ms=%d response_len=%d",
+                session_id, uid or "anon", _run_elapsed, len(response or ""),
+            )
             asyncio.run_coroutine_threadsafe(
                 event_queue.put({"type": "done", "content": response}),
                 loop,
             )
         except Exception as e:
+            _run_elapsed = int((time.monotonic() - _run_t0) * 1000)
+            log.error(
+                "agent run error: session=%s uid=%s elapsed_ms=%d err=%s",
+                session_id, uid or "anon", _run_elapsed, e,
+            )
             asyncio.run_coroutine_threadsafe(
                 event_queue.put({"type": "error", "message": str(e)}),
                 loop,
@@ -1368,6 +1415,7 @@ async def new_session(request: Request):
         _user_store.upsert(user_id, email=auth_user.get("email", ""), name=auth_user.get("name", ""))
     session_id = secrets.token_urlsafe(32)
     _session_store.create(session_id, user_id=user_id)
+    log.info("new session created: session=%s uid=%s", session_id, user_id or "anon")
     return JSONResponse({"session_id": session_id})
 
 
@@ -1639,12 +1687,14 @@ async def delete_group(group_id: str, request: Request):
 @app.post("/api/reset/{session_id}")
 async def reset(session_id: str, request: Request):
     auth_user = _user_from_request(request)
+    uid = auth_user["user_id"] if auth_user else None
     if _session_store.exists(session_id):
         _require_session_access(session_id, auth_user)
     with _cache_lock:
         if session_id in _agent_cache:
             _agent_cache[session_id].reset()
     _session_store.delete(session_id)
+    log.info("session reset: session=%s uid=%s", session_id, uid or "anon")
     return JSONResponse({"status": "ok", "message": "Conversation reset."})
 
 
@@ -1658,6 +1708,9 @@ async def booking_confirm(session_id: str):
     if pending:
         pending["approved"] = True
         pending["event"].set()
+        log.info("booking confirmed via UI: session=%s", session_id)
+    else:
+        log.warning("booking confirm: no pending confirmation found: session=%s", session_id)
     return JSONResponse({"status": "ok"})
 
 
@@ -1668,6 +1721,9 @@ async def booking_cancel(session_id: str):
     if pending:
         pending["approved"] = False
         pending["event"].set()
+        log.info("booking cancelled via UI: session=%s", session_id)
+    else:
+        log.warning("booking cancel: no pending confirmation found: session=%s", session_id)
     return JSONResponse({"status": "ok"})
 
 
