@@ -357,6 +357,19 @@ Then immediately save_preference(key="traveler_profile", value=<their answer>).
 - Always respect explicitly saved preferences over auto-detection.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+HARD RULE — READ THIS FIRST
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+**NEVER describe a change to an itinerary without ALSO calling update_itinerary.**
+
+This is not optional. Every time you:
+- Add, remove, or swap a flight, hotel, restaurant, activity, or any item
+- Change a time, date, name, price, note, or any field
+- Reorganise days, change the destination, update the budget
+
+…you MUST call update_itinerary with the COMPLETE updated itinerary before or alongside your text reply. Saying "I've updated the itinerary" or "Done!" in text WITHOUT calling update_itinerary is incorrect — the user's board will not change and they will see the old version. The call IS the update. Text alone does nothing.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 HOW YOU WORK
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -582,6 +595,19 @@ class TravelAgent:
         self._conversation = _heal_conversation(self._conversation)
         system = self._build_system_prompt()
 
+        # Per-turn flag: did the model call update_itinerary during this chat()?
+        # Used by the post-end_turn guard below to catch "Done!" without a push.
+        _update_called_this_turn = False
+        _orig_handle_update = self._handle_update_itinerary
+
+        def _tracked_update(inputs: dict) -> dict:
+            nonlocal _update_called_this_turn
+            _update_called_this_turn = True
+            return _orig_handle_update(inputs)
+
+        self._handle_update_itinerary = _tracked_update  # type: ignore[method-assign]
+        _correction_injected = False  # only inject once per turn to avoid loops
+
         # Wrap the system prompt in a list block so Anthropic can cache it.
         # This covers the ~3,000-token system prompt at ~10% of normal cost
         # after the first call.
@@ -630,6 +656,42 @@ class TravelAgent:
 
             if response.stop_reason == "end_turn":
                 text = self._extract_text(response.content)
+
+                # Guard: if the model claimed to make changes but didn't call
+                # update_itinerary, inject a correction and loop once more.
+                # Only fires when there's an existing board and only once per
+                # turn (_correction_injected prevents an infinite loop).
+                if (
+                    self._current_trip
+                    and not _update_called_this_turn
+                    and not _correction_injected
+                ):
+                    _DONE_SIGNALS = (
+                        "done!", "all set", "i've updated", "i've added",
+                        "i've changed", "i've modified", "i've adjusted",
+                        "i've pushed", "i've switched", "i've moved",
+                        "updated the", "added the", "changed the",
+                        "adjusted the", "modified the", "pushed the",
+                        "now reflects", "now includes", "now shows",
+                        "itinerary updated", "board updated",
+                    )
+                    lower_text = (text or "").lower()
+                    if any(s in lower_text for s in _DONE_SIGNALS):
+                        _correction_injected = True
+                        self._conversation.append({
+                            "role": "user",
+                            "content": (
+                                "⚠️ The board was NOT updated. You described changes in text "
+                                "but did not call update_itinerary — the user still sees the "
+                                "old itinerary. You MUST call update_itinerary right now with "
+                                "the complete updated itinerary including every change you just "
+                                "described. Do not reply with text — call the tool first."
+                            ),
+                        })
+                        continue  # loop back to make the API call with the correction
+
+                # Restore original handler before returning
+                self._handle_update_itinerary = _orig_handle_update  # type: ignore[method-assign]
                 return text if text else "Done! Let me know if you'd like any changes."
 
             if response.stop_reason == "tool_use":
@@ -698,6 +760,8 @@ class TravelAgent:
 
             break
 
+        # Restore original handler (also restored at the end_turn return above)
+        self._handle_update_itinerary = _orig_handle_update  # type: ignore[method-assign]
         text = self._extract_text(response.content)
         return text if text else "Done! Let me know if you'd like any changes."
 
