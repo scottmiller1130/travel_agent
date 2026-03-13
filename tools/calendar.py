@@ -5,6 +5,7 @@ Uses in-memory mock; swap in Google Calendar API when configured.
 
 import json
 import os
+import uuid
 from datetime import datetime
 from pathlib import Path
 
@@ -13,7 +14,10 @@ CALENDAR_FILE = Path.home() / ".travel_agent" / "calendar.json"
 
 def _load_calendar() -> list[dict]:
     if CALENDAR_FILE.exists():
-        return json.loads(CALENDAR_FILE.read_text())
+        try:
+            return json.loads(CALENDAR_FILE.read_text())
+        except (json.JSONDecodeError, OSError):
+            return []
     return []
 
 
@@ -60,7 +64,7 @@ def add_to_calendar(
     """Add a trip or event to the user's calendar."""
     events = _load_calendar()
     event = {
-        "id": f"EVT{len(events)+1:04d}",
+        "id": f"EVT{uuid.uuid4().hex[:8].upper()}",
         "title": title,
         "start_date": start_date,
         "end_date": end_date,

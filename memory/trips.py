@@ -103,9 +103,13 @@ class TripStore:
             row = cur.fetchone()
         return json.loads(row[0]) if row else None
 
+    _VALID_STATUSES = frozenset({"planned", "completed", "cancelled"})
+
     def get_all_trips(self, status: str | None = None, user_id: str | None = None) -> list[dict]:
         self._ensure_db()
         """Return all trips for a user, optionally filtered by status."""
+        if status and status not in self._VALID_STATUSES:
+            status = None  # ignore unknown status values rather than error
         with get_conn() as conn:
             cur = conn.cursor()
             if user_id and status:
@@ -129,6 +133,21 @@ class TripStore:
                 )
             rows = cur.fetchall()
         return [json.loads(row[0]) for row in rows]
+
+    def get_trips_for_users(self, user_ids: list[str]) -> list[dict]:
+        """Batch-fetch trips for multiple users in a single query (avoids N+1)."""
+        if not user_ids:
+            return []
+        self._ensure_db()
+        with get_conn() as conn:
+            cur = conn.cursor()
+            placeholders = ",".join(["%s"] * len(user_ids))
+            cur.execute(
+                f"SELECT data, user_id FROM trips WHERE user_id IN ({placeholders}) ORDER BY updated_at DESC",
+                user_ids,
+            )
+            rows = cur.fetchall()
+        return [{"_member_user_id": row[1], **json.loads(row[0])} for row in rows]
 
     def get_recent_destinations(self, limit: int = 5, user_id: str | None = None) -> list[str]:
         self._ensure_db()
