@@ -817,6 +817,7 @@ class TravelAgent:
     def load_itinerary(self, itinerary: dict | None) -> None:
         """Restore a previously saved itinerary."""
         self._current_trip = itinerary or {}
+        self._system_prompt_cache = None  # force rebuild so next turn sees updated itinerary
 
     def _build_file_content(
         self,
