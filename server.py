@@ -135,6 +135,30 @@ async def _start_backup_loop():
     asyncio.create_task(_weekly_backup_loop())
 
 
+@app.on_event("shutdown")
+async def _close_db_pool():
+    """Return all DB connections on graceful shutdown to avoid zombie connections."""
+    from memory.db import _pool
+    if _pool is not None:
+        try:
+            _pool.closeall()
+        except Exception:
+            pass
+
+
+@app.get("/health")
+async def health_check():
+    """Liveness + readiness probe for load balancers and Kubernetes."""
+    from memory.db import get_conn
+    try:
+        with get_conn() as conn:
+            conn.cursor().execute("SELECT 1")
+        return JSONResponse({"status": "healthy"})
+    except Exception as exc:
+        log.error("Health check failed: %s", exc)
+        return JSONResponse({"status": "unhealthy", "detail": "database unreachable"}, status_code=503)
+
+
 # ---------------------------------------------------------------------------
 # Startup validation — fail fast if required environment variables are missing
 # ---------------------------------------------------------------------------
@@ -329,6 +353,8 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+        response.headers["Cross-Origin-Resource-Policy"] = "same-origin"
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
             "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://*.clerk.accounts.dev https://clerk.com; "
@@ -580,8 +606,13 @@ async def chat(session_id: str, body: ChatRequest, request: Request):
         )
 
     # Decode the optional file attachment once, outside the thread.
+    # Reject files larger than 10 MB to prevent OOM / token-cost abuse.
+    # base64 encoding expands by ~33 %, so the encoded string limit is ~13.5 MB.
+    _MAX_FILE_B64 = 14_000_000
     file_bytes: bytes | None = None
     if body.file:
+        if len(body.file.data) > _MAX_FILE_B64:
+            raise HTTPException(status_code=413, detail="File too large (max 10 MB).")
         import base64 as _b64
         try:
             file_bytes = _b64.b64decode(body.file.data)
@@ -784,8 +815,13 @@ async def create_share_link(session_id: str, request: Request):
 
 
 @app.get("/s/{token}", response_class=HTMLResponse)
-async def shared_itinerary(token: str):
+async def shared_itinerary(token: str, request: Request):
     """Render a rich, accordion read-only itinerary view for a share token."""
+    # Rate-limit per IP to prevent token enumeration / scraping
+    client_ip = request.client.host if request.client else "unknown"
+    if not _check_rate_limit(f"share:{client_ip}", 60):  # 60/min per IP
+        return HTMLResponse("<h2 style='font-family:sans-serif;padding:40px'>Too many requests.</h2>", status_code=429)
+
     import html as _html
     from datetime import date as _dt_date
 
@@ -1561,12 +1597,8 @@ async def get_group_trips(group_id: str, request: Request):
     group, _role = _require_group_member(group_id, auth_user["user_id"])
     # Only include members who have actually joined (user_id is set)
     member_ids = [m["user_id"] for m in group["members"] if m["user_id"]]
-    trip_store = TripStore()
-    all_trips = []
-    for uid in member_ids:
-        for trip in trip_store.get_all_trips(user_id=uid):
-            trip["_member_user_id"] = uid
-            all_trips.append(trip)
+    # Single batch query instead of N per-member queries
+    all_trips = TripStore().get_trips_for_users(member_ids)
     all_trips.sort(key=lambda t: t.get("updated_at", ""), reverse=True)
     return JSONResponse({"trips": all_trips})
 
@@ -1655,6 +1687,13 @@ _ADMIN_IDS: set[str] = {
     uid.strip() for uid in os.getenv("ADMIN_USER_IDS", "").split(",") if uid.strip()
 }
 _ADMIN_SECRET: str = os.getenv("ADMIN_SECRET", "").strip()
+if _ADMIN_SECRET and len(_ADMIN_SECRET) < 32:
+    logging.critical(
+        "ADMIN_SECRET is too short (%d chars). Use at least 32 characters. "
+        "Generate one with: python -c \"import secrets; print(secrets.token_urlsafe(32))\"",
+        len(_ADMIN_SECRET),
+    )
+    sys.exit(1)
 
 
 def _require_admin(request: Request) -> dict:
