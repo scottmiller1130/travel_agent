@@ -702,6 +702,7 @@ class TravelAgent:
                 except anthropic.BadRequestError as e:
                     body = e.body or {}
                     err = body.get("error", {}) if isinstance(body, dict) else {}
+                    log.error("Anthropic BadRequestError: status=%s body=%s", getattr(e, "status_code", "?"), body)
                     if "usage limits" in err.get("message", "").lower():
                         raise RuntimeError(
                             "The AI service is temporarily unavailable due to an API usage limit on the server. "
