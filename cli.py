@@ -8,6 +8,7 @@ Usage:
     python cli.py --trips      # View saved trips
 """
 
+import logging
 import os
 import sys
 from pathlib import Path
@@ -18,6 +19,27 @@ sys.path.insert(0, str(Path(__file__).parent))
 from dotenv import load_dotenv  # noqa: E402
 
 load_dotenv()
+
+# Configure file logging for CLI sessions so interactions can be reviewed later.
+# File handler → travel_agent_cli.log, console handler only shows WARNING+.
+_log_dir = Path(__file__).parent
+_log_file = _log_dir / "travel_agent_cli.log"
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(asctime)s %(levelname)-8s [%(name)s] %(message)s",
+    datefmt="%Y-%m-%dT%H:%M:%S",
+    handlers=[
+        logging.FileHandler(_log_file, encoding="utf-8"),
+        logging.StreamHandler(sys.stderr),  # WARNING+ only — set below
+    ],
+)
+# Quieten the console; the file gets everything
+logging.getLogger().handlers[1].setLevel(logging.WARNING)
+# Quieten noisy libraries
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("anthropic").setLevel(logging.WARNING)
+
+log = logging.getLogger("travel_agent.cli")
 
 import click  # noqa: E402
 from rich import box  # noqa: E402
@@ -320,6 +342,7 @@ def main(setup: bool, trips: bool, prefs: bool):
         sys.exit(1)
 
     print_welcome()
+    log.info("CLI session started")
 
     # First-time setup prompt
     user_name = pref_store.get("name")
@@ -328,11 +351,13 @@ def main(setup: bool, trips: bool, prefs: bool):
 
     agent = TravelAgent(confirm_callback=make_confirm_callback())
 
+    _turn = 0
     while True:
         try:
             user_input = Prompt.ask("[bold cyan]You[/]").strip()
         except (KeyboardInterrupt, EOFError):
             console.print("\n[dim]Goodbye! Safe travels.[/dim]")
+            log.info("CLI session ended (interrupt) after %d turns", _turn)
             break
 
         if not user_input:
@@ -340,26 +365,35 @@ def main(setup: bool, trips: bool, prefs: bool):
 
         if user_input.lower() in ("quit", "exit", "q", "bye"):
             console.print("[dim]Goodbye! Safe travels.[/dim]")
+            log.info("CLI session ended (quit) after %d turns", _turn)
             break
 
         if user_input.lower() == "reset":
             agent.reset()
+            log.info("CLI conversation reset after %d turns", _turn)
+            _turn = 0
             console.print("[dim]Conversation reset. Starting fresh.[/dim]\n")
             continue
 
         if user_input.lower() == "trips":
+            log.debug("CLI: showing trips")
             show_trips(trip_store)
             continue
 
         if user_input.lower() == "prefs":
+            log.debug("CLI: showing preferences")
             show_preferences(pref_store)
             continue
 
+        _turn += 1
+        log.info("CLI turn %d: msg_len=%d", _turn, len(user_input))
         print_thinking()
         try:
             response = agent.chat(user_input)
+            log.info("CLI turn %d complete: response_len=%d", _turn, len(response or ""))
             print_agent_response(response)
         except Exception as e:
+            log.error("CLI turn %d error: %s", _turn, e)
             console.print(f"\n[bold red]Error:[/bold red] {e}\n")
 
 
