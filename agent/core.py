@@ -607,34 +607,22 @@ class TravelAgent:
 
         self._handle_update_itinerary = _tracked_update  # type: ignore[method-assign]
 
-        # Detect modification intent in the user's message so we can force a
-        # tool call even when the model's own response gives no signal.
-        _MOD_WORDS = frozenset({
-            "update", "change", "add", "fix", "modify", "correct", "push",
-            "remove", "delete", "swap", "move", "adjust", "revise", "edit",
-            "replace", "rebuild", "redo", "include", "set", "put", "insert",
-        })
-        _user_wants_update = bool(
-            self._current_trip
-            and any(w in user_message.lower() for w in _MOD_WORDS)
-        )
-
-        # Signals in the model's OWN response that indicate it believes it
-        # already made changes — both past tense AND forward promises.
+        # Signals in the model's OWN response that clearly indicate it believes
+        # it already made changes without actually calling update_itinerary.
+        # Keep these TIGHT — overly broad phrases trigger false positives that
+        # force premature board updates and make it look like nothing changed.
         _MODEL_DONE_SIGNALS = (
-            # Past tense / claiming completion
-            "done!", "all set", "there you go",
+            # Clear first-person past-tense completion claims
+            "done!", "all set",
             "i've updated", "i've added", "i've changed", "i've modified",
             "i've adjusted", "i've pushed", "i've switched", "i've moved",
             "i've made", "i have updated", "i have added", "i have changed",
             "has been updated", "has been changed", "has been modified",
-            "updated the", "added the", "changed the", "adjusted the",
-            "modified the", "pushed the", "now reflects", "now includes",
-            "now shows", "itinerary updated", "board updated",
-            # Forward promises ("I will do it") that also indicate the model
-            # processed the request without actually calling the tool
-            "let me do it", "let me push", "let me update", "let me now",
-            "doing it now", "pushing now", "updating now", "right now",
+            "now reflects", "now includes", "now shows",
+            "itinerary updated", "board updated",
+            # Forward promises that are unambiguously about pushing the itinerary
+            "let me do it", "let me push", "let me update",
+            "doing it now", "pushing now", "updating now",
             "will push", "will update", "pushing it",
         )
 
@@ -702,28 +690,23 @@ class TravelAgent:
                 text = self._extract_text(response.content)
 
                 # ── Enforcement guard ─────────────────────────────────────────
-                # Trigger if: there's a board, no tool was called this turn,
-                # correction not yet injected, AND either the USER asked for a
-                # modification (keyword match) OR the model's text shows it
-                # believes it already made changes (past/future promise signals).
-                # Then inject a correction AND set _force_update_tool so the next
-                # API call uses tool_choice={"type":"tool","name":"update_itinerary"}
+                # Fires when: there's a board, no tool was called this turn,
+                # correction not yet injected, AND the model's text contains a
+                # clear signal that it believes it already made changes.
+                # Inject a correction + set _force_update_tool so the next API
+                # call uses tool_choice={"type":"tool","name":"update_itinerary"}
                 # — this guarantees the tool WILL be called regardless of prompts.
                 if (
                     self._current_trip
                     and not _update_called_this_turn
                     and not _correction_injected
-                    and (
-                        _user_wants_update
-                        or any(s in (text or "").lower() for s in _MODEL_DONE_SIGNALS)
-                    )
+                    and any(s in (text or "").lower() for s in _MODEL_DONE_SIGNALS)
                 ):
                     _correction_injected = True
                     _force_update_tool = True
                     log.info(
-                        "update_itinerary guard triggered "
-                        "(user_wants_update=%s, text=%r)",
-                        _user_wants_update, (text or "")[:80],
+                        "update_itinerary guard triggered (text=%r)",
+                        (text or "")[:80],
                     )
                     self._conversation.append({
                         "role": "user",
