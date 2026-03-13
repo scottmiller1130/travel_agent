@@ -682,7 +682,7 @@ class TravelAgent:
                 try:
                     response = self._client.messages.create(
                         model="claude-sonnet-4-6",
-                        max_tokens=4096,
+                        max_tokens=8096,
                         system=cached_system,
                         tools=_tools_with_cache,
                         messages=self._conversation,
@@ -736,6 +736,12 @@ class TravelAgent:
                     raise
 
             self._conversation.append({"role": "assistant", "content": _blocks_to_dicts(response.content)})
+
+            if response.stop_reason == "max_tokens":
+                log.warning(
+                    "max_tokens hit: iter=%d uid=%s — response may be truncated",
+                    _loop_iter, self._user_id or "anon",
+                )
 
             if response.stop_reason == "end_turn":
                 text = self._extract_text(response.content)
