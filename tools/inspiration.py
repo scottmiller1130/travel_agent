@@ -22,8 +22,8 @@ except ImportError:
 def _is_safe_url(url: str) -> bool:
     """Return False if the URL targets a private/loopback address (SSRF guard)."""
     try:
-        from urllib.parse import urlparse
         import ipaddress
+        from urllib.parse import urlparse
         parsed = urlparse(url)
         if parsed.scheme not in ("http", "https"):
             return False

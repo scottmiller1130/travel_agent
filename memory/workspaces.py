@@ -187,7 +187,6 @@ class WorkspaceStore:
         if role not in ROLES or role == "owner":
             raise ValueError(f"Invalid role: {role!r}. Must be 'editor' or 'viewer'.")
         self._ensure_db()
-        now = datetime.now().isoformat()
         with get_conn() as conn:
             cur = conn.cursor()
             cur.execute("""
