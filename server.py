@@ -25,7 +25,7 @@ import sys
 import threading
 import time
 import uuid
-from collections import defaultdict
+from collections import OrderedDict, defaultdict
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -375,7 +375,9 @@ _session_store = SessionStore()
 
 # In-process agent cache  {session_id: TravelAgent}
 # Agents are recreated from persisted state after a server restart.
-_agent_cache: dict[str, TravelAgent] = {}
+# Capped at _AGENT_CACHE_MAX entries; LRU eviction via OrderedDict.
+_AGENT_CACHE_MAX = 500
+_agent_cache: OrderedDict[str, TravelAgent] = OrderedDict()
 _cache_lock = threading.Lock()
 
 
@@ -384,26 +386,36 @@ def _get_agent(session_id: str, user_id: str | None = None) -> TravelAgent:
     with _cache_lock:
         if session_id in _agent_cache:
             agent = _agent_cache[session_id]
+            _agent_cache.move_to_end(session_id)  # LRU: mark as recently used
             # Keep user_id in sync if it was just established (e.g. user logged in)
             if user_id and not agent._user_id:
                 agent._user_id = user_id
                 agent._user_store = _user_store
             return agent
 
-        agent = TravelAgent(
-            confirm_callback=_make_confirm_callback(session_id),
-            user_id=user_id,
-            user_store=_user_store,
-        )
+    # Cold path: load from DB outside the lock so one slow DB read doesn't
+    # block every other session.  A duplicate construction race is harmless
+    # because the second writer will just overwrite with an equivalent agent.
+    agent = TravelAgent(
+        confirm_callback=_make_confirm_callback(session_id),
+        user_id=user_id,
+        user_store=_user_store,
+    )
+    saved = _session_store.load(session_id)
+    if saved:
+        agent.load_conversation(saved["conversation"])
+        agent.load_itinerary(saved["itinerary"])
 
-        # Restore persisted state if available
-        saved = _session_store.load(session_id)
-        if saved:
-            agent.load_conversation(saved["conversation"])
-            agent.load_itinerary(saved["itinerary"])
-
+    with _cache_lock:
+        # Prefer an existing entry that arrived concurrently
+        if session_id in _agent_cache:
+            _agent_cache.move_to_end(session_id)
+            return _agent_cache[session_id]
         _agent_cache[session_id] = agent
-        return agent
+        # Evict oldest entries when cache exceeds max size
+        while len(_agent_cache) > _AGENT_CACHE_MAX:
+            _agent_cache.popitem(last=False)
+    return agent
 
 
 def _require_session_access(session_id: str, auth_user: dict | None) -> None:
@@ -631,7 +643,9 @@ async def chat(session_id: str, body: ChatRequest, request: Request):
 # Itinerary (visual board state)
 # ---------------------------------------------------------------------------
 @app.get("/api/itinerary/{session_id}")
-async def get_itinerary(session_id: str):
+async def get_itinerary(session_id: str, request: Request):
+    auth_user = _user_from_request(request)
+    _require_session_access(session_id, auth_user)
     saved = _session_store.load(session_id)
     itinerary = saved["itinerary"] if saved else None
     # Also check live agent cache in case it was updated this session

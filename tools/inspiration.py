@@ -19,9 +19,35 @@ except ImportError:
     _HTTPX = False
 
 
+def _is_safe_url(url: str) -> bool:
+    """Return False if the URL targets a private/loopback address (SSRF guard)."""
+    try:
+        from urllib.parse import urlparse
+        import ipaddress
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https"):
+            return False
+        host = parsed.hostname or ""
+        # Block bare localhost and .local domains
+        if host in ("localhost",) or host.endswith(".local"):
+            return False
+        # Block numeric IPs that resolve to private/loopback ranges
+        try:
+            addr = ipaddress.ip_address(host)
+            if addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_reserved:
+                return False
+        except ValueError:
+            pass  # Not a numeric IP — hostname is fine
+        return True
+    except Exception:
+        return False
+
+
 def _fetch_url(url: str) -> str | None:
     """Fetch and extract readable text from a URL."""
     if not _HTTPX:
+        return None
+    if not _is_safe_url(url):
         return None
     headers = {
         "User-Agent": (
@@ -33,7 +59,7 @@ def _fetch_url(url: str) -> str | None:
         "Accept-Language": "en-US,en;q=0.9",
     }
     try:
-        r = _httpx.get(url, headers=headers, timeout=12, follow_redirects=True)
+        r = _httpx.get(url, headers=headers, timeout=12, follow_redirects=False)
         if r.status_code != 200:
             return None
         content_type = r.headers.get("content-type", "")

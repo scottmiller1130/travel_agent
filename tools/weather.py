@@ -104,7 +104,7 @@ def _mock_forecast(destination: str, start_date: str, end_date: str) -> dict:
     dest_lower = destination.lower()
     profile_key = next((v for k, v in _DEST_PROFILES.items() if k in dest_lower), "mediterranean")
     avg_temp, conditions = _CLIMATE_PROFILES[profile_key]
-    random.seed(f"{destination}{start_date}")
+    rng = random.Random(f"{destination}{start_date}")  # thread-local; never mutates global state
     try:
         s = datetime.strptime(start_date, "%Y-%m-%d")
         e = datetime.strptime(end_date,   "%Y-%m-%d")
@@ -114,8 +114,8 @@ def _mock_forecast(destination: str, start_date: str, end_date: str) -> dict:
 
     daily = []
     for i in range(min(days, 14)):
-        temp_c = avg_temp + random.randint(-5, 5)
-        condition = random.choice(conditions)
+        temp_c = avg_temp + rng.randint(-5, 5)
+        condition = rng.choice(conditions)
         daily.append({
             "date":                   (s + timedelta(days=i)).strftime("%Y-%m-%d"),
             "condition":              condition,
@@ -123,7 +123,7 @@ def _mock_forecast(destination: str, start_date: str, end_date: str) -> dict:
             "temp_low_c":             temp_c - 4,
             "temp_high_f":            round((temp_c + 3) * 9/5 + 32, 1),
             "temp_low_f":             round((temp_c - 4) * 9/5 + 32, 1),
-            "precipitation_chance":   random.randint(60, 90) if "rain" in condition.lower() else random.randint(0, 40),
+            "precipitation_chance":   rng.randint(60, 90) if "rain" in condition.lower() else rng.randint(0, 40),
             "precipitation_mm":       None,
             "wind_kmh":               None,
             "uv_index":               None,
