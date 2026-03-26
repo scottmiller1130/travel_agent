@@ -255,7 +255,7 @@
     #install-btn { display: none; align-items: center; gap: 6px; padding: 6px 12px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--surface); color: var(--text-2); font-size: 12px; font-weight: 500; cursor: pointer; transition: all .15s; white-space: nowrap; }
     #install-btn:hover { background: var(--surface2); }
     #install-btn.visible { display: flex; }
-    #export-menu { position: absolute; top: calc(100% + 6px); right: 0; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-lg); min-width: 176px; overflow: hidden; z-index: 999; display: none; }
+    #export-menu { position: absolute; top: calc(100% + 6px); left: 50%; transform: translateX(-50%); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-lg); min-width: 176px; overflow: hidden; z-index: 999; display: none; }
     #export-menu.open { display: block; animation: msgIn .15s ease; }
     .export-item { display: flex; align-items: center; gap: 9px; padding: 10px 14px; font-size: 13px; font-weight: 500; color: var(--text-2); cursor: pointer; transition: background .1s; border: none; background: none; width: 100%; text-align: left; }
     .export-item:hover { background: var(--surface2); color: var(--text); }
