@@ -114,25 +114,26 @@ class TripStore:
             cur = conn.cursor()
             if user_id and status:
                 cur.execute(
-                    "SELECT data FROM trips WHERE user_id = %s AND status = %s ORDER BY updated_at DESC",
+                    "SELECT data, created_at, updated_at FROM trips WHERE user_id = %s AND status = %s ORDER BY updated_at DESC",
                     (user_id, status),
                 )
             elif user_id:
                 cur.execute(
-                    "SELECT data FROM trips WHERE user_id = %s ORDER BY updated_at DESC",
+                    "SELECT data, created_at, updated_at FROM trips WHERE user_id = %s ORDER BY updated_at DESC",
                     (user_id,),
                 )
             elif status:
                 cur.execute(
-                    "SELECT data FROM trips WHERE user_id IS NULL AND status = %s ORDER BY updated_at DESC",
+                    "SELECT data, created_at, updated_at FROM trips WHERE user_id IS NULL AND status = %s ORDER BY updated_at DESC",
                     (status,),
                 )
             else:
                 cur.execute(
-                    "SELECT data FROM trips WHERE user_id IS NULL ORDER BY updated_at DESC"
+                    "SELECT data, created_at, updated_at FROM trips WHERE user_id IS NULL ORDER BY updated_at DESC"
                 )
             rows = cur.fetchall()
-        return [json.loads(row[0]) for row in rows]
+        # DB columns are authoritative for timestamps — merge over any stale values in the JSON blob
+        return [{"created_at": row[1], "updated_at": row[2], **json.loads(row[0])} for row in rows]
 
     def get_trips_for_users(self, user_ids: list[str]) -> list[dict]:
         """Batch-fetch trips for multiple users in a single query (avoids N+1)."""
@@ -143,11 +144,11 @@ class TripStore:
             cur = conn.cursor()
             placeholders = ",".join(["%s"] * len(user_ids))
             cur.execute(
-                f"SELECT data, user_id FROM trips WHERE user_id IN ({placeholders}) ORDER BY updated_at DESC",
+                f"SELECT data, user_id, created_at, updated_at FROM trips WHERE user_id IN ({placeholders}) ORDER BY updated_at DESC",
                 user_ids,
             )
             rows = cur.fetchall()
-        return [{"_member_user_id": row[1], **json.loads(row[0])} for row in rows]
+        return [{"_member_user_id": row[1], "created_at": row[2], "updated_at": row[3], **json.loads(row[0])} for row in rows]
 
     def get_recent_destinations(self, limit: int = 5, user_id: str | None = None) -> list[str]:
         self._ensure_db()
