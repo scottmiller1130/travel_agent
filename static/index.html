@@ -229,6 +229,7 @@
     .trip-del-btn:hover { opacity: 1; background: var(--rose-l); color: var(--rose); }
     .trip-badge { display: inline-flex; align-items: center; gap: 3px; margin-top: 4px; padding: 1px 7px; border-radius: 4px; font-size: 10px; font-weight: 600; background: var(--surface2); color: var(--text-3); border: 1px solid var(--border); letter-spacing: .02em; }
     .trip-badge.completed { background: var(--green-l); color: var(--teal-d); border-color: transparent; }
+    .trip-card .trip-modified { font-size: 10px; color: var(--text-4); margin-top: 2px; }
     .empty-state { font-size: 12px; color: var(--text-4); padding: 16px 4px; line-height: 1.7; text-align: center; }
 
     /* ── Main ── */
@@ -976,6 +977,19 @@
     }
   }
 
+  function formatRelTime(iso) {
+    if (!iso) return '';
+    const diff = Date.now() - new Date(iso).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1)  return 'just now';
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24)  return `${hrs}h ago`;
+    const days = Math.floor(hrs / 24);
+    if (days < 7)  return `${days}d ago`;
+    return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: days > 365 ? 'numeric' : undefined });
+  }
+
   let _savedTrips = [];
   async function loadTrips() { try { const r = await _apiFetch('/api/trips/' + sessionId); const d = await r.json(); renderTrips(d.trips || []); } catch (_) {} }
   function renderTrips(trips) {
@@ -983,13 +997,15 @@
     const el = document.getElementById('trips-list');
     if (!trips.length) { el.innerHTML = '<p class="empty-state">No saved trips yet.<br>Plan one, then hit <strong>Export / Import → Save Trip</strong>.</p>'; return; }
     el.innerHTML = trips.map((t, i) => {
-      const name  = escapeHtml(t.name || t.destination || 'Unknown');
-      const dates = escapeHtml((t.start_date || '?') + ' → ' + (t.end_date || '?'));
-      const badge = t.status === 'completed' ? 'completed' : '';
-      const tid   = escapeHtml(t.id || '');
+      const name     = escapeHtml(t.name || t.destination || 'Unknown');
+      const dates    = escapeHtml((t.start_date || '?') + ' → ' + (t.end_date || '?'));
+      const badge    = t.status === 'completed' ? 'completed' : '';
+      const tid      = escapeHtml(t.id || '');
+      const modified = formatRelTime(t.updated_at);
       return `<div class="trip-card" title="Click to load this trip onto the board" onclick="loadSavedTrip(_savedTrips[${i}])">
         <div class="dest">📍 ${name}</div>
         <div class="dates">${dates}</div>
+        ${modified ? `<div class="trip-modified">Modified ${modified}</div>` : ''}
         <div style="display:flex;align-items:center;justify-content:space-between;margin-top:4px">
           <span class="trip-badge ${badge}">${escapeHtml(t.status || 'planned')}</span>
           <button class="trip-del-btn" title="Delete this saved trip" onclick="event.stopPropagation();deleteSavedTrip('${tid}')">🗑</button>
