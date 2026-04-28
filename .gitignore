@@ -5,3 +5,6 @@ __pycache__/
 *.db
 venv/
 .venv/
+.coverage
+coverage.xml
+.pytest_cache/
