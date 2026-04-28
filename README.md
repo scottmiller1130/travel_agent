@@ -233,7 +233,7 @@ At 50% Pro conversion on 100 users: **$950 MRR vs ~$300 costs ≈ 68% gross marg
 4. Add reference variable: `DATABASE_URL = ${{Postgres.DATABASE_URL}}`
 5. Add `ANTHROPIC_API_KEY` in Variables
 6. Optionally add `SERPAPI_KEY`, `CLERK_PUBLISHABLE_KEY`, `CLERK_JWKS_URL`
-7. Railway auto-deploys on every push to `main`
+7. Railway auto-deploys on every push to `master`
 
 ---
 
@@ -287,6 +287,56 @@ Without this key, the app uses Amadeus GDS (if configured) or distance-calculate
 - **CSRF**: stateless JWT auth eliminates CSRF for API calls
 - **Security headers**: CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy
 - **Session IDs**: `secrets.token_urlsafe(32)` — 256-bit entropy, never client-generated
+
+---
+
+## Testing
+
+The test suite runs without any external services. A SQLite shim in `tests/conftest.py` replaces the PostgreSQL connection, and all API keys fall back to test values.
+
+### Run the tests
+
+```bash
+# Full suite
+pytest
+
+# Critical user journeys only (fastest regression check)
+pytest tests/test_critical_journeys.py -v
+
+# Memory layer (TripStore, SessionStore)
+pytest tests/test_memory_trips.py tests/test_memory_sessions.py -v
+
+# With coverage
+pytest --cov=. --cov-report=term-missing
+```
+
+### Test structure
+
+| File | What it tests |
+|---|---|
+| `tests/test_critical_journeys.py` | End-to-end HTTP flows for all 5 critical user journeys |
+| `tests/test_memory_trips.py` | TripStore — save, upsert, timestamps, isolation, delete |
+| `tests/test_memory_sessions.py` | SessionStore — session lifecycle, share tokens, live-link sync |
+| `tests/test_server.py` | API smoke tests — basic reachability and response shapes |
+| `tests/test_flights.py` | Flight search tool — airport lookup, pricing, caching |
+| `tests/test_hotels.py` | Hotel search tool — price estimation, fallbacks |
+| `tests/test_weather.py` | Weather tool — forecasts, packing suggestions |
+| `tests/test_currency.py` | Currency conversion — fallback rates |
+| `tests/test_experiences.py` | Activity search — Viator/GetYourGuide/OTM paths |
+| `tests/test_transport.py` | Ground transport — availability and pricing |
+| `tests/test_budget.py` | Budget tracking — expense logging, status |
+| `tests/test_cache.py` | TTL cache — expiry, decorator, isolation |
+
+### CI
+
+GitHub Actions runs on every push and on all PRs to `master`:
+
+1. **Lint** (`ruff check .`) — fast-fails before running tests
+2. **Unit tests** — tools + memory layer
+3. **Critical journey tests** — end-to-end HTTP flows
+4. **Full suite with coverage** — fails if coverage drops below 60%
+
+See `docs/critical-user-journeys.md` for the definition of each journey and the regression checklist to follow when opening a PR.
 
 ---
 

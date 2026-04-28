@@ -6,16 +6,40 @@ on:
   pull_request:
     branches: [master]
 
+# Cancel in-flight runs for the same branch so fast-follow pushes don't stack up
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  test:
-    name: Lint & Test
+  # ── Job 1: Lint ─────────────────────────────────────────────────────────────
+  lint:
+    name: Lint
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install ruff
+        run: pip install ruff
+
+      - name: Lint (ruff)
+        run: ruff check .
+
+  # ── Job 2: Unit + integration tests ─────────────────────────────────────────
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    needs: lint   # don't burn runner minutes if lint already fails
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
@@ -23,14 +47,36 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt pytest pytest-cov ruff
 
-      - name: Lint (ruff)
-        run: ruff check .
-
-      - name: Run tests
+      - name: Run unit tests (tools + memory layer)
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY || 'test-key-for-ci' }}
           DATABASE_URL: ""
-        run: pytest --cov=. --cov-report=term-missing --cov-report=xml -q
+        run: |
+          pytest tests/test_budget.py tests/test_cache.py tests/test_currency.py \
+                 tests/test_experiences.py tests/test_flights.py tests/test_hotels.py \
+                 tests/test_transport.py tests/test_weather.py \
+                 tests/test_memory_trips.py tests/test_memory_sessions.py \
+                 -v --tb=short -q
+
+      - name: Run critical journey tests
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY || 'test-key-for-ci' }}
+          DATABASE_URL: ""
+        run: |
+          pytest tests/test_server.py tests/test_critical_journeys.py \
+                 -v --tb=short -q
+
+      - name: Full suite with coverage
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY || 'test-key-for-ci' }}
+          DATABASE_URL: ""
+        run: |
+          pytest \
+            --cov=. \
+            --cov-report=term-missing \
+            --cov-report=xml \
+            --cov-fail-under=45 \
+            -q
 
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
