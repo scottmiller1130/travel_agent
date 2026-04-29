@@ -38,7 +38,7 @@ _TABLES = [
     "usage",
 ]
 
-MAX_BACKUPS = 15  # 15 daily exports ≈ two weeks of rolling history
+MAX_BACKUPS = 30  # 30 daily exports ≈ one month of rolling history
 
 
 def r2_configured() -> bool:
