@@ -47,8 +47,11 @@ from starlette.middleware.base import BaseHTTPMiddleware  # noqa: E402
 
 from agent.core import TravelAgent  # noqa: E402
 from memory.backup import BackupStore  # noqa: E402
-from memory.r2_backup import list_backups as r2_list, r2_configured, restore_backup as r2_restore, upload_backup as r2_upload  # noqa: E402
 from memory.preferences import PreferenceStore  # noqa: E402
+from memory.r2_backup import list_backups as r2_list  # noqa: E402
+from memory.r2_backup import r2_configured  # noqa: E402
+from memory.r2_backup import restore_backup as r2_restore  # noqa: E402
+from memory.r2_backup import upload_backup as r2_upload  # noqa: E402
 from memory.sessions import SessionStore  # noqa: E402
 from memory.trips import TripStore  # noqa: E402
 from memory.users import UserStore  # noqa: E402
