@@ -1569,7 +1569,15 @@
           body: JSON.stringify({ name }),
         });
         if (!r.ok) { showToast('Could not save trip — try again.'); return; }
-        showToast('✅ Trip saved: ' + name);
+        const d = await r.json();
+        // Stamp the ID and name onto the in-memory itinerary so future saves
+        // hit the same DB row instead of creating a duplicate.
+        if (currentItinerary) {
+          currentItinerary.id   = d.trip_id;
+          currentItinerary.name = d.name;
+          localStorage.setItem('itin_' + sessionId, JSON.stringify(currentItinerary));
+        }
+        showToast('✅ Trip saved: ' + d.name);
         loadTrips();
       } catch (err) { showToast('Save failed: ' + err.message); }
     });

@@ -225,26 +225,30 @@ class SessionStore:
         return marked
 
     def get_session_for_token(self, token: str) -> dict | None:
-        """Return the snapshotted itinerary for a share token, or None if invalid/expired."""
+        """Return the live itinerary for a share token, falling back to the snapshot if the session is gone."""
         self._ensure_db()
         now = datetime.now().isoformat()
         with get_conn() as conn:
             cur = conn.cursor()
             cur.execute(
                 """
-                SELECT itinerary_snapshot, expires_at
-                FROM share_tokens
-                WHERE token = %s
+                SELECT st.itinerary_snapshot, st.expires_at, s.itinerary
+                FROM share_tokens st
+                LEFT JOIN sessions s ON s.id = st.session_id
+                WHERE st.token = %s
                 """,
                 (token,),
             )
             row = cur.fetchone()
         if not row:
             return None
-        snapshot, expires_at = row
+        snapshot, expires_at, live_itinerary = row
         if expires_at < now:
             return None  # treat expired tokens as not found
-        return {"itinerary": json.loads(snapshot) if snapshot else None}
+        # Prefer the live session itinerary so the link stays up-to-date;
+        # fall back to the snapshot only if the session has since been deleted.
+        itinerary_json = live_itinerary or snapshot
+        return {"itinerary": json.loads(itinerary_json) if itinerary_json else None}
 
     def owns(self, session_id: str, user_id: str) -> bool:
         """Return True if the session belongs to the given user."""

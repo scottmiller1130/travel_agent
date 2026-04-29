@@ -824,6 +824,12 @@ async def save_trip(session_id: str, request: Request):
     auth_user = _user_from_request(request)
     user_id = auth_user["user_id"] if auth_user else None
     trip_id = TripStore().save_trip(itinerary, user_id=user_id)
+    # Write the assigned ID back to the session so subsequent saves upsert
+    # the same trip record instead of generating a new one each time.
+    _session_store.save_itinerary(session_id, itinerary)
+    with _cache_lock:
+        if session_id in _agent_cache:
+            _agent_cache[session_id].load_itinerary(itinerary)
     return JSONResponse({"status": "ok", "trip_id": trip_id, "name": name})
 
 
