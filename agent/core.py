@@ -519,7 +519,7 @@ class TravelAgent:
         self._current_trip: dict = {}
         self._expenses: list[dict] = []   # in-session expense tracker
         self._progress_callback = None
-        self._system_prompt_cache: str | None = None
+        self._stable_system_cache: str | None = None  # caches base prompt + prefs + trip history (not itinerary)
 
     def _trim_conversation(self) -> None:
         """Keep conversation within token budget using a sliding window.
@@ -611,7 +611,8 @@ class TravelAgent:
         # Heal the full conversation before every API call so any corruption
         # (from DB, trimming, or a previous crash) is fixed regardless of cause.
         self._conversation = _heal_conversation(self._conversation)
-        system = self._build_system_prompt()
+        stable_prompt = self._build_system_prompt()
+        itinerary_context = self._format_itinerary_context()
 
         # ── Per-turn update_itinerary enforcement ────────────────────────────────
         # Track whether update_itinerary was called during this chat() turn.
@@ -648,10 +649,18 @@ class TravelAgent:
         _force_update_tool = False    # set True to force tool_choice on next call
         _loop_iter = 0
 
-        # Wrap the system prompt in a list block so Anthropic can cache it.
-        # This covers the ~3,000-token system prompt at ~10% of normal cost
-        # after the first call.
-        cached_system = [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
+        # Build a two-block system prompt:
+        #   Block 1 (stable, cache_control=ephemeral): base prompt + profile + prefs + trip history.
+        #     Cached by Anthropic after the first call. Cache survives update_itinerary calls
+        #     because the itinerary is NOT baked into this block — only prefs/trip-history changes
+        #     invalidate it, which is rare (typically once per session).
+        #   Block 2 (dynamic, no cache): current working itinerary formatted as a readable document.
+        #     Rebuilt every turn so the agent always sees the latest state of the board.
+        cached_system: list[dict] = [
+            {"type": "text", "text": stable_prompt, "cache_control": {"type": "ephemeral"}}
+        ]
+        if itinerary_context:
+            cached_system.append({"type": "text", "text": itinerary_context})
 
         _api_retry_delays = [2, 4, 8]  # seconds between retries for transient errors
 
@@ -891,7 +900,7 @@ class TravelAgent:
         """Start a fresh conversation (keeps memory/preferences)."""
         self._conversation = []
         self._current_trip = {}
-        self._system_prompt_cache = None
+        self._stable_system_cache = None
 
     # ── Persistence helpers ───────────────────────────────────────────────────
 
@@ -910,7 +919,8 @@ class TravelAgent:
     def load_itinerary(self, itinerary: dict | None) -> None:
         """Restore a previously saved itinerary."""
         self._current_trip = itinerary or {}
-        self._system_prompt_cache = None  # force rebuild so next turn sees updated itinerary
+        # No cache invalidation needed — the itinerary is injected as a separate
+        # dynamic block at call time, not baked into the cached stable prompt.
 
     def _build_file_content(
         self,
@@ -956,8 +966,15 @@ class TravelAgent:
         ]
 
     def _build_system_prompt(self) -> str:
-        if self._system_prompt_cache is not None:
-            return self._system_prompt_cache
+        """Return the stable system prompt (base + profile + prefs + trip history).
+
+        Cached in _stable_system_cache and only invalidated when preferences or
+        saved trip history change — NOT when the current working itinerary changes.
+        The live itinerary is passed as a separate dynamic content block in chat()
+        so the expensive stable prompt stays cached across update_itinerary calls.
+        """
+        if self._stable_system_cache is not None:
+            return self._stable_system_cache
 
         # Run all three DB reads concurrently in daemon threads with a 3-second
         # timeout each so a slow DB never stalls the main chat() thread.
@@ -999,21 +1016,160 @@ class TravelAgent:
 
         prefs_context = results.get("prefs_context", "")
         trips_context = results.get("trips_context", "")
-        itinerary_context = ""
-        if self._current_trip:
-            itinerary_context = (
-                "\n\n## Current Trip Board\n"
-                "The following itinerary is currently loaded on the user's trip board. "
-                "You can reference, modify, or extend it based on the user's requests.\n"
-                "**IMPORTANT: Any time you make ANY change to this itinerary — adding, removing, "
-                "or modifying a day, item, budget, note, or any other field — you MUST call "
-                "update_itinerary with the complete updated plan immediately. "
-                "Do not describe changes in text without also calling update_itinerary. "
-                "The user is watching the board and expects it to reflect your changes.**\n"
-                f"```json\n{json.dumps(self._current_trip, indent=2)}\n```"
-            )
-        self._system_prompt_cache = f"{base_prompt}\n\n{prefs_context}\n\n{trips_context}{itinerary_context}"
-        return self._system_prompt_cache
+        self._stable_system_cache = f"{base_prompt}\n\n{prefs_context}\n\n{trips_context}"
+        return self._stable_system_cache
+
+    def _format_itinerary_context(self) -> str:
+        """Format the active itinerary as a rich, scannable document for the system prompt.
+
+        Structured so the agent can immediately read what's already planned —
+        destinations, dates, budget, and day-by-day items with types and statuses —
+        without needing to call get_trips or ask the user for info that's here.
+        Returns an empty string when no itinerary is loaded.
+        """
+        t = self._current_trip
+        if not t:
+            return ""
+
+        lines: list[str] = [
+            "## ACTIVE TRIP BOARD",
+            "Reference this directly. Do not ask for info already listed here.",
+            "",
+        ]
+
+        # ── Header ────────────────────────────────────────────────────────────
+        dest = t.get("destination", "")
+        dests = t.get("destinations") or []
+        if dests and len(dests) > 1:
+            lines.append(f"**Destinations**: {' → '.join(dests)}")
+        elif dest:
+            lines.append(f"**Destination**: {dest}")
+
+        start = t.get("start_date", "")
+        end = t.get("end_date", "")
+        if start and end:
+            lines.append(f"**Dates**: {start} → {end}")
+        elif start:
+            lines.append(f"**Start date**: {start}")
+
+        travelers = t.get("travelers")
+        if travelers:
+            lines.append(f"**Travelers**: {travelers}")
+
+        budget_obj = t.get("budget") or {}
+        max_budget = t.get("max_budget_usd")
+        budget_parts = []
+        for cat, val in budget_obj.items():
+            if val:
+                budget_parts.append(f"{cat.capitalize()} ${val:,.0f}")
+        if budget_parts or max_budget:
+            budget_line = "**Budget**: "
+            if max_budget:
+                budget_line += f"max ${max_budget:,.0f}"
+                if budget_parts:
+                    budget_line += " | "
+            if budget_parts:
+                budget_line += " | ".join(budget_parts)
+                total = sum(v for v in budget_obj.values() if v)
+                if total:
+                    budget_line += f" | **Total est. ${total:,.0f}**"
+            lines.append(budget_line)
+
+        season = t.get("season") or {}
+        if season.get("label"):
+            crowd = season.get("crowd_level", "")
+            s_line = f"**Season**: {season['label']}"
+            if crowd:
+                s_line += f" — {crowd}"
+            if season.get("notes"):
+                s_line += f" ({season['notes']})"
+            lines.append(s_line)
+
+        lines.append("")
+
+        # ── Day-by-day ────────────────────────────────────────────────────────
+        type_icons = {
+            "flight":    "✈",
+            "hotel":     "🏨",
+            "activity":  "🎯",
+            "transfer":  "🚌",
+            "restaurant": "🍽",
+            "free_time": "☀",
+        }
+        status_tags = {
+            "confirmed":   "[confirmed]",
+            "suggested":   "[suggested]",
+            "alternative": "[alt]",
+        }
+
+        days = t.get("days") or []
+        if days:
+            lines.append("### Day-by-Day Plan")
+            for i, day in enumerate(days, 1):
+                date = day.get("date", "")
+                label = day.get("label", "")
+                weather = day.get("weather") or {}
+                header = f"**Day {i}"
+                if date:
+                    header += f" — {date}"
+                if label:
+                    header += f": {label}"
+                header += "**"
+                if weather.get("condition"):
+                    hi = weather.get("temp_high")
+                    lo = weather.get("temp_low")
+                    temp = f" {hi:.0f}°/{lo:.0f}°C" if hi is not None and lo is not None else ""
+                    header += f"  _{weather['condition']}{temp}_"
+                lines.append(header)
+
+                for item in (day.get("items") or []):
+                    icon = type_icons.get(item.get("type", ""), "•")
+                    title = item.get("title", "")
+                    subtitle = item.get("subtitle", "")
+                    status = status_tags.get(item.get("status", ""), "")
+                    time_str = item.get("time", "")
+                    price = item.get("price_usd")
+                    notes = item.get("notes", "")
+
+                    parts = [f"  {icon}"]
+                    if time_str:
+                        parts.append(f"{time_str}")
+                    if status:
+                        parts.append(status)
+                    parts.append(title)
+                    if subtitle:
+                        parts.append(f"— {subtitle}")
+                    if price is not None:
+                        parts.append(f"${price:,.0f}/person")
+                    if notes:
+                        parts.append(f"({notes})")
+                    lines.append(" ".join(parts))
+
+                    # Restaurant extras
+                    if item.get("cuisine"):
+                        lines.append(f"       Cuisine: {item['cuisine']}")
+                    if item.get("menu_highlights"):
+                        lines.append(f"       Must-try: {', '.join(item['menu_highlights'])}")
+                    if item.get("reservation"):
+                        lines.append(f"       Reservation: {item['reservation']}")
+
+                lines.append("")
+
+        # ── Issues ────────────────────────────────────────────────────────────
+        issues = t.get("issues") or []
+        if issues:
+            lines.append("### Flags")
+            sev_icons = {"error": "❌", "warning": "⚠", "info": "ℹ"}
+            for issue in issues:
+                icon = sev_icons.get(issue.get("severity", "info"), "•")
+                lines.append(f"  {icon} {issue.get('message', '')}")
+            lines.append("")
+
+        lines.append(
+            "**Call update_itinerary with the complete updated plan for ANY change — "
+            "adding an item, swapping a hotel, changing a time, or any other edit.**"
+        )
+        return "\n".join(lines)
 
     def _dispatch_tool(self, name: str, inputs: dict) -> dict:
         """Route a tool call to the correct implementation."""
@@ -1118,7 +1274,7 @@ class TravelAgent:
         key = inputs["key"]
         value = inputs["value"]
         log.info("save_preference: key=%s uid=%s", key, self._user_id or "anon")
-        self._system_prompt_cache = None
+        self._stable_system_cache = None  # prefs changed — rebuild stable prompt next turn
         # Persist in a daemon thread so a slow DB never blocks the tool future.
         def _bg():
             try:
@@ -1131,7 +1287,7 @@ class TravelAgent:
     def _handle_save_trip(self, inputs: dict) -> dict:
         trip = inputs["trip"]
         self._current_trip = trip
-        self._system_prompt_cache = None
+        self._stable_system_cache = None  # saved trip history changed — rebuild stable prompt
         log.info(
             "save_trip: destination=%s uid=%s",
             trip.get("destination", "unknown"), self._user_id or "anon",
@@ -1147,7 +1303,8 @@ class TravelAgent:
 
     def _handle_update_itinerary(self, inputs: dict) -> dict:
         self._current_trip = inputs  # persist so get_itinerary() is always current
-        self._system_prompt_cache = None
+        # No stable cache invalidation — itinerary is a separate dynamic block,
+        # so the cached stable prompt survives every update_itinerary call.
         log.info(
             "update_itinerary: destination=%s days=%d uid=%s",
             inputs.get("destination", "unknown"),

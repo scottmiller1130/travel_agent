@@ -40,12 +40,16 @@ class SessionStore:
                     itinerary    TEXT,
                     user_id      TEXT,
                     created_at   TEXT NOT NULL,
-                    updated_at   TEXT NOT NULL
+                    updated_at   TEXT NOT NULL,
+                    deleted_at   TEXT
                 )
             """)
-            # Add user_id column to existing deployments that don't have it yet
+            # Migrations for existing deployments
             cur.execute("""
                 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS user_id TEXT
+            """)
+            cur.execute("""
+                ALTER TABLE sessions ADD COLUMN IF NOT EXISTS deleted_at TEXT
             """)
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS share_tokens (
@@ -87,11 +91,14 @@ class SessionStore:
             """, (session_id, user_id, now, now))
 
     def exists(self, session_id: str) -> bool:
-        """Return True if the session was created server-side."""
+        """Return True if the session was created server-side and is not deleted."""
         self._ensure_db()
         with get_conn() as conn:
             cur = conn.cursor()
-            cur.execute("SELECT 1 FROM sessions WHERE id = %s", (session_id,))
+            cur.execute(
+                "SELECT 1 FROM sessions WHERE id = %s AND deleted_at IS NULL",
+                (session_id,),
+            )
             return cur.fetchone() is not None
 
     def load(self, session_id: str) -> dict | None:
@@ -100,7 +107,7 @@ class SessionStore:
         with get_conn() as conn:
             cur = conn.cursor()
             cur.execute(
-                "SELECT conversation, itinerary FROM sessions WHERE id = %s",
+                "SELECT conversation, itinerary FROM sessions WHERE id = %s AND deleted_at IS NULL",
                 (session_id,),
             )
             row = cur.fetchone()
@@ -153,15 +160,20 @@ class SessionStore:
         with get_conn() as conn:
             cur = conn.cursor()
             cur.execute("""
-                UPDATE sessions SET itinerary = NULL, updated_at = %s WHERE id = %s
+                UPDATE sessions SET itinerary = NULL, updated_at = %s
+                WHERE id = %s AND deleted_at IS NULL
             """, (now, session_id))
 
     def delete(self, session_id: str) -> None:
-        """Delete a session (used on conversation reset)."""
+        """Soft-delete a session (used on conversation reset). Recoverable via R2 restore."""
         self._ensure_db()
+        now = datetime.now().isoformat()
         with get_conn() as conn:
             cur = conn.cursor()
-            cur.execute("DELETE FROM sessions WHERE id = %s", (session_id,))
+            cur.execute(
+                "UPDATE sessions SET deleted_at = %s WHERE id = %s AND deleted_at IS NULL",
+                (now, session_id),
+            )
 
     def create_share_token(self, session_id: str, itinerary: dict) -> str:
         """Snapshot the itinerary and return a permanent share token (valid 90 days)."""
@@ -180,17 +192,37 @@ class SessionStore:
             )
         return token
 
-    def expire_old_sessions(self, days: int = 30) -> int:
-        """Delete sessions not updated in `days` days. Returns count deleted."""
-        cutoff = (datetime.now() - timedelta(days=days)).isoformat()
-        now = datetime.now().isoformat()
+    def expire_old_sessions(self, days: int = 90) -> int:
+        """
+        Soft-delete sessions idle for more than `days` days. Returns count marked.
+
+        Sessions are marked with deleted_at rather than hard-deleted so they
+        remain recoverable from R2 backups.  Physical rows are only purged
+        after PURGE_AFTER_DAYS to keep the database tidy.
+        """
+        PURGE_AFTER_DAYS = 180
+        now = datetime.now()
+        soft_cutoff = (now - timedelta(days=days)).isoformat()
+        hard_cutoff = (now - timedelta(days=PURGE_AFTER_DAYS)).isoformat()
+        now_str = now.isoformat()
+
         with get_conn() as conn:
             cur = conn.cursor()
-            cur.execute("DELETE FROM sessions WHERE updated_at < %s", (cutoff,))
-            deleted = cur.rowcount
-            # Remove share tokens that have expired
-            cur.execute("DELETE FROM share_tokens WHERE expires_at < %s", (now,))
-        return deleted
+            # Soft-delete sessions idle beyond `days`
+            cur.execute(
+                "UPDATE sessions SET deleted_at = %s"
+                " WHERE updated_at < %s AND deleted_at IS NULL",
+                (now_str, soft_cutoff),
+            )
+            marked = cur.rowcount
+            # Hard-purge rows soft-deleted more than PURGE_AFTER_DAYS ago
+            cur.execute(
+                "DELETE FROM sessions WHERE deleted_at IS NOT NULL AND deleted_at < %s",
+                (hard_cutoff,),
+            )
+            # Remove expired share tokens
+            cur.execute("DELETE FROM share_tokens WHERE expires_at < %s", (now_str,))
+        return marked
 
     def get_session_for_token(self, token: str) -> dict | None:
         """Return the live itinerary for a share token, falling back to the snapshot if the session is gone."""
@@ -224,21 +256,29 @@ class SessionStore:
         with get_conn() as conn:
             cur = conn.cursor()
             cur.execute(
-                "SELECT user_id FROM sessions WHERE id = %s",
+                "SELECT user_id FROM sessions WHERE id = %s AND deleted_at IS NULL",
                 (session_id,),
             )
             row = cur.fetchone()
         if not row:
             return False
-        # Anonymous sessions (user_id=NULL) are accessible to anyone who knows the ID
         return row[0] is None or row[0] == user_id
 
-    def list_sessions(self) -> list[dict]:
+    def list_sessions(self, include_deleted: bool = False) -> list[dict]:
         """Return metadata for all sessions (for admin/debugging)."""
         with get_conn() as conn:
             cur = conn.cursor()
-            cur.execute(
-                "SELECT id, user_id, created_at, updated_at FROM sessions ORDER BY updated_at DESC"
-            )
+            if include_deleted:
+                cur.execute(
+                    "SELECT id, user_id, created_at, updated_at, deleted_at FROM sessions ORDER BY updated_at DESC"
+                )
+            else:
+                cur.execute(
+                    "SELECT id, user_id, created_at, updated_at, deleted_at FROM sessions"
+                    " WHERE deleted_at IS NULL ORDER BY updated_at DESC"
+                )
             rows = cur.fetchall()
-        return [{"id": r[0], "user_id": r[1], "created_at": r[2], "updated_at": r[3]} for r in rows]
+        return [
+            {"id": r[0], "user_id": r[1], "created_at": r[2], "updated_at": r[3], "deleted_at": r[4]}
+            for r in rows
+        ]
