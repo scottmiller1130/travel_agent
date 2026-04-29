@@ -47,6 +47,7 @@ from starlette.middleware.base import BaseHTTPMiddleware  # noqa: E402
 
 from agent.core import TravelAgent  # noqa: E402
 from memory.backup import BackupStore  # noqa: E402
+from memory.r2_backup import list_backups as r2_list, r2_configured, restore_backup as r2_restore, upload_backup as r2_upload  # noqa: E402
 from memory.preferences import PreferenceStore  # noqa: E402
 from memory.sessions import SessionStore  # noqa: E402
 from memory.trips import TripStore  # noqa: E402
@@ -113,26 +114,51 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 app.add_middleware(RequestLoggingMiddleware)
 
 # ---------------------------------------------------------------------------
-# Weekly backup — snapshots all trips into trip_backups table on startup and
-# every 7 days thereafter.  Keeps the last 8 snapshots (~2 months rolling).
+# Backup loops
+#
+# 1. Daily R2 export — full database dump to Cloudflare R2 (external copy).
+#    Runs every 24 h.  Requires R2_ACCOUNT_ID / R2_ACCESS_KEY_ID /
+#    R2_SECRET_ACCESS_KEY in Railway Variables.  Skipped if not configured.
+#
+# 2. Weekly trip snapshot — copies trips table into trip_backups within the
+#    same DB for fast in-app recovery from accidental deletes.  Runs every 7 d.
 # ---------------------------------------------------------------------------
-_BACKUP_INTERVAL_SECS = 7 * 24 * 60 * 60  # 1 week
+_DAY_SECS  = 24 * 60 * 60
+_WEEK_SECS = 7 * _DAY_SECS
 
 
-async def _weekly_backup_loop():
-    await asyncio.sleep(60)  # Give the server 60 s to finish starting up
+async def _daily_r2_backup_loop():
+    await asyncio.sleep(120)  # Give the server time to finish starting up
+    while True:
+        if r2_configured():
+            try:
+                info = r2_upload()
+                log.info("Daily R2 backup complete: %s", info)
+            except Exception as exc:
+                log.error("Daily R2 backup failed: %s", exc)
+        else:
+            log.warning(
+                "R2 backup skipped — R2_ACCOUNT_ID / R2_ACCESS_KEY_ID / "
+                "R2_SECRET_ACCESS_KEY not set in environment"
+            )
+        await asyncio.sleep(_DAY_SECS)
+
+
+async def _weekly_trip_snapshot_loop():
+    await asyncio.sleep(60)
     while True:
         try:
             info = BackupStore().create_backup()
-            log.info("Weekly trip backup complete: %s", info)
+            log.info("Weekly trip snapshot complete: %s", info)
         except Exception as exc:
-            log.error("Weekly trip backup failed: %s", exc)
-        await asyncio.sleep(_BACKUP_INTERVAL_SECS)
+            log.error("Weekly trip snapshot failed: %s", exc)
+        await asyncio.sleep(_WEEK_SECS)
 
 
 @app.on_event("startup")
-async def _start_backup_loop():
-    asyncio.create_task(_weekly_backup_loop())
+async def _start_backup_loops():
+    asyncio.create_task(_daily_r2_backup_loop())
+    asyncio.create_task(_weekly_trip_snapshot_loop())
 
 
 @app.on_event("shutdown")
@@ -1923,6 +1949,49 @@ async def trigger_backup(request: Request):
 
 
 # ---------------------------------------------------------------------------
+# R2 backup admin endpoints
+# ---------------------------------------------------------------------------
+
+@app.get("/api/admin/r2-backups")
+async def list_r2_backups(request: Request):
+    """List all daily R2 backup files, newest first."""
+    _require_admin(request)
+    if not r2_configured():
+        raise HTTPException(status_code=503, detail="R2 not configured — set R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY in Railway Variables.")
+    backups = r2_list()
+    return JSONResponse({"backups": backups})
+
+
+@app.post("/api/admin/r2-backups")
+async def trigger_r2_backup(request: Request):
+    """Manually trigger an immediate full-database R2 backup."""
+    _require_admin(request)
+    if not r2_configured():
+        raise HTTPException(status_code=503, detail="R2 not configured.")
+    info = r2_upload()
+    return JSONResponse({"status": "ok", **info})
+
+
+class R2RestoreRequest(BaseModel):
+    key: str
+
+
+@app.post("/api/admin/r2-restore")
+async def restore_r2_backup(body: R2RestoreRequest, request: Request):
+    """
+    Restore a full-database backup from R2.
+
+    Inserts only rows that don't already exist (ON CONFLICT DO NOTHING) —
+    completely non-destructive.  Safe to run on a live database.
+    """
+    _require_admin(request)
+    if not r2_configured():
+        raise HTTPException(status_code=503, detail="R2 not configured.")
+    result = r2_restore(body.key)
+    return JSONResponse({"status": "ok", **result})
+
+
+# ---------------------------------------------------------------------------
 # Health check — component-level status without leaking secrets
 # ---------------------------------------------------------------------------
 @app.get("/api/health")
@@ -1957,16 +2026,16 @@ async def health():
 
 
 # ---------------------------------------------------------------------------
-# Automated DB backup — copies sessions.db daily, keeps last 7 snapshots
+# Daily session maintenance — soft-deletes sessions idle for 90+ days and
+# hard-purges rows that have been soft-deleted for 180+ days.
 # ---------------------------------------------------------------------------
 def _backup_db() -> None:
-    """Expire old sessions daily."""
     while True:
         time.sleep(86400)  # sleep 24 hours
         try:
-            deleted = _session_store.expire_old_sessions(days=30)
-            if deleted:
-                log.info("Expired %d stale sessions (>30 days idle)", deleted)
+            marked = _session_store.expire_old_sessions(days=90)
+            if marked:
+                log.info("Soft-deleted %d stale sessions (>90 days idle)", marked)
         except Exception as exc:
             log.error("Session expiry failed: %s", exc)
 
