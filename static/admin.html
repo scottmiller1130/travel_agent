@@ -399,6 +399,19 @@
     <div id="backups-list" class="backup-list">
       <div style="color:var(--text-3);font-size:13px">Loading…</div>
     </div>
+
+    <div class="section-header" style="margin-top:32px;margin-bottom:16px">
+      <div>
+        <h2>Cloud Backups (R2)</h2>
+        <div style="font-size:12px;color:var(--text-3);margin-top:3px">
+          Full database export · daily · 30-day rolling window · Cloudflare R2
+        </div>
+      </div>
+      <button class="btn btn-primary" onclick="runR2Backup()">☁ Upload to R2 Now</button>
+    </div>
+    <div id="r2-backups-list" class="backup-list">
+      <div style="color:var(--text-3);font-size:13px">Loading…</div>
+    </div>
   </div>
 
   <!-- ── System ── -->
@@ -558,7 +571,7 @@
     users:    { title: 'Users',     sub: 'Manage user accounts and plans' },
     trips:    { title: 'Trips',     sub: 'All saved trips across all users' },
     sessions: { title: 'Sessions',  sub: 'Active and recent chat sessions' },
-    backups:  { title: 'Backups',   sub: 'Weekly trip snapshots' },
+    backups:  { title: 'Backups',   sub: 'Trip snapshots and R2 cloud backups' },
     system:   { title: 'System',    sub: 'Health check and configuration' },
   };
 
@@ -867,6 +880,7 @@
 
   // ── Backups ────────────────────────────────────────────────────────────────
   async function loadBackups() {
+    loadR2Backups();
     document.getElementById('backups-list').innerHTML = '<div style="color:var(--text-3);font-size:13px">Loading…</div>';
     try {
       const d = await apiFetch('/api/admin/backups');
@@ -898,6 +912,66 @@
       if (_currentPanel === 'overview') loadOverview();
     } catch (e) {
       toast('Backup failed: ' + e.message);
+    }
+  }
+
+  async function loadR2Backups() {
+    const el = document.getElementById('r2-backups-list');
+    el.innerHTML = '<div style="color:var(--text-3);font-size:13px">Loading…</div>';
+    try {
+      const d = await apiFetch('/api/admin/r2-backups');
+      const backups = d.backups || [];
+      if (!backups.length) {
+        el.innerHTML = `<div class="empty"><div class="empty-icon">☁️</div>No R2 backups yet — click "Upload to R2 Now"</div>`;
+        return;
+      }
+      el.innerHTML = backups.map((b, i) => {
+        const kb = b.size_bytes > 1048576
+          ? (b.size_bytes / 1048576).toFixed(1) + ' MB'
+          : Math.round(b.size_bytes / 1024) + ' KB';
+        return `
+          <div class="backup-item">
+            <div class="b-meta">
+              <div class="b-date">${fmtDateTime(b.last_modified)}${i === 0 ? ' <span style="font-size:11px;background:var(--sky-l);color:var(--sky-d);padding:1px 7px;border-radius:10px;font-weight:700">Latest</span>' : ''}</div>
+              <div class="b-count">${kb} · Full database · ${esc(b.key)}</div>
+            </div>
+            <button class="btn btn-ghost btn-sm" onclick="restoreR2Backup('${esc(b.key)}')">↩ Restore</button>
+          </div>`;
+      }).join('');
+    } catch (e) {
+      if (e.message && e.message.includes('R2 not configured')) {
+        el.innerHTML = `<div class="empty"><div class="empty-icon">☁️</div>R2 not configured — add R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, and R2_SECRET_ACCESS_KEY to Railway Variables</div>`;
+      } else {
+        el.innerHTML = `<div class="empty">Error: ${esc(e.message)}</div>`;
+      }
+    }
+  }
+
+  async function runR2Backup() {
+    toast('Uploading full database to R2…');
+    try {
+      const d = await apiFetch('/api/admin/r2-backups', { method: 'POST' });
+      const kb = d.size_bytes ? Math.round(d.size_bytes / 1024) + ' KB' : '';
+      toast(`R2 backup complete${kb ? ' — ' + kb : ''}.`);
+      loadR2Backups();
+    } catch (e) {
+      toast('R2 backup failed: ' + e.message);
+    }
+  }
+
+  async function restoreR2Backup(key) {
+    if (!confirm(`Restore from:\n${key}\n\nMissing rows will be inserted. Existing data is never overwritten.\n\nProceed?`)) return;
+    toast('Restoring from R2…');
+    try {
+      const d = await apiFetch('/api/admin/r2-restore', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key }),
+      });
+      const total = Object.values(d.restored || {}).reduce((s, n) => s + n, 0);
+      toast(`Restore complete — ${total} rows inserted.`);
+    } catch (e) {
+      toast('Restore failed: ' + e.message);
     }
   }
 
